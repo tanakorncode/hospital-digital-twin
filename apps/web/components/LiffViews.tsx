@@ -5,6 +5,7 @@ import { CalendarCheck, CheckCircle2, ChevronRight, Clock, MapPin, QrCode, Searc
 import { newKey, patientApi } from '../lib/patient-api';
 import type { LiveVisit } from '../lib/patients';
 import { deptDirectory } from '../lib/scene-data';
+import { fetchDestinations, whereText, type Destination } from '../lib/wayfinding';
 
 // The patient's own screens inside LINE (stage 2.6). Everything comes from the patient API, which only ever answers
 // about the signed-in, linked patient. One task per screen, big text and buttons, plain Thai.
@@ -196,17 +197,24 @@ function MoveAppt({a,needsApproval,advanceDays,onClose}:{a:Appt; needsApproval:b
   <button className="liffBtn" disabled={!slot || busy} onClick={()=>void send()}>{busy?'กำลังส่ง…':needsApproval?'ส่งคำขอเลื่อนนัด':'ยืนยันเลื่อนนัด'}</button></section>;
 }
 
-// ---- แผนที่ (directory; QR signs around the hospital come in stage 2.8) --------------------------------------------------
+// ---- แผนที่ --------------------------------------------------------------------------------------------------------
+// The hospital's wayfinding places (the same as the QR signs): tap one for directions. While the hospital has not
+// switched wayfinding on, the department directory (building / floor / rooms) instead.
 export function HospitalMap() {
  const [q,setQ] = useState('');
- const list = useMemo(()=>deptDirectory().filter(d=>!d.off),[]);
- const shown = q.trim() ? list.filter(d=>d.name.includes(q.trim()) || d.place.includes(q.trim())) : list;
+ const [places,setPlaces] = useState<Destination[]|null|undefined>(undefined); // null: wayfinding not available
+ useEffect(()=>{ void fetchDestinations().then(r=>setPlaces(r.ok && r.destinations.length ? r.destinations : null)); },[]);
+ const dir = useMemo(()=>deptDirectory().filter(d=>!d.off).map(d=>({key:`${d.place}|${d.name}`,name:d.name,place:d.place,note:d.rooms,code:undefined as string|undefined})),[]);
+ const items = places ? places.map(d=>({key:d.code,name:d.nameTh,place:whereText(d),note:d.landmarkTh ?? '',code:d.code as string|undefined})) : dir;
+ const shown = q.trim() ? items.filter(d=>d.name.includes(q.trim()) || d.place.includes(q.trim())) : items;
  const groups = useMemo(()=>{ const m = new Map<string,typeof shown>(); shown.forEach(d=>m.set(d.place,[...(m.get(d.place) ?? []),d])); return [...m.entries()]; },[shown]);
+ if (places===undefined) return <Busy/>;
  return <>
   <label className="liffSearch"><Search size={20}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="ค้นหาแผนก เช่น ห้องยา ตา" aria-label="ค้นหาแผนก"/></label>
   {groups.map(([place,ds])=><section key={place} className="liffCard"><h2><MapPin size={20}/> {place}</h2>
-   <ul className="liffDir">{ds.map(d=><li key={d.name}><b>{d.name}</b>{d.rooms && <small>{d.rooms}</small>}</li>)}</ul></section>)}
+   {places ? <div className="liffChoices">{ds.map(d=><a key={d.key} className="liffChoice small" href={`/wayfinding?to=${encodeURIComponent(d.code!)}`}><span><b>{d.name}</b>{d.note && <><br/><small className="liffNote">{d.note}</small></>}</span><ChevronRight size={20}/></a>)}</div>
+    : <ul className="liffDir">{ds.map(d=><li key={d.key}><b>{d.name}</b>{d.note && <small>{d.note}</small>}</li>)}</ul>}</section>)}
   {!groups.length && <section className="liffCard"><p>ไม่พบแผนกที่ค้นหา · สอบถามจุดประชาสัมพันธ์</p></section>}
-  <p className="liffNote center"><QrCode size={16}/> เร็ว ๆ นี้: สแกนป้าย QR ในโรงพยาบาลเพื่อดูทางไปจุดบริการ</p>
+  <p className="liffNote center"><QrCode size={16}/> ในโรงพยาบาล สแกนป้าย QR ตามจุดต่าง ๆ เพื่อดูทางจากจุดที่คุณยืนอยู่</p>
  </>;
 }

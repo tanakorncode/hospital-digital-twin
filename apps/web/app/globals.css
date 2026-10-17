@@ -1474,6 +1474,7 @@ kbd{margin-left:6px;padding:1px 6px;border-radius:5px;background:#ffffff33;borde
 .setIco.i-booking{background:linear-gradient(135deg,#f9a8d4,#be185d);--sh:#be185d40}
 .setIco.i-appts{background:linear-gradient(135deg,#93c5fd,#1d4ed8);--sh:#1d4ed840}
 .setIco.i-notify{background:linear-gradient(135deg,#86efac,#15803d);--sh:#15803d40}
+.setIco.i-wayfinding{background:linear-gradient(135deg,#7dd3fc,#0369a1);--sh:#0369a140}
 .setIco.i-data{background:linear-gradient(135deg,#6ee7b7,#047857);--sh:#04785740}
 .setPane{position:relative;display:flex;flex-direction:column;gap:12px;min-width:0}
 .setToast{margin:0;padding:10px 14px;border-radius:12px;background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46;font-size:13.5px;font-weight:600}
@@ -2134,3 +2135,40 @@ kbd{margin-left:6px;padding:1px 6px;border-radius:5px;background:#ffffff33;borde
 .notifyCounts .nc-FAILED b{color:#be123c}.notifyCounts .nc-RETRY b{color:#b45309}.notifyCounts .nc-SENT b{color:#047857}
 .notifyState{display:inline-block;padding:1px 8px;border-radius:6px;font-size:11.5px;font-weight:700;background:#eef2f6;color:#4d6074}
 .notifyState.s-SENT{background:#dcfce7;color:#166534}.notifyState.s-FAILED{background:#ffe4e6;color:#9f1239}.notifyState.s-RETRY{background:#fef3c7;color:#92400e}
+
+/* ---- Wayfinding page (/wayfinding) ---- */
+.wayf .liffLogo{background:#1667d9}
+.wayHere{background:#0f2340;color:#fff;border:0}
+.wayHere small{color:#bcd0ea;font-size:15px}
+.wayHere h1{display:flex;align-items:center;gap:8px;color:#fff}
+.wayHere p{color:#dbe7f5}
+.wayWhere{font-size:18px;font-weight:700;color:#1667d9}
+.waySteps{margin:0;padding-left:26px;display:flex;flex-direction:column;gap:10px;font-size:18px;line-height:1.5}
+.waySteps li::marker{font-weight:800;color:#1667d9}
+.wayAsk{margin:4px 0 0;font-size:22px}
+.wayf .planSvg{width:100%;background:#f8fbff;border-radius:12px}
+.wayf .liffBack{align-self:flex-start;background:#f1f5f9}
+
+/* ---- Settings → QR นำทาง, and the printable signs ---- */
+.wayEdit{display:flex;flex-direction:column;gap:10px;padding:12px;border-radius:12px;background:#f5f9ff;border:1px solid #d6e6ff}
+.signSheet{position:fixed;inset:0;z-index:1000;overflow:auto;padding:16px;background:#e8edf3;display:flex;flex-direction:column;align-items:center;gap:16px}
+.signBar{position:sticky;top:0;z-index:1;display:flex;align-items:center;gap:10px;flex-wrap:wrap;width:min(794px,100%);padding:10px 14px;border-radius:12px;background:#fff;box-shadow:0 4px 14px #0b1d3320}
+.signBar .muted{flex:1;font-size:12.5px}
+.sign{width:min(794px,100%);aspect-ratio:210/297;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:48px 40px;background:#fff;color:#0f2340;text-align:center;border-radius:6px;box-shadow:0 4px 18px #0b1d3322}
+.sign .signTop{margin:0;font-size:30px;color:#3d5168}
+.sign h1{margin:0;font-size:64px;line-height:1.15}
+.sign .signWhere{margin:0;font-size:30px;font-weight:700;color:#1667d9}
+.sign img{width:62%;max-width:420px;image-rendering:pixelated;margin:18px 0}
+.sign .signCall{margin:0;font-size:34px;font-weight:800}
+.sign .signHelp{margin:0;font-size:20px;color:#3d5168}
+.sign .signCode{margin-top:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px;color:#94a3b8}
+@media print{
+ body:has(.signSheet) > *:not(.signSheet){display:none!important}
+ body:has(.signSheet){background:#fff}
+ .signSheet{position:static;padding:0;background:#fff;display:block;overflow:visible}
+ .signBar{display:none}
+ .sign{width:100%;height:265mm;aspect-ratio:auto;box-shadow:none;border-radius:0;break-after:page;page-break-after:always}
+ .sign:last-child{break-after:auto;page-break-after:auto}
+ @page{size:A4 portrait;margin:12mm}
+}
+a.liffChoice{text-decoration:none;padding:10px 16px}
