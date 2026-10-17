@@ -1,0 +1,62 @@
+// Baseline only. Add provider config, migrations, auth models, and indexes for the chosen environment.
+model Hospital {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  name      String
+  buildings Building[]
+  createdAt DateTime @default(now())
+}
+model Building {
+  id         String   @id @default(cuid())
+  hospitalId String
+  hospital   Hospital @relation(fields: [hospitalId], references: [id])
+  code       String
+  name       String
+  floors     Floor[]
+  @@unique([hospitalId, code])
+}
+model Floor {
+  id         String   @id @default(cuid())
+  buildingId String
+  building   Building @relation(fields: [buildingId], references: [id])
+  level      Int
+  name       String
+  servicePoints ServicePoint[]
+  @@unique([buildingId, level])
+}
+model ServicePoint {
+  id        String @id @default(cuid())
+  floorId   String
+  floor     Floor  @relation(fields: [floorId], references: [id])
+  code      String
+  name      String
+  kind      String
+  x         Float
+  y         Float
+  z         Float
+  queueCurrent QueueCurrent?
+  @@unique([floorId, code])
+}
+model QueueCurrent {
+  servicePointId       String @id
+  servicePoint         ServicePoint @relation(fields: [servicePointId], references: [id])
+  queueCount           Int
+  averageWaitMinutes   Float
+  status               String
+  observedAt           DateTime
+  sourceId             String
+  version              Int @default(1)
+}
+model QueueEvent {
+  id                 String @id @default(cuid())
+  sourceId           String
+  externalEventId    String
+  servicePointId     String
+  queueCount         Int
+  averageWaitMinutes Float
+  occurredAt         DateTime
+  receivedAt         DateTime @default(now())
+  schemaVersion      Int
+  @@unique([sourceId, externalEventId])
+  @@index([servicePointId, occurredAt])
+}

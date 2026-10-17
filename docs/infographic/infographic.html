@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<title>Hospital Digital Twin — Smart Hospital Platform</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700;800;900&family=Inter:wght@500;600;700;800;900&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
+<style>
+:root{--bg:#050c1d;--panel:#0c1a36cc;--line:#ffffff1a;--txt:#e8f0ff;--muted:#93a7c8;--cyan:#38e1ff;--blue:#3d8bff;--violet:#9b7bff;--green:#3ef0a6;--amber:#ffb547;--pink:#ff6fb1}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{position:relative;width:1920px;height:1080px;overflow:hidden;font-family:'Noto Sans Thai',sans-serif;color:var(--txt);
+ background:radial-gradient(1100px 620px at 50% 46%,#123271 0,transparent 62%),radial-gradient(700px 500px at 100% 0,#3a1f7a88 0,transparent 60%),radial-gradient(700px 500px at 0 100%,#0b4b6e88 0,transparent 60%),var(--bg)}
+/* perspective grid floor + stars */
+.floor{position:absolute;left:-200px;right:-200px;bottom:-60px;height:520px;transform:perspective(700px) rotateX(64deg);transform-origin:bottom;opacity:.5;
+ background-image:linear-gradient(#38e1ff26 1.5px,transparent 1.5px),linear-gradient(90deg,#38e1ff26 1.5px,transparent 1.5px);background-size:60px 60px;
+ -webkit-mask-image:linear-gradient(to top,#000 10%,transparent 85%);mask-image:linear-gradient(to top,#000 10%,transparent 85%)}
+.stars{position:absolute;inset:0;opacity:.55;background-image:radial-gradient(1.4px 1.4px at 12% 18%,#fff,transparent),radial-gradient(1px 1px at 32% 8%,#9fd,transparent),radial-gradient(1.2px 1.2px at 68% 14%,#fff,transparent),radial-gradient(1px 1px at 88% 30%,#cdf,transparent),radial-gradient(1.3px 1.3px at 6% 52%,#fff,transparent),radial-gradient(1px 1px at 95% 62%,#fff,transparent),radial-gradient(1.2px 1.2px at 44% 4%,#bdf,transparent),radial-gradient(1px 1px at 78% 6%,#fff,transparent)}
+.wrap{position:relative;padding:30px 40px 0}
+.glass{background:linear-gradient(160deg,#ffffff14,#ffffff05);border:1px solid #ffffff22;border-radius:20px;backdrop-filter:blur(10px);box-shadow:0 20px 50px #00000055,inset 0 1px 0 #ffffff22}
+
+/* header */
+header{display:flex;align-items:center;justify-content:space-between;height:112px}
+.brand{display:flex;align-items:center;gap:20px}
+.logo{position:relative;width:84px;height:84px;border-radius:24px;background:linear-gradient(135deg,#43a1ff,#6a5cff);display:grid;place-items:center;box-shadow:0 0 0 1px #ffffff40 inset,0 0 40px #3d8bff99}
+.logo svg{width:50px;height:50px;color:#fff;stroke-width:3}
+h1{margin:0;font:900 62px/1 'Inter';letter-spacing:-1.5px}
+h1 span{background:linear-gradient(90deg,#38e1ff,#7f8bff 55%,#c58bff);-webkit-background-clip:text;color:transparent}
+.sub{margin:10px 0 0;display:flex;align-items:center;gap:14px;font-size:26px;font-weight:800}
+.sub i{font-style:normal;font:700 15px 'Inter';letter-spacing:2px;color:var(--cyan);padding:4px 12px;border-radius:999px;border:1px solid #38e1ff66;background:#38e1ff12}
+.hr{display:flex;flex-direction:column;align-items:flex-end;gap:12px}
+.tag{font-size:21px;font-weight:700;color:#cfe0ff;text-align:right;line-height:1.4}
+.tag b{color:#fff;background:linear-gradient(90deg,#38e1ff,#9b7bff);-webkit-background-clip:text;color:transparent}
+.chips{display:flex;gap:8px}
+.chips span{display:inline-flex;align-items:center;gap:7px;padding:6px 14px;border-radius:999px;font:700 14px 'Inter','Noto Sans Thai';border:1px solid #ffffff2a;background:#ffffff0d}
+.chips svg{width:16px;height:16px;color:var(--cyan)}
+
+/* middle */
+.mid{display:grid;grid-template-columns:380px 1fr 380px;gap:22px;height:600px;margin-top:14px}
+.ptitle{display:flex;align-items:center;gap:10px;margin:0 0 4px;font-size:20px;font-weight:800}
+.ptitle svg{width:22px;height:22px;color:var(--cyan)}
+.pcap{margin:0;font-size:13.5px;color:var(--muted);line-height:1.45}
+
+/* integration network */
+.net{padding:18px 18px 14px;display:flex;flex-direction:column}
+.netsvg{position:relative;flex:1;margin-top:6px}
+.netsvg svg.lines{position:absolute;inset:0;width:100%;height:100%}
+.core{position:absolute;left:50%;top:50%;width:112px;height:112px;margin:-56px 0 0 -56px;border-radius:50%;display:grid;place-items:center;text-align:center;
+ background:radial-gradient(circle at 35% 30%,#4fb0ff,#4b3fd8);box-shadow:0 0 0 8px #3d8bff22,0 0 0 18px #3d8bff10,0 0 50px #3d8bffaa}
+.core svg{width:32px;height:32px;color:#fff}
+.core b{display:block;font:800 12.5px/1.15 'Inter';color:#fff;margin-top:2px}
+.sat{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:4px;width:110px;text-align:center}
+.sat i{width:44px;height:44px;border-radius:14px;display:grid;place-items:center;background:#0b1730;border:1px solid var(--c);box-shadow:0 0 18px color-mix(in srgb,var(--c) 55%,transparent);color:var(--c)}
+.sat i svg{width:22px;height:22px}
+.sat span{font-size:12.5px;font-weight:700;line-height:1.2;color:#dbe7ff}
+.netfoot{display:flex;flex-direction:column;gap:6px;margin-top:6px}
+.netfoot div{display:flex;align-items:center;gap:8px;font-size:13px;color:#c8d6ee}
+.netfoot svg{width:16px;height:16px;color:var(--green);flex:0 0 auto}
+
+/* hero */
+.hero{position:relative}
+.stage{position:absolute;left:50%;top:40px;width:860px;height:540px;margin-left:-430px;perspective:1600px}
+.holo{position:absolute;inset:0;transform:rotateX(16deg) rotateZ(-1deg);transform-origin:50% 100%;border-radius:18px;padding:8px;
+ background:linear-gradient(135deg,#38e1ff,#7b6bff 50%,#ff6fb1);box-shadow:0 0 60px #38e1ff55,0 40px 80px #000a}
+.holo .crop{width:100%;height:100%;border-radius:12px;background:url(../screenshots/02-map-department.png) no-repeat;background-size:168% auto;background-position:46% 58%}
+.holo::after{content:'';position:absolute;inset:8px;border-radius:12px;background:linear-gradient(180deg,transparent 60%,#050c1d66);pointer-events:none}
+.ring{position:absolute;left:50%;bottom:-36px;width:980px;height:150px;margin-left:-490px;border-radius:50%;border:2px solid #38e1ff55;box-shadow:0 0 40px #38e1ff44,inset 0 0 40px #38e1ff33}
+.ring.r2{width:1100px;margin-left:-550px;bottom:-60px;height:190px;border-color:#9b7bff33;box-shadow:none}
+.live{position:absolute;left:50%;top:-4px;transform:translateX(-50%);display:flex;align-items:center;gap:8px;padding:6px 16px;border-radius:999px;font:800 14px 'Inter','Noto Sans Thai';background:#3ef0a61a;border:1px solid #3ef0a688;color:var(--green);z-index:3}
+.live b{width:9px;height:9px;border-radius:50%;background:var(--green);box-shadow:0 0 0 4px #3ef0a633,0 0 12px var(--green)}
+.node{position:absolute;z-index:2;display:flex;align-items:center;gap:11px;padding:9px 15px 9px 9px;border-radius:16px;white-space:nowrap;
+ background:linear-gradient(160deg,#122651f2,#0b1730f2);border:1px solid #ffffff2e;box-shadow:0 14px 34px #000a,0 0 24px color-mix(in srgb,var(--c) 30%,transparent)}
+.node i{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;color:#fff;background:linear-gradient(135deg,color-mix(in srgb,var(--c) 75%,#fff),var(--c))}
+.node i svg{width:21px;height:21px}
+.node b{display:block;font-size:16px;font-weight:800;line-height:1.2}
+.node small{display:block;font-size:12.5px;color:var(--muted)}
+.n1{left:-6px;top:60px}.n2{right:-6px;top:52px}.n3{left:-14px;top:250px}.n4{right:120px;top:236px}.n5{left:40px;top:470px}.n6{right:210px;top:470px}
+.phone{position:absolute;right:-8px;top:270px;z-index:3;width:150px;height:300px;border-radius:26px;padding:7px;background:linear-gradient(135deg,#38e1ff,#9b7bff);box-shadow:0 0 36px #38e1ff66,0 24px 50px #000c}
+.phone img{width:100%;height:100%;object-fit:cover;object-position:top;border-radius:20px;display:block}
+
+/* personas */
+.ppl{display:flex;flex-direction:column;gap:14px}
+.persona{padding:15px 16px;flex:1;display:flex;flex-direction:column;gap:8px}
+.persona h4{display:flex;align-items:center;gap:10px;margin:0;font-size:18px;font-weight:800}
+.persona h4 i{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;background:color-mix(in srgb,var(--c) 22%,transparent);border:1px solid color-mix(in srgb,var(--c) 70%,transparent);color:var(--c)}
+.persona h4 i svg{width:20px;height:20px}
+.persona ul{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:4px}
+.persona li{display:flex;gap:8px;font-size:13.8px;line-height:1.4;color:#d4e1f7}
+.persona li svg{flex:0 0 auto;width:15px;height:15px;margin-top:3px;color:var(--c)}
+
+/* roadmap */
+.road{position:relative;display:grid;grid-template-columns:repeat(4,1fr);gap:18px;margin-top:24px}
+.road::before{content:'';position:absolute;left:30px;right:30px;top:21px;height:3px;border-radius:2px;background:linear-gradient(90deg,var(--green),var(--cyan) 30%,var(--violet) 65%,var(--pink));opacity:.75}
+.phase{position:relative;padding:52px 18px 16px}
+.pdot{position:absolute;left:18px;top:8px;display:flex;align-items:center;gap:10px}
+.pdot b{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;font:900 14px 'Inter';color:#04101f;background:var(--c);box-shadow:0 0 0 5px color-mix(in srgb,var(--c) 25%,transparent),0 0 20px var(--c)}
+.pdot span{font:800 13px 'Inter','Noto Sans Thai';letter-spacing:.5px;color:var(--c);padding:3px 10px;border-radius:999px;border:1px solid color-mix(in srgb,var(--c) 55%,transparent);background:#050c1dcc}
+.phase h3{margin:0 0 10px;font-size:20px;font-weight:800;line-height:1.25}
+.phase h3 small{display:block;font-size:13px;font-weight:600;color:var(--muted);margin-top:2px}
+.mods{display:flex;flex-direction:column;gap:8px}
+.mod{display:flex;align-items:center;gap:10px;font-size:15px;font-weight:600;color:#e2ebfb}
+.mod i{flex:0 0 auto;width:30px;height:30px;border-radius:9px;display:grid;place-items:center;color:var(--c);background:color-mix(in srgb,var(--c) 15%,transparent);border:1px solid color-mix(in srgb,var(--c) 45%,transparent)}
+.mod i svg{width:16px;height:16px}
+.phase.now{border-color:#3ef0a666;box-shadow:0 0 0 1px #3ef0a633,0 0 40px #3ef0a622,0 20px 50px #00000055}
+</style>
+</head>
+<body>
+<div class="stars"></div><div class="floor"></div>
+<div class="wrap">
+ <header>
+  <div class="brand">
+   <div class="logo"><i data-lucide="plus"></i></div>
+   <div>
+    <h1>Hospital <span>Digital Twin</span></h1>
+    <p class="sub">แพลตฟอร์มโรงพยาบาลอัจฉริยะ <i>SMART HOSPITAL PLATFORM</i></p>
+   </div>
+  </div>
+  <div class="hr">
+   <div class="tag">เชื่อมทุกระบบ ทุกคน ทุกจุดบริการ<br><b>ลดภาระบุคลากร · สะดวกและรวดเร็วสำหรับผู้รับบริการ</b></div>
+   <div class="chips"><span><i data-lucide="orbit"></i>3D Digital Twin</span><span><i data-lucide="sparkles"></i>AI ทุกขั้นตอน</span><span><i data-lucide="cable"></i>เชื่อมต่อทุกระบบ</span><span><i data-lucide="shield-check"></i>ปลอดภัย · ตรวจสอบสิทธิ์</span></div>
+  </div>
+ </header>
+
+ <section class="mid">
+  <!-- integrations -->
+  <div class="glass net">
+   <p class="ptitle"><i data-lucide="network"></i>เชื่อมต่อทุกระบบในโรงพยาบาล</p>
+   <p class="pcap">ศูนย์กลางข้อมูลเดียว ทุกระบบคุยกันได้ ลดการกรอกซ้ำและงานเอกสาร</p>
+   <div class="netsvg">
+    <svg class="lines" viewBox="0 0 344 330" preserveAspectRatio="none">
+     <defs><linearGradient id="lg" x1="0" x2="1"><stop offset="0" stop-color="#38e1ff" stop-opacity=".1"/><stop offset=".5" stop-color="#38e1ff" stop-opacity=".7"/><stop offset="1" stop-color="#9b7bff" stop-opacity=".1"/></linearGradient></defs>
+     <g stroke="url(#lg)" stroke-width="1.6" fill="none" stroke-dasharray="4 5">
+      <line x1="172" y1="165" x2="172" y2="30"/><line x1="172" y1="165" x2="290" y2="72"/><line x1="172" y1="165" x2="316" y2="165"/><line x1="172" y1="165" x2="290" y2="258"/>
+      <line x1="172" y1="165" x2="172" y2="300"/><line x1="172" y1="165" x2="54" y2="258"/><line x1="172" y1="165" x2="28" y2="165"/><line x1="172" y1="165" x2="54" y2="72"/>
+     </g>
+     <circle cx="172" cy="165" r="118" fill="none" stroke="#38e1ff22" stroke-width="1"/>
+    </svg>
+    <div class="core"><div><i data-lucide="cpu"></i><b>Digital Twin<br>Core</b></div></div>
+    <div class="sat" style="left:50%;top:9%;--c:#38e1ff"><i><i data-lucide="database"></i></i><span>HIS / เวชระเบียน</span></div>
+    <div class="sat" style="left:84%;top:22%;--c:#9b7bff"><i><i data-lucide="microscope"></i></i><span>LIS · PACS</span></div>
+    <div class="sat" style="left:89%;top:50%;--c:#3ef0a6"><i><i data-lucide="badge-check"></i></i><span>ตรวจสอบสิทธิ์</span></div>
+    <div class="sat" style="left:84%;top:78%;--c:#ffb547"><i><i data-lucide="pill"></i></i><span>คลังยา · เบิกจ่าย</span></div>
+    <div class="sat" style="left:50%;top:91%;--c:#ff6fb1"><i><i data-lucide="wallet"></i></i><span>การเงิน · เคลม</span></div>
+    <div class="sat" style="left:16%;top:78%;--c:#3ef0a6"><i><i data-lucide="message-circle-heart"></i></i><span>LINE OA</span></div>
+    <div class="sat" style="left:11%;top:50%;--c:#38e1ff"><i><i data-lucide="monitor-smartphone"></i></i><span>Kiosk · จอ · IoT</span></div>
+    <div class="sat" style="left:16%;top:22%;--c:#9b7bff"><i><i data-lucide="calendar-days"></i></i><span>ตารางเวร · HR</span></div>
+   </div>
+   <div class="netfoot">
+    <div><i data-lucide="fingerprint"></i>ยืนยันตัวตนและกำหนดสิทธิ์การเข้าถึงทุกระดับ</div>
+    <div><i data-lucide="shield-check"></i>ข้อมูลส่วนบุคคลปลอดภัย · บันทึกทุกการใช้งาน</div>
+   </div>
+  </div>
+
+  <!-- hero -->
+  <div class="hero">
+   <div class="live"><b></b>เฟส 1 ใช้งานได้แล้ว · Digital Twin เรียลไทม์</div>
+   <div class="ring r2"></div><div class="ring"></div>
+   <div class="stage"><div class="holo"><div class="crop"></div></div></div>
+   <div class="phone"><img src="../screenshots/11-patient-phone.png" alt=""></div>
+   <div class="node n1" style="--c:#3d8bff"><i><i data-lucide="orbit"></i></i><span><b>แผนที่ 3D เรียลไทม์</b><small>เห็นทุกตึก ทุกชั้น ทุกคิว</small></span></div>
+   <div class="node n2" style="--c:#9b7bff"><i><i data-lucide="sparkles"></i></i><span><b>AI กระจายคิวอัตโนมัติ</b><small>ลดเวลารอ ไม่เพิ่มคน</small></span></div>
+   <div class="node n3" style="--c:#38e1ff"><i><i data-lucide="waypoints"></i></i><span><b>ย้อนดูเส้นทางผู้ป่วย</b><small>ทุกขั้นตอน บนแผนที่ 3D</small></span></div>
+   <div class="node n4" style="--c:#ff6fb1"><i><i data-lucide="qr-code"></i></i><span><b>ผู้รับบริการผ่าน QR</b><small>รู้คิว · นำทาง · แจ้งเตือน</small></span></div>
+   <div class="node n5" style="--c:#3ef0a6"><i><i data-lucide="radar"></i></i><span><b>ศูนย์บัญชาการ AI</b><small>พยากรณ์ · เตือน · แนะนำ</small></span></div>
+   <div class="node n6" style="--c:#ffb547"><i><i data-lucide="monitor"></i></i><span><b>จอแสดงคิวอัจฉริยะ</b><small>ทุกแผนก ทุกห้อง</small></span></div>
+  </div>
+
+  <!-- personas -->
+  <div class="ppl">
+   <div class="glass persona" style="--c:#38e1ff"><h4><i><i data-lucide="user-round"></i></i>ผู้รับบริการ</h4><ul>
+    <li><i data-lucide="check"></i>จองคิว · นัดแพทย์ออนไลน์ ผ่าน LINE</li>
+    <li><i data-lucide="check"></i>สแกน QR ทั่วโรงพยาบาล รู้คิวและนำทางทุกจุด</li>
+    <li><i data-lucide="check"></i>ปรึกษาแพทย์ทางวิดีโอคอล ไม่ต้องเดินทาง</li>
+    <li><i data-lucide="check"></i>แจ้งเตือนทุกขั้นตอน ไม่ต้องนั่งเฝ้าหน้าห้อง</li></ul></div>
+   <div class="glass persona" style="--c:#3ef0a6"><h4><i><i data-lucide="stethoscope"></i></i>แพทย์ · พยาบาล</h4><ul>
+    <li><i data-lucide="check"></i>AI ฟังและช่วยบันทึกเวชระเบียน</li>
+    <li><i data-lucide="check"></i>AI ช่วยร่างแผนการรักษาและเอกสาร (แพทย์ยืนยัน)</li>
+    <li><i data-lucide="check"></i>จัดตารางเวรอัจฉริยะ ยุติธรรม ไม่ชนกัน</li>
+    <li><i data-lucide="check"></i>เห็นคิว ผลแล็บ และนัดของคนไข้ในที่เดียว</li></ul></div>
+   <div class="glass persona" style="--c:#9b7bff"><h4><i><i data-lucide="chart-no-axes-combined"></i></i>ผู้บริหาร · เภสัช · การเงิน</h4><ul>
+    <li><i data-lucide="check"></i>เห็นภาพรวมทั้งโรงพยาบาลแบบเรียลไทม์</li>
+    <li><i data-lucide="check"></i>คลังยาและเบิกจ่ายยาอัจฉริยะ</li>
+    <li><i data-lucide="check"></i>ตรวจสอบสิทธิ์และเบิกจ่ายอัตโนมัติ</li>
+    <li><i data-lucide="check"></i>AI พยากรณ์และแนะนำการจัดสรรทรัพยากร</li></ul></div>
+  </div>
+ </section>
+
+ <!-- roadmap -->
+ <section class="road">
+  <div class="glass phase now" style="--c:#3ef0a6"><div class="pdot"><b>1</b><span>ใช้งานได้แล้ว</span></div>
+   <h3>Digital Twin &amp; คิวอัจฉริยะ<small>เห็นทั้งโรงพยาบาลแบบเรียลไทม์</small></h3>
+   <div class="mods">
+    <div class="mod"><i><i data-lucide="orbit"></i></i>แผนที่ 3D · ย้อนดูเส้นทางผู้ป่วย</div>
+    <div class="mod"><i><i data-lucide="list-ordered"></i></i>คิวอัจฉริยะ + AI กระจายคิว</div>
+    <div class="mod"><i><i data-lucide="monitor-smartphone"></i></i>จอแสดงคิว · หน้าผู้รับบริการ QR</div>
+    <div class="mod"><i><i data-lucide="radar"></i></i>ศูนย์บัญชาการ AI</div>
+   </div></div>
+  <div class="glass phase" style="--c:#38e1ff"><div class="pdot"><b>2</b><span>เฟสถัดไป</span></div>
+   <h3>เชื่อมต่อผู้รับบริการ<small>สะดวกตั้งแต่ก่อนมาโรงพยาบาล</small></h3>
+   <div class="mods">
+    <div class="mod"><i><i data-lucide="calendar-check"></i></i>จองคิวออนไลน์ · นัดแพทย์</div>
+    <div class="mod"><i><i data-lucide="message-circle-heart"></i></i>ใช้งานทุกอย่างผ่าน LINE</div>
+    <div class="mod"><i><i data-lucide="navigation"></i></i>QR นำทางทั่วโรงพยาบาล · ตึก วอร์ด</div>
+    <div class="mod"><i><i data-lucide="badge-check"></i></i>ตรวจสอบสิทธิ์การรักษาอัตโนมัติ</div>
+   </div></div>
+  <div class="glass phase" style="--c:#9b7bff"><div class="pdot"><b>3</b><span>เฟสถัดไป</span></div>
+   <h3>AI ลดภาระบุคลากร<small>คืนเวลาให้แพทย์และพยาบาล</small></h3>
+   <div class="mods">
+    <div class="mod"><i><i data-lucide="video"></i></i>ปรึกษาแพทย์ทางวิดีโอคอล</div>
+    <div class="mod"><i><i data-lucide="audio-lines"></i></i>AI ช่วยบันทึกเวชระเบียน</div>
+    <div class="mod"><i><i data-lucide="clipboard-plus"></i></i>AI ช่วยร่างแผนการรักษา · เอกสาร</div>
+    <div class="mod"><i><i data-lucide="calendar-days"></i></i>จัดตารางเวรอัจฉริยะ</div>
+   </div></div>
+  <div class="glass phase" style="--c:#ff6fb1"><div class="pdot"><b>4</b><span>วิสัยทัศน์</span></div>
+   <h3>โรงพยาบาลอัจฉริยะเต็มรูปแบบ<small>ทุกระบบเชื่อมกัน ทุกอย่างอัจฉริยะ</small></h3>
+   <div class="mods">
+    <div class="mod"><i><i data-lucide="cable"></i></i>เชื่อม HIS · LIS · PACS · การเงิน</div>
+    <div class="mod"><i><i data-lucide="package-check"></i></i>คลังยาและเบิกจ่ายยาอัจฉริยะ</div>
+    <div class="mod"><i><i data-lucide="file-text"></i></i>เอกสารอัจฉริยะ ไร้กระดาษ</div>
+    <div class="mod"><i><i data-lucide="chart-no-axes-combined"></i></i>วิเคราะห์และพยากรณ์ทั้งองค์กร</div>
+   </div></div>
+ </section>
+</div>
+<script>lucide.createIcons({attrs:{'stroke-width':2.1}});</script>
+</body>
+</html>

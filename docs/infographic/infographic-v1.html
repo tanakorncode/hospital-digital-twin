@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<title>Hospital Digital Twin — Infographic</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700;800;900&family=Inter:wght@600;700;800;900&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
+<style>
+:root{--navy:#0f2340;--blue:#1677ff;--ink:#1e2f47;--muted:#5b6f86;--line:#e3eaf3}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{width:1920px;height:1080px;overflow:hidden;font-family:'Noto Sans Thai',sans-serif;color:var(--ink);
+ background:radial-gradient(900px 520px at 88% -8%,#e9e2ff 0,transparent 60%),radial-gradient(700px 500px at -5% 105%,#dff1ff 0,transparent 60%),#f3f6fb}
+/* faint isometric grid */
+body::before{content:'';position:absolute;inset:0;opacity:.35;pointer-events:none;
+ background-image:linear-gradient(30deg,#dbe4ef 1px,transparent 1px),linear-gradient(150deg,#dbe4ef 1px,transparent 1px);background-size:64px 37px}
+.wrap{position:relative;padding:34px 40px 0}
+
+/* header */
+header{display:flex;align-items:flex-end;justify-content:space-between;height:118px}
+.brand{display:flex;align-items:center;gap:20px}
+.logo{width:86px;height:86px;border-radius:24px;background:linear-gradient(135deg,#3b8bff,#1462e6);display:grid;place-items:center;box-shadow:0 14px 30px #1677ff40}
+.logo svg{width:52px;height:52px;color:#fff;stroke-width:3}
+h1{margin:0;font:900 66px/1 'Inter',sans-serif;letter-spacing:-1.5px;color:var(--navy)}
+h1 span{background:linear-gradient(90deg,#1677ff,#5b6cff);-webkit-background-clip:text;color:transparent}
+.sub{margin:8px 0 0;font-size:27px;font-weight:800;color:var(--navy)}
+.sub em{font-style:normal;font-weight:500;color:var(--muted);margin-left:14px;font-size:22px}
+.hright{display:flex;flex-direction:column;align-items:flex-end;gap:10px}
+.quote{font-size:21px;font-weight:700;color:#3b4f7a;transform:rotate(-2deg);padding:8px 18px;border-radius:14px;background:#ffffffc0;border:1.5px dashed #b9c6ea}
+.chips{display:flex;gap:8px}
+.chips span{display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:999px;background:#fff;font:700 14px 'Inter','Noto Sans Thai';color:var(--navy);box-shadow:0 4px 12px #0b1d3314}
+.chips svg{width:16px;height:16px;color:var(--blue)}
+
+/* showcase */
+.show{position:relative;display:grid;grid-template-columns:960px 1fr;gap:26px;height:478px;margin-top:16px}
+.monitor{position:relative;width:940px;height:600px;transform-origin:top left}
+.screen{position:relative;border-radius:16px;background:#0d1b2e;padding:10px;box-shadow:0 26px 50px #0b1d3338,0 4px 10px #0b1d3320}
+.screen img{display:block;width:100%;height:100%;object-fit:cover;object-position:top left;border-radius:9px}
+.hero .screen{width:900px;height:466px}
+.hero .screen img{object-position:20% 30%}
+.hero .screen.replay{position:absolute;left:400px;top:356px;width:540px;height:128px;padding:6px;border-radius:14px;border:3px solid #fff}
+.crop{width:100%;height:100%;border-radius:8px;background-repeat:no-repeat;background-color:#0d1b2e}
+.callout{position:absolute;display:flex;align-items:center;gap:12px;padding:10px 16px 10px 10px;border-radius:16px;background:#fff;box-shadow:0 12px 26px #0b1d3326;white-space:nowrap}
+.callout .ic{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;color:#fff}
+.callout .ic svg{width:22px;height:22px}
+.callout b{display:block;font-size:17px;color:var(--navy);line-height:1.2}
+.callout small{display:block;font-size:13px;color:var(--muted)}
+.callout::after{content:'';position:absolute;width:14px;height:14px;background:#fff;transform:rotate(45deg)}
+.c1{left:-6px;top:28px}.c1::after{right:30px;bottom:-6px}
+.c2{left:330px;top:-14px}.c2::after{left:40px;bottom:-6px}
+.c3{left:640px;top:86px}.c3::after{left:30px;bottom:-6px}
+.c4{left:20px;top:356px}.c4::after{right:-6px;top:20px}
+
+.side{display:grid;grid-template-columns:236px 1fr;gap:22px;align-items:start}
+.phone{position:relative;width:236px;height:470px;border-radius:38px;background:#0d1b2e;padding:10px;box-shadow:0 26px 50px #0b1d3340}
+.phone img{width:100%;height:100%;object-fit:cover;object-position:top;border-radius:30px;display:block}
+.phone::before{content:'';position:absolute;top:16px;left:50%;width:70px;height:18px;margin-left:-35px;border-radius:10px;background:#0d1b2e;z-index:1}
+.grid4{display:grid;grid-template-columns:1fr 1fr;gap:16px 16px}
+.mini{display:flex;flex-direction:column;gap:7px}
+.mini .screen{height:178px;padding:6px;border-radius:12px}
+.mini .screen img{border-radius:7px}
+.mini .crop{border-radius:7px}
+.mini.tv .screen{background:#111;border-bottom:8px solid #111}
+.mini span{display:flex;align-items:center;gap:7px;font-size:15px;font-weight:700;color:var(--navy)}
+.mini span i{width:22px;height:22px;border-radius:7px;display:grid;place-items:center;color:#fff}
+.mini span i svg{width:13px;height:13px}
+
+/* feature cards */
+.features{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-top:22px}
+.card{display:flex;gap:14px;padding:14px 16px;border-radius:18px;background:#fff;box-shadow:0 8px 22px #0b1d330f;border:1px solid #edf1f7;height:136px}
+.tile{flex:0 0 auto;width:56px;height:56px;border-radius:16px;display:grid;place-items:center;color:#fff;box-shadow:0 10px 20px var(--sh)}
+.tile svg{width:28px;height:28px}
+.card h3{margin:2px 0 6px;font-size:18.5px;font-weight:800;color:var(--navy);line-height:1.25}
+.card ul{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:3px}
+.card li{position:relative;padding-left:13px;font-size:13.6px;line-height:1.38;color:#3b4d64}
+.card li::before{content:'';position:absolute;left:0;top:8px;width:6px;height:6px;border-radius:50%;background:var(--dot,#1677ff)}
+.prio{display:flex;gap:5px;margin-top:6px}
+.prio span{width:26px;height:26px;border-radius:8px;display:grid;place-items:center}
+.prio svg{width:17px;height:17px}
+
+.g-blue{background:linear-gradient(135deg,#4aa3ff,#1d5fe0);--sh:#1d5fe040;--dot:#1d5fe0}
+.g-cyan{background:linear-gradient(135deg,#38d3e8,#0b8fb3);--sh:#0b8fb340;--dot:#0b8fb3}
+.g-teal{background:linear-gradient(135deg,#34d6a6,#0b9b7d);--sh:#0b9b7d40;--dot:#0b9b7d}
+.g-violet{background:linear-gradient(135deg,#a78bfa,#6d3ae0);--sh:#6d3ae040;--dot:#6d3ae0}
+.g-pink{background:linear-gradient(135deg,#ff8fc0,#e0367f);--sh:#e0367f40;--dot:#e0367f}
+.g-amber{background:linear-gradient(135deg,#ffc35a,#f07a12);--sh:#f07a1240;--dot:#f07a12}
+.g-indigo{background:linear-gradient(135deg,#7f8cff,#3f47d8);--sh:#3f47d840;--dot:#3f47d8}
+.g-rose{background:linear-gradient(135deg,#ff9a8b,#e2483d);--sh:#e2483d40;--dot:#e2483d}
+.g-green{background:linear-gradient(135deg,#6ee08a,#1f9d4c);--sh:#1f9d4c40;--dot:#1f9d4c}
+.g-slate{background:linear-gradient(135deg,#8ea2c0,#4a5f80);--sh:#4a5f8040;--dot:#4a5f80}
+.card .dotc{--dot:inherit}
+
+/* bottom */
+.bottom{display:grid;grid-template-columns:1080px 1fr;gap:14px;margin-top:16px}
+.journey{display:flex;align-items:center;gap:14px;padding:12px 20px;border-radius:18px;background:#fff;box-shadow:0 8px 22px #0b1d330f;border:1px solid #edf1f7;height:104px}
+.jhead{flex:0 0 170px}
+.jhead b{display:block;font-size:19px;font-weight:800;color:var(--navy);line-height:1.2}
+.jhead small{display:block;font:600 13px 'Inter';color:var(--blue)}
+.jhead em{display:block;font-style:normal;font-size:12.5px;color:var(--muted);margin-top:3px;line-height:1.35}
+.steps{flex:1;display:flex;align-items:center;justify-content:space-between}
+.step{position:relative;display:flex;flex-direction:column;align-items:center;gap:4px;width:88px}
+.step .ci{position:relative;width:52px;height:52px;border-radius:50%;display:grid;place-items:center;color:#fff}
+.step .ci svg{width:25px;height:25px}
+.step .ci b{position:absolute;top:-6px;left:-6px;width:21px;height:21px;border-radius:50%;background:var(--navy);color:#fff;font:800 12px 'Inter';display:grid;place-items:center;border:2px solid #fff}
+.step span{font-size:13.5px;font-weight:700;color:var(--navy);white-space:nowrap}
+.arrow{color:#9db4d6;font-weight:900;font-size:18px;margin-top:-20px}
+.values{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.value{display:flex;align-items:center;gap:10px;padding:12px 12px;border-radius:18px;background:#fff;box-shadow:0 8px 22px #0b1d330f;border:1px solid #edf1f7}
+.value .tile{width:46px;height:46px;border-radius:50%}
+.value .tile svg{width:25px;height:25px}
+.value b{display:block;white-space:nowrap;font-size:15.5px;font-weight:800;color:var(--navy);line-height:1.25}
+.value small{display:block;font-size:12.5px;color:var(--muted);line-height:1.35;margin-top:2px}
+</style>
+</head>
+<body>
+<div class="wrap">
+ <header>
+  <div class="brand">
+   <div class="logo"><i data-lucide="plus"></i></div>
+   <div>
+    <h1>Hospital <span>Digital Twin</span></h1>
+    <p class="sub">ระบบคิวและบริหารโรงพยาบาลอัจฉริยะ<em>เห็นทั้งโรงพยาบาล แบบเรียลไทม์ บนแผนที่ 3D</em></p>
+   </div>
+  </div>
+  <div class="hright">
+   <div class="quote">“บริการดีขึ้น · คนไข้รอไม่นาน · บริหารได้จริง”</div>
+   <div class="chips"><span><i data-lucide="radio"></i>Real-time</span><span><i data-lucide="box"></i>3D Digital Twin</span><span><i data-lucide="sparkles"></i>AI-assisted</span><span><i data-lucide="shield-check"></i>Privacy-first</span></div>
+  </div>
+ </header>
+
+ <section class="show">
+  <div class="hero" style="position:relative">
+   <div class="screen"><img src="../screenshots/02-map-department.png" alt=""></div>
+   <div class="screen replay"><div class="crop" style="background-image:url(../screenshots/04-journey-replay.png);background-size:150% auto;background-position:4% 99%"></div></div>
+   <div class="callout c1"><span class="ic g-blue"><i data-lucide="map"></i></span><span><b>แผนที่ 3D เรียลไทม์</b><small>โรงพยาบาล → อาคาร → ชั้น → แผนก · 2D / 3D</small></span></div>
+   <div class="callout c2"><span class="ic g-cyan"><i data-lucide="scan-search"></i></span><span><b>ค้นหาแผนก / แพทย์ / คิว</b><small>พาไปยังจุดนั้นบนแผนที่ทันที</small></span></div>
+   <div class="callout c3"><span class="ic g-indigo"><i data-lucide="tags"></i></span><span><b>เลือกป้ายที่จะแสดง</b><small>แผนที่สะอาด ไม่รก</small></span></div>
+   <div class="callout c4"><span class="ic g-pink"><i data-lucide="route"></i></span><span><b>ย้อนดูเส้นทางคนไข้</b><small>เล่นย้อนหลังทุกขั้นตอน บนแผนที่ 3D</small></span></div>
+  </div>
+  <div class="side">
+   <div class="phone"><img src="../screenshots/11-patient-phone.png" alt=""></div>
+   <div class="grid4">
+    <div class="mini tv"><div class="screen"><img src="../screenshots/09-tv-department.png" alt=""></div><span><i class="g-amber"><i data-lucide="monitor"></i></i>จอเรียกคิวในพื้นที่รอ</span></div>
+    <div class="mini"><div class="screen"><div class="crop" style="background-image:url(../screenshots/07-command-center.png);background-size:150% auto;background-position:62% 22%"></div></div><span><i class="g-pink"><i data-lucide="brain-circuit"></i></i>ศูนย์อัจฉริยะ AI</span></div>
+    <div class="mini"><div class="screen"><div class="crop" style="background-image:url(../screenshots/06-queue-overview.png);background-size:175% auto;background-position:30% 62%"></div></div><span><i class="g-teal"><i data-lucide="list-ordered"></i></i>ภาพรวมคิว + ผังชั้น</span></div>
+    <div class="mini"><div class="screen"><div class="crop" style="background-image:url(../screenshots/08-settings.png);background-size:170% auto;background-position:62% 28%"></div></div><span><i class="g-slate"><i data-lucide="settings"></i></i>ตั้งค่าแผนก / จุดบริการ</span></div>
+   </div>
+  </div>
+ </section>
+
+ <section class="features">
+  <div class="card"><span class="tile g-blue"><i data-lucide="map-pinned"></i></span><div><h3>แผนที่ 3D เรียลไทม์</h3><ul class="g-blue" style="background:none"><li>โรงพยาบาล → อาคาร → ชั้น → แผนก</li><li>ความหนาแน่นรายชั่วโมง</li><li>เลือกป้ายที่จะแสดงได้</li></ul></div></div>
+  <div class="card"><span class="tile g-cyan"><i data-lucide="scan-search"></i></span><div><h3>ค้นหาอัจฉริยะ</h3><ul style="--dot:#0b8fb3"><li>แผนก · ชื่อแพทย์ · เลขคิว · HN</li><li>รู้ว่าแพทย์ออกตรวจห้องไหน ณ เวลานั้น</li><li>พาไปที่จุดนั้นบนแผนที่ทันที</li></ul></div></div>
+  <div class="card"><span class="tile g-pink"><i data-lucide="route"></i></span><div><h3>ย้อนดูเส้นทางคนไข้</h3><ul style="--dot:#e0367f"><li>เล่นย้อนหลังตั้งแต่มาถึงจนกลับบ้าน</li><li>กล้องตามข้ามตึก / ชั้นอัตโนมัติ</li><li>บอกเวลารอและเวลาทุกจุด</li></ul></div></div>
+  <div class="card"><span class="tile g-teal"><i data-lucide="list-ordered"></i></span><div><h3>ระบบคิวเจ้าหน้าที่</h3><ul style="--dot:#0b9b7d"><li>เรียก · พัก · ย้าย · ย้อนกลับได้</li><li>เสียงเรียกคิวอัตโนมัติ</li><li>ย้ายคิวไม่ให้คนไข้เดินไปกลับ</li></ul></div></div>
+  <div class="card"><span class="tile g-amber"><i data-lucide="heart-handshake"></i></span><div><h3>คิวพิเศษ</h3><ul style="--dot:#f07a12"><li>แทรกคิวอัตโนมัติทุก N คิว</li></ul>
+   <div class="prio">
+    <span style="color:#b45309;background:#fff1dc" title="พระภิกษุ"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="4.6" r="2.5"/><path d="M6.5 21c.4-6.6 2.2-10.4 5.5-10.4s5.1 3.8 5.5 10.4"/><path d="M8.3 12.6l5 4.4"/><path d="M8.8 16.2h6.4a3.2 3.2 0 0 1-6.4 0z" fill="currentColor"/></svg></span>
+    <span style="color:#6d28d9;background:#f1eafe" title="ผู้สูงอายุ"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="4.2" r="2.2"/><path d="M10.5 7.5c-1.6 1.3-2 3.5-1.2 5.5"/><path d="M9.3 13L7.5 21"/><path d="M9.3 13l3.2 3 .5 5"/><path d="M10.2 9.6l3.8 2"/><path d="M16 12v9"/><path d="M14 12.3a1.6 1.6 0 0 1 3.1-.6"/></svg></span>
+    <span style="color:#1d4ed8;background:#e6efff" title="ใช้รถเข็น"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="3.8" r="2"/><path d="M11 6.8v6h5l2.2 6.2"/><path d="M11 9.6h4"/><path d="M8.4 10.5a5.3 5.3 0 1 0 7.4 7"/></svg></span>
+    <span style="color:#0369a1;background:#e0f2fe" title="ผู้พิการ"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="6.6" r="1.5"/><path d="M7.5 9.6l4.5 1 4.5-1"/><path d="M12 10.6v3.4l-2.4 4.4"/><path d="M12 14l2.4 4.4"/></svg></span>
+    <span style="color:#be185d;background:#fde7f1" title="หญิงตั้งครรภ์"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="3.8" r="2.1"/><path d="M10.4 6.8c-1.2 1.5-1.4 3.6-.8 5.4"/><path d="M10.6 9.4c3.6.2 5.7 2.6 5 5.4-.4 1.7-1.8 2.6-3.8 2.7"/><path d="M10 12.4L9.5 21"/><path d="M11.8 17.5l.7 3.5"/></svg></span>
+   </div>
+   <ul style="--dot:#f07a12;margin-top:5px"><li>พระ · ผู้สูงอายุ · รถเข็น · ผู้พิการ · ตั้งครรภ์</li></ul></div></div>
+  <div class="card"><span class="tile g-indigo"><i data-lucide="wand-sparkles"></i></span><div><h3>ผู้ช่วยกระจายคิว</h3><ul style="--dot:#3f47d8"><li>เพดานคิวต่อห้อง / ช่อง</li><li>เกลี่ยคิวในแผนกเดียวกัน</li><li>แนะนำหรืออัตโนมัติ · คนตัดสินใจได้</li></ul></div></div>
+  <div class="card"><span class="tile g-violet"><i data-lucide="qr-code"></i></span><div><h3>หน้าคนไข้ผ่าน QR</h3><ul style="--dot:#6d3ae0"><li>คิวก่อนหน้า + เวลาโดยประมาณ</li><li>แผนที่นำทาง · แจ้งเตือนแบบ LINE</li><li>ลิงก์ญาติ · ขอรถเข็น / ผู้ช่วย</li></ul></div></div>
+  <div class="card"><span class="tile g-rose"><i data-lucide="monitor"></i></span><div><h3>จอแสดงคิว</h3><ul style="--dot:#e2483d"><li>จอรวมชั้น · จอแผนก · จอหน้าห้อง</li><li>เรียกคิว = ตัวเลขใหญ่ กะพริบ</li><li>แสดงเฉพาะเลขคิว ไม่มีชื่อ</li></ul></div></div>
+  <div class="card"><span class="tile g-pink" style="background:linear-gradient(135deg,#f472b6,#a21caf);--sh:#a21caf40"><i data-lucide="brain-circuit"></i></span><div><h3>ศูนย์อัจฉริยะ AI</h3><ul style="--dot:#a21caf"><li>พยากรณ์จำนวนคนรอ 3 ชม.</li><li>แนะนำโดยไม่เพิ่มคน / อุปกรณ์</li><li>เฝ้าระวังผิดปกติ · สรุปส่งเวร</li></ul></div></div>
+  <div class="card"><span class="tile g-slate"><i data-lucide="settings"></i></span><div><h3>ตั้งค่าง่าย</h3><ul style="--dot:#4a5f80"><li>เปิด–ปิด แผนก / ห้อง / ช่องบริการ</li><li>เพิ่มแผนกใหม่ · เวลาให้บริการ OPD</li><li>โหมดทดสอบ · ประวัติการเปลี่ยน</li></ul></div></div>
+ </section>
+
+ <section class="bottom">
+  <div class="journey">
+   <div class="jhead"><b>เส้นทางผู้ป่วย</b><small>Patient Journey</small><em>ทุกขั้นตอนติดตามได้<br>และย้อนดูบนแผนที่ 3D</em></div>
+   <div class="steps">
+    <div class="step"><span class="ci g-slate"><b>1</b><i data-lucide="ticket"></i></span><span>รับบัตรคิว</span></div><span class="arrow">›</span>
+    <div class="step"><span class="ci g-blue"><b>2</b><i data-lucide="clipboard-list"></i></span><span>ลงทะเบียน</span></div><span class="arrow">›</span>
+    <div class="step"><span class="ci g-teal"><b>3</b><i data-lucide="heart-pulse"></i></span><span>ซักประวัติ</span></div><span class="arrow">›</span>
+    <div class="step"><span class="ci g-violet"><b>4</b><i data-lucide="stethoscope"></i></span><span>พบแพทย์</span></div><span class="arrow">›</span>
+    <div class="step"><span class="ci g-rose"><b>5</b><i data-lucide="droplet"></i></span><span>เจาะเลือด / เอกซเรย์</span></div><span class="arrow">›</span>
+    <div class="step"><span class="ci g-green"><b>6</b><i data-lucide="pill"></i></span><span>รับยา</span></div><span class="arrow">›</span>
+    <div class="step"><span class="ci g-amber"><b>7</b><i data-lucide="wallet"></i></span><span>ชำระเงิน</span></div><span class="arrow">›</span>
+    <div class="step"><span class="ci" style="background:#e6edf6;color:var(--navy)"><i data-lucide="house"></i></span><span>กลับบ้าน</span></div>
+   </div>
+  </div>
+  <div class="values">
+   <div class="value"><span class="tile g-blue"><i data-lucide="clock"></i></span><div><b>ลดเวลารอ</b><small>กระจายคิวได้ทันที<br>คนไข้ไม่ต้องนั่งเฝ้าหน้าห้อง</small></div></div>
+   <div class="value"><span class="tile g-teal"><i data-lucide="users"></i></span><div><b>ไม่เพิ่มภาระเจ้าหน้าที่</b><small>ใช้คนและอุปกรณ์ที่มีอยู่<br>ระบบช่วย คนตัดสินใจ</small></div></div>
+   <div class="value"><span class="tile g-violet"><i data-lucide="shield-check"></i></span><div><b>ปกป้องข้อมูลส่วนบุคคล</b><small>หน้าจอสาธารณะไม่มีชื่อ / HN<br>AI ใช้เฉพาะข้อมูลรวม</small></div></div>
+  </div>
+ </section>
+</div>
+<script>lucide.createIcons({attrs:{'stroke-width':2.2}});</script>
+</body>
+</html>

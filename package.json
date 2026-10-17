@@ -1,0 +1,11 @@
+{
+  "name": "hospital-digital-twin",
+  "private": true,
+  "packageManager": "pnpm@10.0.0",
+  "scripts": {
+    "dev": "pnpm --parallel --filter web dev --filter api start:dev"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  }
+}

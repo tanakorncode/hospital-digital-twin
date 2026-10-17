@@ -1,0 +1,13 @@
+import type { NextConfig } from 'next';
+
+// Opened through a tunnel (ngrok) or from another device, the browser reaches the API through this same origin
+// (app/sio/route.ts relays socket.io), so one public URL serves both the pages and the live queue.
+const nextConfig: NextConfig = {
+  // `pnpm share` builds into its own folder so it can run next to `next dev` without touching .next.
+  distDir: process.env.NEXT_DIST_DIR ?? '.next',
+  // Dev server: allow pages to be opened through these tunnel hosts.
+  allowedDevOrigins: ['*.ngrok-free.dev', '*.ngrok-free.app', '*.ngrok.app', '*.ngrok.io'],
+  // socket.io asks for "/sio/?…": keep the trailing slash instead of redirecting it away.
+  skipTrailingSlashRedirect: true,
+};
+export default nextConfig;
