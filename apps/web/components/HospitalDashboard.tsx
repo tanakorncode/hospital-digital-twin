@@ -479,7 +479,7 @@ export default function HospitalDashboard() {
    {activeNav==='การแจ้งเตือน' && <AlertsPage alerts={opsAlerts} rules={rules} onRules={saveRules} acks={acks} onAck={ackAlert} minute={minute} timeNote={timeNote} onOpenPatient={openOnMap}/>}
    {activeNav==='ผังโรงพยาบาล' && <CapacityPage patients={patients} minute={minute} timeNote={timeNote} onOpenPatient={openOnMap}/>}
    {activeNav==='ตั้งค่า' && <SettingsPage settings={queueSync.settings} save={queueSync.saveSettings} events={queueSync.events} minute={minute} timeNote={timeNote} focusGroup={settingsFocus}
-     user={queueSync.online ? queueSync.user : null} listUsers={queueSync.listUsers} saveUser={queueSync.saveUser}/>}
+     user={queueSync.online ? queueSync.user : null} listUsers={queueSync.listUsers} saveUser={queueSync.saveUser} sync={queueSync}/>}
 
    {onMap && <>
    <div className="viewBar">

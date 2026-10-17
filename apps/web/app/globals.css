@@ -1471,6 +1471,7 @@ kbd{margin-left:6px;padding:1px 6px;border-radius:5px;background:#ffffff33;borde
 .setIco.i-groups{background:linear-gradient(135deg,#5eead4,#0d9488);--sh:#0d948840}
 .setIco.i-history{background:linear-gradient(135deg,#cbd5e1,#64748b);--sh:#64748b40}
 .setIco.i-test{background:linear-gradient(135deg,#fcd34d,#ea580c);--sh:#ea580c40}
+.setIco.i-booking{background:linear-gradient(135deg,#f9a8d4,#be185d);--sh:#be185d40}
 .setIco.i-data{background:linear-gradient(135deg,#6ee7b7,#047857);--sh:#04785740}
 .setPane{position:relative;display:flex;flex-direction:column;gap:12px;min-width:0}
 .setToast{margin:0;padding:10px 14px;border-radius:12px;background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46;font-size:13.5px;font-weight:600}
@@ -1932,3 +1933,39 @@ kbd{margin-left:6px;padding:1px 6px;border-radius:5px;background:#ffffff33;borde
 .sendOnBtns button:disabled{opacity:.5;cursor:default}
 .sendOnBtns button.danger{display:inline-flex;align-items:center;gap:4px;border-color:#fecdd3;color:#be123c}
 @media (max-width:640px){.visitClinics{grid-template-columns:1fr 1fr}}
+
+/* ---- General booking (Phase 2) ---- */
+.bookSwitch{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:12px 14px;border-radius:14px;background:#f5f7fa;border:1.5px solid #dfe6ee}
+.bookSwitch>div{flex:1;min-width:220px;display:flex;flex-direction:column;gap:2px}
+.bookSwitch b{font-size:14.5px;color:#0f2340}
+.bookSwitch small{font-size:12.5px;color:#60738a}
+.bookSwitch.on{background:#ecfdf5;border-color:#6ee7b7}
+.bookSwitch.on b{color:#065f46}
+.numPick{padding:5px 8px;border:1px solid #d5e0ec;border-radius:8px;background:#fff;font:inherit;font-size:12.5px;color:#0f2340}
+.bookRules td{white-space:nowrap}
+.slotPlan,.slotList{display:flex;flex-direction:column;gap:8px;padding-top:6px;border-top:1px solid #eef2f6}
+.slotPlanGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.slotPlanGrid label{display:flex;flex-direction:column;gap:3px;font-size:12px;font-weight:600;color:#4d6074}
+.slotPlanGrid input,.slotPlanGrid select,.slotListHead input,.slotListHead select,.bookBar select,.bookDate input{padding:7px 9px;border:1px solid #d5e0ec;border-radius:8px;background:#fff;font:inherit;font-size:13px;color:#0f2340}
+.slotPlanGrid label.wide{grid-column:span 2}
+.timeRange{display:flex;align-items:center;gap:4px}
+.timeRange input{flex:1;min-width:0}
+.slotListHead{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.slotActs{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.slotCancel{display:inline-flex;align-items:center;gap:4px;flex-wrap:wrap}
+.slotCancel input{min-width:180px;padding:4px 8px;border:1px solid #fecdd3;border-radius:6px;font:inherit;font-size:12px}
+.linkBtn.danger{color:#be123c}
+.dataTable tr.muted td{color:#94a3b8}
+.bookTab{display:flex;flex-direction:column;gap:10px;padding:16px 18px;border-radius:18px;background:#fff;border:1px solid #e8edf4}
+.bookBar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.bookDate{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:#3d5168}
+.bookFind{display:inline-flex;align-items:center;gap:6px;flex:1;min-width:200px;padding:0 8px;border:1px solid #d5e0ec;border-radius:8px;background:#fff;color:#7a8ca0}
+.bookFind input{flex:1;min-width:0;padding:7px 0;border:0;outline:0;font:inherit;font-size:13px;color:#0f2340;background:transparent}
+.bookCode{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.5px}
+.bookState{display:inline-block;padding:1px 8px;border-radius:6px;font-size:11.5px;font-weight:700;background:#eef2f6;color:#4d6074}
+.bookState.s-CONFIRMED{background:#e0f2fe;color:#075985}
+.bookState.s-CHECKED_IN,.bookState.s-CONVERTED_TO_QUEUE{background:#dcfce7;color:#166534}
+.bookState.s-CANCELLED{background:#ffe4e6;color:#9f1239}
+.bookHn{padding:10px 12px;border:1.5px solid #d5e0ec;border-radius:10px;font:inherit;font-size:16px;letter-spacing:.5px;max-width:260px}
+.segBtns button small{margin-left:4px;font-size:11px;color:#0e7a55;font-weight:600}
+@media (max-width:640px){.bookTab{padding:12px}.bookFind{min-width:100%}}
