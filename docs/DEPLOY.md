@@ -59,3 +59,10 @@ git pull && docker compose up -d --build     # data stays on the volume
   `NEXT_PUBLIC_API_URL=https://api.example.org pnpm --filter web build && pnpm --filter web start` behind any reverse proxy (WebSocket upgrade on `/socket.io/`).
 - More than one API server needs a shared database (PostgreSQL) and the socket.io Redis adapter — not needed for one hospital.
 - The API image was built and checked; the web image follows the standard Next.js standalone recipe.
+
+## LINE Official Account (optional)
+Patients can get "ถึงคิวแล้ว" messages in LINE even with the page closed.
+1. In the LINE Developers console create a **Messaging API** channel for the hospital's OA.
+2. `apps/api/.env`: `LINE_CHANNEL_SECRET`, `LINE_CHANNEL_ACCESS_TOKEN` (long-lived), `LINE_OA_ID` (e.g. `@123abcde`), then restart the API.
+3. Webhook URL: `https://<domain>/line/webhook` → **Use webhook: on**; turn off the OA's auto-reply messages.
+4. On the patient page, **แจ้งเตือน → รับแจ้งเตือนทาง LINE** opens the OA chat with a 6-digit code typed in; sending it links that LINE user to the queue until the end of the day. Messages: called / called again, moved to another point, help request taken on. Queue number and place only — no names or HN. "หยุด" in the chat stops it; re-issuing the slip ends it too.

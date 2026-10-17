@@ -7,7 +7,7 @@ import { makeApi } from './helpers';
 const TOKEN = 'test-ingest-token-0123456789';
 function setup() {
   const api = makeApi(), live = new LiveFeedService();
-  const ctl = new IngestController(live, api.queue, api.gateway);
+  const ctl = new IngestController(live, api.queue, api.gateway, api.line);
   return { api, live, ctl };
 }
 const status = (fn: () => unknown) => { try { fn(); return 200; } catch (e) { return (e as { getStatus: () => number }).getStatus(); } };

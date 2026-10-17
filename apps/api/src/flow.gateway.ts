@@ -7,6 +7,7 @@ import { FlowService, FlowUpdate } from './flow.service';
 import { LiveFeedService } from './live-feed.service';
 import { QueueService, type QueueCommand, type SettingsCommand } from './queue.service';
 import { TicketsService } from './tickets.service';
+import { LineService } from './line.service';
 
 // Who may do what. Public screens (TV boards, the patient's QR page) connect without signing in: they receive the
 // queue log, may look up a patient link ('ticket:resolve'), make a family link from a patient link, and send the
@@ -25,7 +26,7 @@ const SIGN_IN = { ok: false, reason: 'กรุณาเข้าสู่ระ
 export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
   @WebSocketServer() server!: Server;
   private unsubscribe?: () => void;
-  constructor(private readonly flowService: FlowService, private readonly liveFeed: LiveFeedService, private readonly queue: QueueService, private readonly auth: AuthService, private readonly tickets: TicketsService) {}
+  constructor(private readonly flowService: FlowService, private readonly liveFeed: LiveFeedService, private readonly queue: QueueService, private readonly auth: AuthService, private readonly tickets: TicketsService, private readonly line: LineService) {}
   // Every connected dashboard receives each live snapshot ('live:update').
   afterInit() {
     this.unsubscribe = this.liveFeed.subscribe((snap) => this.server.emit('live:update', snap));
@@ -38,6 +39,7 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
     const user = this.auth.resolve(client.handshake.auth?.token);
     client.data.user = user;
     client.emit('auth:me', user);
+    client.emit('features', { line: this.line.enabled });
     client.emit('flow:snapshot', this.flowService.snapshot());
     client.emit('live:snapshot', this.liveFeed.snapshot());
     client.emit('queue:events', this.queue.list());
@@ -89,6 +91,12 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
     return this.tickets.family(body?.token ?? '', Number(body?.hours ?? 12));
   }
 
+  // The patient asks for LINE notifications from their own page (a code to send to the hospital's OA).
+  @SubscribeMessage('line:link')
+  lineLink(@MessageBody() body: { token?: string; queue?: string }) {
+    return this.line.startLink(body?.token ?? '', body?.queue ?? '');
+  }
+
   @SubscribeMessage('flow:subscribe')
   subscribe(@ConnectedSocket() client: Socket, @MessageBody() body: { floorId?: string }) {
     client.join(body?.floorId ? `floor:${body.floorId}` : 'campus');
@@ -112,7 +120,7 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
     // The audit trail names the signed-in user (not a name typed on the screen); the assistant's automatic moves stay "ระบบ".
     else cmd = { ...cmd, by: cmd.by === SYSTEM_BY ? SYSTEM_BY : me.name };
     const res = this.queue.apply(cmd);
-    if (res.ok) this.server.emit('queue:event', res.event);
+    if (res.ok) { this.server.emit('queue:event', res.event); void this.line.onQueueEvent(res.event); }
     return res.ok ? { ok: true } : { ok: false, reason: res.reason };
   }
   // Settings: per-group / per-station overrides for supervisors; everything else for administrators.

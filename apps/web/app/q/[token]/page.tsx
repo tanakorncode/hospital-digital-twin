@@ -26,7 +26,8 @@ function QsLoading() {
 function QueueStatusPage() {
   const { token } = useParams<{token:string}>();
   const params = useSearchParams();
-  const { events, send, settings, online, resolveTicket, familyTicket } = useQueueEvents();
+  const { events, send, settings, online, resolveTicket, familyTicket, features, lineLink } = useQueueEvents();
+  const [lineCode,setLineCode] = useState<{code:string; url:string}|null>(null);
   // Who this link belongs to: the API's answer, or — when the API can't be reached (local demo) — the offline demo link.
   const [ticket,setTicket] = useState<{patientId?:string; kind?:'patient'|'family'; expiresAt?:string; error?:string; offline?:boolean}|null>(null);
   useEffect(()=>{
@@ -165,8 +166,14 @@ function QueueStatusPage() {
           {!next && st && st.step.kind!=='leave' && current<steps.length-1 && <p className="muted">ขั้นต่อไปจะแจ้งหลังแพทย์สั่ง เช่น รับยา หรือส่งตรวจเพิ่ม</p>}</>}
         {sheet==='notes' && <>
           {!family && <button className={'qsTool'+(notify?' on':'')} onClick={()=>void enableNotify()}>{notify?<><Bell size={16}/> แจ้งเตือนบนเครื่องนี้เปิดอยู่ · กดเพื่อปิด</>:<><BellOff size={16}/> เปิดการแจ้งเตือนบนเครื่องนี้</>}</button>}
+          {!family && features.line && !ticket.offline && (lineCode
+            ? <div className="qsLine"><b>ส่งรหัสนี้ในแชท LINE ของโรงพยาบาล</b><span className="qsLineCode">{lineCode.code}</span>
+               <a className="qsLineBtn" href={lineCode.url} target="_blank" rel="noreferrer">เปิด LINE อีกครั้ง</a><small>ข้อความพิมพ์ไว้ให้แล้ว กดส่งได้เลย · รหัสใช้ได้ 15 นาที · พิมพ์ "หยุด" ใน LINE เพื่อหยุดแจ้งเตือน</small></div>
+            : <button className="qsLineBtn" onClick={async ()=>{ const r = await lineLink(token,patient.queue);
+                if (r.ok && r.code && r.url) { setLineCode({code:r.code,url:r.url}); window.open(r.url,'_blank','noopener'); } else setToast({key:'line',at:m,title:'เปิดการแจ้งเตือนทาง LINE ไม่สำเร็จ',body:r.reason ?? ''}); }}>
+               <span className="lineIcon">LINE</span> รับแจ้งเตือนทาง LINE (แม้ปิดหน้านี้)</button>)}
           {notes.length ? <ul className="qsNoteList">{notes.slice(0,8).map(n=><li key={n.key}><span className="lineIcon">LINE</span><div><b>{n.title}</b><span>{n.body}</span><small>{fmtMin(n.at)} น.</small></div></li>)}</ul> : <p className="muted">ยังไม่มีการแจ้งเตือน</p>}
-          <small className="muted">ระบบจริงส่งทาง LINE Official Account หรือ SMS แม้ปิดหน้านี้ · ตัวอย่างนี้แจ้งได้เมื่อหน้านี้เปิดอยู่</small></>}
+          <small className="muted">{features.line ? 'ทาง LINE แจ้งเมื่อถึงคิว ย้ายจุด หรือเจ้าหน้าที่รับเรื่อง · บนหน้านี้แจ้งได้เมื่อหน้านี้เปิดอยู่' : 'บนหน้านี้แจ้งได้เมื่อหน้านี้เปิดอยู่ · โรงพยาบาลเปิดใช้การแจ้งเตือนทาง LINE ได้ในการตั้งค่าระบบ'}</small></>}
         {sheet==='help' && <>
           {helpText && <p className={'qsHelpStatus'+(resolved||assignedTo?' ok':'')}>{helpText}</p>}
           <div className="qsHelpTopics">{helpTopics.map(t=><button key={t} onClick={()=>void askHelp(t)}>{t}</button>)}</div>

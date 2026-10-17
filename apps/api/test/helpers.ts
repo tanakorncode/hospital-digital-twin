@@ -7,6 +7,7 @@ import { FlowService } from '../src/flow.service';
 import { LiveFeedService } from '../src/live-feed.service';
 import { QueueService } from '../src/queue.service';
 import { TicketsService } from '../src/tickets.service';
+import { LineService } from '../src/line.service';
 
 Logger.overrideLogger(false); // keep test output clean
 
@@ -19,11 +20,11 @@ export function makeApi() {
   const db = new DbService();
   const auth = new AuthService(db);
   auth.onModuleInit();
-  const queue = new QueueService(db), tickets = new TicketsService(db);
-  const gateway = new FlowGateway(new FlowService(), new LiveFeedService(), queue, auth, tickets);
+  const queue = new QueueService(db), tickets = new TicketsService(db), line = new LineService(db, tickets);
+  const gateway = new FlowGateway(new FlowService(), new LiveFeedService(), queue, auth, tickets, line);
   const emitted: { event: string; data: unknown }[] = [];
   (gateway as unknown as { server: unknown }).server = { emit: (event: string, data: unknown) => emitted.push({ event, data }), to: () => ({ emit: () => undefined }) };
-  return { db, auth, queue, tickets, gateway, emitted };
+  return { db, auth, queue, tickets, line, gateway, emitted };
 }
 // A socket as the gateway sees it, optionally signed in with a session token.
 export function fakeSocket(token = '') {

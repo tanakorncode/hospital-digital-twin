@@ -379,7 +379,9 @@ export type QueueSync = {events:QueueEvent[]; online:boolean; send:(cmd:QueueCom
   // authReady: the API has said who this session is (null = not signed in). Offline there is no sign-in.
   user:AuthUser|null; authReady:boolean; login:(username:string, password:string)=>Promise<Res>; logout:()=>void;
   listUsers:()=>Promise<{ok:boolean; reason?:string; users?:AuthUser[]}>; saveUser:(u:UserInput)=>Promise<{ok:boolean; reason?:string; users?:AuthUser[]}>;
-  resolveTicket:(token:string)=>Promise<TicketRes>; familyTicket:(token:string)=>Promise<TicketRes>};
+  resolveTicket:(token:string)=>Promise<TicketRes>; familyTicket:(token:string)=>Promise<TicketRes>;
+  // features: what the API has switched on (LINE notifications need the hospital's OA settings).
+  features:{line:boolean}; lineLink:(token:string, queue:string)=>Promise<Res & {code?:string; url?:string; expiresAt?:string}>};
 
 // ---- Patient links (/q/<token>) ----------------------------------------------------------------------------
 // The API issues random tokens that expire at the end of the day; staff can re-issue (older links stop working).
@@ -411,6 +413,7 @@ export function useQueueEvents():QueueSync {
   const [settings,setSettings] = useState<QueueSettings>(DEFAULT_SETTINGS);
   const [user,setUser] = useState<AuthUser|null>(null);
   const [authReady,setAuthReady] = useState(false);
+  const [features,setFeatures] = useState<{line:boolean}>({line:false});
   const socket = useRef<Socket|null>(null);
   useEffect(()=>{
     setEvents(loadLocal()); setSettings(loadSettings());
@@ -419,6 +422,7 @@ export function useQueueEvents():QueueSync {
     socket.current = s;
     s.on('connect',()=>setOnline(true));
     s.on('auth:me',(u:AuthUser|null)=>{ setUser(u); setAuthReady(true); if (!u) { try { localStorage.removeItem(sessionKey); } catch { /* ignore */ } } });
+    s.on('features',(f:{line?:boolean})=>setFeatures({line:!!f?.line}));
     s.on('disconnect',()=>setOnline(false));
     s.on('connect_error',()=>setOnline(false));
     s.on('queue:events',(list:QueueEvent[])=>{ setEvents(list); saveLocal(list); });
@@ -447,6 +451,7 @@ export function useQueueEvents():QueueSync {
   const saveUser = useCallback((u:UserInput)=>request<Res & {users?:AuthUser[]}>('users:save',u),[request]);
   const resolveTicket = useCallback((token:string)=>request<TicketRes>('ticket:resolve',{token}),[request]);
   const familyTicket = useCallback((token:string)=>request<TicketRes>('ticket:family',{token}),[request]);
+  const lineLink = useCallback((token:string, queue:string)=>request<Res & {code?:string; url?:string; expiresAt?:string}>('line:link',{token,queue}),[request]);
   // Signed-in staff on a connected screen: QR buttons get real links from the API.
   useEffect(()=>{ setTicketApi(online && canDo(user,'staff') ? (patientId,renew)=>request<TicketRes>('ticket:issue',{patientId,renew}) : null); },[online,user,request]);
   const send = useCallback(async (cmd:QueueCommand)=>{
@@ -463,7 +468,7 @@ export function useQueueEvents():QueueSync {
     addLocal({at:audit.at,station:audit.scope,action:'config',reason:audit.summary,by:audit.by});
     return {ok:true};
   },[request]);
-  return {events,online,send,settings,saveSettings,user,authReady,login,logout,listUsers,saveUser,resolveTicket,familyTicket};
+  return {events,online,send,settings,saveSettings,user,authReady,login,logout,listUsers,saveUser,resolveTicket,familyTicket,features,lineLink};
 }
 
 // Thai announcement, read character by character so queue numbers are unambiguous.

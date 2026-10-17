@@ -6,7 +6,7 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { allowOrigin } from './cors';
 async function bootstrap() {
- const app = await NestFactory.create(AppModule);
+ const app = await NestFactory.create(AppModule, { rawBody: true }); // raw body: LINE webhook signature
  app.enableCors({ origin: allowOrigin });
  await app.listen(process.env.PORT ?? 4000);
 }

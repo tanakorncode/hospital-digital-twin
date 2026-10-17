@@ -1,6 +1,7 @@
 import { Body, Controller, Headers, HttpCode, HttpException, HttpStatus, Post } from '@nestjs/common';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { FlowGateway } from './flow.gateway';
+import { LineService } from './line.service';
 import { LiveFeedService } from './live-feed.service';
 import { QueueService, type QueueAction, type QueueCommand } from './queue.service';
 
@@ -14,7 +15,7 @@ const digest = (s: string) => createHash('sha256').update(s).digest();
 
 @Controller('ingest')
 export class IngestController {
-  constructor(private readonly liveFeed: LiveFeedService, private readonly queue: QueueService, private readonly gateway: FlowGateway) {}
+  constructor(private readonly liveFeed: LiveFeedService, private readonly queue: QueueService, private readonly gateway: FlowGateway, private readonly line: LineService) {}
 
   private authorize(header: string | undefined) {
     const token = process.env.INGEST_TOKEN;
@@ -40,6 +41,7 @@ export class IngestController {
     const r = this.queue.apply({ ...body, by: 'HIS', key: body.key });
     if (!r.ok) throw new HttpException(r.reason, HttpStatus.CONFLICT);
     this.gateway.server.emit('queue:event', r.event);
+    void this.line.onQueueEvent(r.event);
     return { ok: true, id: r.event.id };
   }
 }
