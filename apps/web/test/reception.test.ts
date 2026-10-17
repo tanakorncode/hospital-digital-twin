@@ -22,3 +22,11 @@ test('actions the kiosk does not know are dropped (no URLs, no commands)', () =>
   assert.deepEqual(list.map((a) => a.type), ['show_directory', 'offer_staff']);
   assert.deepEqual(knownActions(undefined), []);
 });
+
+test('"my queue" reads the token from the QR on the slip (its link) — nothing else', async () => {
+  const { ticketToken } = await import('../components/reception/QueueViews');
+  assert.equal(ticketToken('https://queue.hospital.go.th/q/AbCdEfGhIjKlMnOpQrStUv'), 'AbCdEfGhIjKlMnOpQrStUv');
+  assert.equal(ticketToken('  AbCdEfGhIjKlMnOpQrStUv\n'), 'AbCdEfGhIjKlMnOpQrStUv');
+  assert.equal(ticketToken('A123'), '', 'a queue number typed in is not enough');
+  assert.equal(ticketToken('https://evil.example/x?y=<script>'), '');
+});

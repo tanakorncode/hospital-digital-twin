@@ -4,6 +4,7 @@ import QRCode from 'qrcode';
 import { BellRing, ChevronLeft, Clock, Keyboard, ListOrdered, MapPin, Navigation, Search, Users, Volume2, VolumeX } from 'lucide-react';
 import FloorPlanSvg from '../FloorPlanSvg';
 import { Avatar, type AvatarState } from './Avatar';
+import { MyQueue, QueueBoard, QueueFeed } from './QueueViews';
 import type { Capabilities, KioskClient, PublicPlace, Reply, Turn } from '../../lib/reception/client';
 import { speak, speechAvailable, stopSpeaking } from '../../lib/reception/speech';
 
@@ -11,7 +12,7 @@ import { speak, speechAvailable, stopSpeaking } from '../../lib/reception/speech
 // text (and read aloud with a local voice when there is one), wayfinding with the floor plan, and a member of staff on
 // request. Release A: touch and typing only — no microphone, no LLM. After a short pause the screen returns to the
 // welcome and the visitor's session ends, so the next person sees nothing of the previous one.
-type View = {kind:'menu'} | {kind:'reply'; reply:Reply} | {kind:'directory'} | {kind:'ask'} | {kind:'help'};
+type View = {kind:'menu'} | {kind:'reply'; reply:Reply} | {kind:'directory'} | {kind:'ask'} | {kind:'help'} | {kind:'queue'} | {kind:'myqueue'};
 const IDLE_SECONDS = 90, WARN_SECONDS = 15;
 const GREETING = 'สวัสดีค่ะ ยินดีต้อนรับ ต้องการให้ช่วยเรื่องใดคะ';
 const SUGGEST = ['ห้องยาอยู่ไหน','การเงินอยู่ไหน','เวลาทำการ','ทำบัตรผู้ป่วยใหม่','จอดรถที่ไหน'];
@@ -68,9 +69,10 @@ export function ReceptionShell({client,caps}:{client:KioskClient; caps:Capabilit
   if (!r.ok) { setError(r.reason); setAvatar('unsure'); return; }
   const reply = r.response;
   const has = (t:string) => reply.actions.some(a=>a.type===t);
-  setView(has('show_directory') && !has('show_place') ? {kind:'directory'} : {kind:'reply',reply});
+  setView(has('show_queue') ? {kind:'queue'} : has('my_queue') ? {kind:'myqueue'} : has('show_directory') && !has('show_place') ? {kind:'directory'} : {kind:'reply',reply});
   say(reply.text, has('show_place') ? 'pointing' : reply.handoff.required || reply.intent==='unknown' ? 'unsure' : 'idle');
  };
+ const backToMenu = useCallback(()=>{ setView({kind:'menu'}); setAvatar('idle'); setCaption(GREETING); },[]);
  const callStaff = async () => {
   touch(); setBusy(true);
   const r = await client.help(sid);
@@ -90,7 +92,8 @@ export function ReceptionShell({client,caps}:{client:KioskClient; caps:Capabilit
   </div>
  </main>;
 
- return <main className="rcp" onPointerDown={touch} onKeyDown={touch}>
+ const queueOn = caps.capabilities.generalQueueInfo || caps.capabilities.myQueue;
+ const page = <main className="rcp" onPointerDown={touch} onKeyDown={touch}>
   <aside className="rcpSide">
    <Avatar state={avatar} label="ผู้ช่วยต้อนรับ"/>
    <p className="rcpCaption" aria-live="polite">{caption}</p>
@@ -102,7 +105,9 @@ export function ReceptionShell({client,caps}:{client:KioskClient; caps:Capabilit
   <section className="rcpMain">
    {error && <p className="rcpError" role="alert">{error}</p>}
    {view.kind!=='menu' && <button className="rcpBack" onClick={()=>{ touch(); setView({kind:'menu'}); setAvatar('idle'); }}><ChevronLeft size={26}/> เมนูหลัก</button>}
-   {view.kind==='menu' && <Menu busy={busy} send={send} ask={()=>{ touch(); setView({kind:'ask'}); }} staff={()=>void callStaff()} queueInfo={caps.capabilities.generalQueueInfo}/>}
+   {view.kind==='menu' && <Menu busy={busy} send={send} ask={()=>{ touch(); setView({kind:'ask'}); }} staff={()=>void callStaff()} queueInfo={queueOn}/>}
+   {view.kind==='queue' && <QueueBoard myQueue={caps.capabilities.myQueue} openMine={()=>{ touch(); setView({kind:'myqueue'}); say('สแกน QR บนบัตรคิวของคุณที่เครื่องอ่านของตู้ค่ะ'); }} touch={touch}/>}
+   {view.kind==='myqueue' && <MyQueue touch={touch} done={backToMenu}/>}
    {view.kind==='ask' && <Ask busy={busy} send={t=>void send({type:'text',text:t})} touch={touch}/>}
    {view.kind==='directory' && <Directory places={places} pick={code=>void send({type:'place',code})} touch={touch}/>}
    {view.kind==='reply' && <ReplyView reply={view.reply} at={caps.kiosk.at} send={send} staff={()=>void callStaff()} busy={busy}/>}
@@ -111,6 +116,8 @@ export function ReceptionShell({client,caps}:{client:KioskClient; caps:Capabilit
   </section>
   {left<=WARN_SECONDS && <div className="rcpIdle" role="alert">ไม่มีการใช้งาน · จะกลับหน้าแรกใน {Math.max(0,left)} วินาที — แตะหน้าจอเพื่อใช้งานต่อ</div>}
  </main>;
+ // Queue views read the same public stream as the TV screens — only when an administrator turned them on.
+ return queueOn ? <QueueFeed>{page}</QueueFeed> : page;
 }
 
 function Menu({busy,send,ask,staff,queueInfo}:{busy:boolean; send:(t:Turn)=>Promise<void>; ask:()=>void; staff:()=>void; queueInfo:boolean}) {
@@ -118,7 +125,7 @@ function Menu({busy,send,ask,staff,queueInfo}:{busy:boolean; send:(t:Turn)=>Prom
   [<Navigation key="n" size={40}/>,'ค้นหาจุดบริการ','ห้องตรวจ ห้องยา การเงิน ห้องแล็บ',()=>void send({type:'menu',id:'directory'})],
   [<ListOrdered key="s" size={40}/>,'ขั้นตอนรับบริการ','มาครั้งแรก · มาตามนัด',()=>void send({type:'menu',id:'steps'})],
   [<Clock key="c" size={40}/>,'เวลาทำการ','แผนกผู้ป่วยนอก · ห้องฉุกเฉิน',()=>void send({type:'menu',id:'hours'})],
-  [<Users key="q" size={40}/>,'ข้อมูลคิวทั่วไป',queueInfo?'จำนวนรอโดยประมาณ':'ยังไม่เปิดให้บริการ',()=>void send({type:'menu',id:'queue'}),!queueInfo],
+  [<Users key="q" size={40}/>,'ข้อมูลคิว',queueInfo?'จำนวนคนรอ · คิวของฉัน':'ยังไม่เปิดให้บริการ',()=>void send({type:'menu',id:'queue'}),!queueInfo],
   [<Keyboard key="k" size={40}/>,'พิมพ์คำถาม','เช่น ห้องยาอยู่ไหน',ask],
   [<BellRing key="b" size={40}/>,'เรียกเจ้าหน้าที่','ให้เจ้าหน้าที่มาที่ตู้นี้',staff],
  ];

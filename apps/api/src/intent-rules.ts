@@ -3,7 +3,7 @@ import type { Destination } from './wayfinding.service';
 // Deterministic understanding of a short Thai question — shared by the LINE chatbot (line-bot.ts) and the Digital
 // Reception kiosks (reception.service.ts). Rules only, no model: a message is matched against the hospital's public
 // places and a few fixed categories. Anything else is "unknown" and the caller offers a menu or a member of staff.
-export type Category = 'emergency' | 'clinical' | 'personal' | 'hours' | 'staff' | 'where';
+export type Category = 'emergency' | 'clinical' | 'personal' | 'queue' | 'hours' | 'staff' | 'where';
 
 export const normalize = (raw: string) => raw.trim().replace(/\s+/g, ' ').slice(0, 200);
 
@@ -22,6 +22,7 @@ const RULES: [Category, RegExp][] = [
   ['emergency', /(ฉุกเฉิน|หายใจไม่ออก|หมดสติ|ไม่รู้สึกตัว|เลือดออกมาก|เจ็บหน้าอก|แน่นหน้าอก|ชัก|อุบัติเหตุ|ช่วยด้วย)/],
   ['clinical', /(ปวด|เจ็บ|อาการ|เป็นโรค|โรคอะไร|รักษา|วินิจฉัย|มีไข้|ตัวร้อน|กินยา|ทานยา|ยาตัว|ขนาดยา|ผลตรวจ|ผลเลือด|ผลแล็บ|ท้องเสีย|อาเจียน|ไอมาก|ไอเป็นเลือด|แพ้ยา|ตั้งครรภ์ได้ไหม)/],
   ['personal', /(\bHN\b|เลขบัตร|บัตรประชาชน|เลขประจำตัว|ประวัติ(การรักษา)?ของ|คิวของ(ฉัน|ผม|หนู|เรา)|นัดของ(ฉัน|ผม|หนู|เรา)|ชื่อผู้ป่วย|ญาติ.*(อยู่|ห้อง)|เบอร์โทรของ)/i],
+  ['queue', /(คิว|รอนาน|รอกี่คน|ถึงไหนแล้ว)/],
   ['hours', /(กี่โมง|เปิดกี่|ปิดกี่|เวลาทำการ|เวลาเปิด|เวลาปิด|เปิดวัน|เปิดไหม|เปิดอยู่ไหม)/],
   ['staff', /(ติดต่อ|เจ้าหน้าที่|พยาบาล|โทร|สอบถาม|คุยกับคน)/],
   ['where', /(อยู่ไหน|อยู่ตรงไหน|ไปยังไง|ไปทางไหน|ทางไป|แผนที่|หาไม่เจอ|ห้องน้ำ|ลิฟต์)/],

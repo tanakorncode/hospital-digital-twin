@@ -23,15 +23,16 @@ export function ReceptionAdminPane({api,on,setFeature}:{api:Api; on:boolean; set
  const [answers,setAnswers] = useState<Answer[]>([]);
  const [places,setPlaces] = useState<Place[]>([]);
  const [usage,setUsage] = useState<Usage[]>([]);
+ const [queue,setQueue] = useState<{queueInfo:boolean; myQueue:boolean}>({queueInfo:false,myQueue:false});
  const [msg,setMsg] = useState<{text:string; bad?:boolean}|null>(null);
  const [secret,setSecret] = useState<{name:string; credential:string}|null>(null);
  const [newKiosk,setNewKiosk] = useState({name:'',atCode:''});
  const [edit,setEdit] = useState<(typeof blank & {id?:string})|null>(null);
  const say = (r:{ok:boolean; reason?:string}, ok:string) => setMsg(r.ok ? {text:ok} : {text:r.reason ?? 'บันทึกไม่สำเร็จ',bad:true});
  const load = useCallback(async ()=>{
-  const [k,a,p,u] = await Promise.all([api<{ok:boolean; kiosks?:Kiosk[]}>('reception:kiosks',{}),api<{ok:boolean; answers?:Answer[]}>('reception:answers',{}),
+  const [k,a,p,u] = await Promise.all([api<{ok:boolean; kiosks?:Kiosk[]; settings?:{queueInfo:boolean; myQueue:boolean}}>('reception:kiosks',{}),api<{ok:boolean; answers?:Answer[]}>('reception:answers',{}),
    api<{ok:boolean; destinations?:Place[]}>('wayfinding:list',{}),api<{ok:boolean; rows?:Usage[]}>('reception:usage',{days:30})]);
-  if (k.ok) setKiosks(k.kiosks ?? []); if (a.ok) setAnswers(a.answers ?? []); if (p.ok) setPlaces((p.destinations ?? []).filter(x=>x.status==='ACTIVE')); if (u.ok) setUsage(u.rows ?? []);
+  if (k.ok) { setKiosks(k.kiosks ?? []); if (k.settings) setQueue(k.settings); } if (a.ok) setAnswers(a.answers ?? []); if (p.ok) setPlaces((p.destinations ?? []).filter(x=>x.status==='ACTIVE')); if (u.ok) setUsage(u.rows ?? []);
  },[api]);
  useEffect(()=>{ void load(); },[load]);
  const placeName = (code?:string) => places.find(p=>p.code===code)?.nameTh ?? code ?? '—';
@@ -50,6 +51,10 @@ export function ReceptionAdminPane({api,on,setFeature}:{api:Api; on:boolean; set
  };
  const approve = async (a:Answer) => { const r = await api('reception:answer:approve',{id:a.id}); say(r,`อนุมัติ "${a.questionTh}" แล้ว — ตู้เริ่มใช้ทันที`); void load(); };
  const retire = async (a:Answer) => { const r = await api('reception:answer:retire',{id:a.id}); say(r,`เลิกใช้ "${a.questionTh}" แล้ว`); void load(); };
+ const setQueueOpt = async (patch:Partial<typeof queue>) => {
+  const r = await api<{ok:boolean; reason?:string; settings?:typeof queue}>('reception:settings:set',{patch});
+  say(r,'บันทึกแล้ว · ตู้ที่เปิดอยู่เห็นผลเมื่อเริ่มใช้งานครั้งถัดไป'); if (r.ok && r.settings) setQueue(r.settings);
+ };
  const totals = useMemo(()=>{
   const sum = (event:string, intent?:string) => usage.filter(u=>u.event===event && (intent===undefined || u.intent===intent)).reduce((a,u)=>a+u.count,0);
   const byIntent = [...new Set(usage.filter(u=>u.event==='turn').map(u=>u.intent))].map(i=>[i,sum('turn',i)] as [string,number]).sort((a,b)=>b[1]-a[1]);
@@ -61,6 +66,14 @@ export function ReceptionAdminPane({api,on,setFeature}:{api:Api; on:boolean; set
    <small>เปิดที่เครื่องตู้: <code>/reception</code> · แตะเมนู ค้นหาจุดบริการ พิมพ์คำถาม เรียกเจ้าหน้าที่ · ไม่ใช้ AI ไม่ใช้กล้อง ไม่บันทึกข้อความที่พิมพ์ · ตอบได้เฉพาะคำตอบที่อนุมัติด้านล่าง</small></div>
    <button className={on?'btn ghost':'btn'} onClick={()=>void setFeature(!on)}>{on?'ปิดตู้ทั้งหมด':'เปิดใช้งาน'}</button></div>
   {msg && <p className={'setToast'+(msg.bad?' bad':'')} role="status">{msg.text}</p>}
+
+  <h4 className="setSub">ข้อมูลคิวบนตู้ <small>ไม่แสดงชื่อ HN หรือข้อมูลการรักษาในทุกกรณี</small></h4>
+  <div className="rcpQueueOpts">
+   <label className="switch"><input type="checkbox" checked={queue.queueInfo} onChange={e=>void setQueueOpt({queueInfo:e.target.checked})}/><span/>
+    <div><b>ภาพรวมคิว</b><small>จำนวนคนรอและหมายเลขที่กำลังเรียก ของทุกแผนก/จุดบริการ — ข้อมูลเดียวกับจอเรียกคิว</small></div></label>
+   <label className="switch"><input type="checkbox" checked={queue.myQueue} onChange={e=>void setQueueOpt({myQueue:e.target.checked})}/><span/>
+    <div><b>คิวของฉัน</b><small>ผู้ป่วยสแกน QR บนบัตรคิวที่เครื่องอ่านของตู้ → เลขคิว สิ่งที่ต้องทำ คิวก่อนหน้า เวลารอ · แสดงบนจอ 30 วินาที ไม่อ่านออกเสียง · พิมพ์เลขคิวเองไม่ได้ (กันดูคิวคนอื่น)</small></div></label>
+  </div>
 
   <h4 className="setSub">ตู้ <small>ตู้ใช้รหัสประจำเครื่อง ไม่ใช้บัญชีเจ้าหน้าที่ · รหัสแสดงครั้งเดียว · ตู้หาย/ย้ายเครื่อง: ออกรหัสใหม่หรือยกเลิก</small></h4>
   {secret && <div className="rcpSecret"><b>รหัสของ {secret.name}</b><code>{secret.credential}</code>

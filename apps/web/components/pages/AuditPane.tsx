@@ -19,7 +19,7 @@ const actionText:Record<string,string> = {
  'wayfinding.save':'แก้จุดนำทาง','wayfinding.import':'นำเข้าจุดนำทาง','wayfinding.retire':'เลิกใช้จุดนำทาง',
  'retention.update':'แก้ระยะเวลาเก็บข้อมูล','retention.run':'สั่งล้างข้อมูลเก่า','retention.purge':'ลบข้อมูลเก่าตามระยะเวลาเก็บ',
  'reception.kiosk.create':'ลงทะเบียนตู้ต้อนรับ','reception.kiosk.update':'แก้ตู้ต้อนรับ','reception.kiosk.rotate':'ออกรหัสตู้ใหม่','reception.kiosk.revoke':'ยกเลิกตู้ต้อนรับ',
- 'reception.answer.save':'แก้คำตอบของตู้ (ร่าง)','reception.answer.approve':'อนุมัติคำตอบของตู้','reception.answer.retire':'เลิกใช้คำตอบของตู้','reception.help.ack':'รับเรื่องจากตู้ต้อนรับ'};
+ 'reception.answer.save':'แก้คำตอบของตู้ (ร่าง)','reception.answer.approve':'อนุมัติคำตอบของตู้','reception.answer.retire':'เลิกใช้คำตอบของตู้','reception.help.ack':'รับเรื่องจากตู้ต้อนรับ','reception.settings':'ตั้งค่าข้อมูลคิวบนตู้'};
 const groups:[string,string][] = [['','ทั้งหมด'],['user','บัญชีผู้ใช้'],['settings','การตั้งค่า'],['feature','ฟีเจอร์'],['booking','การจอง'],['appointment','นัดหมาย'],['visit','คิว'],
  ['line-link','บัญชี LINE'],['patient-search','การค้นข้อมูลผู้ป่วย'],['destination','จุดนำทาง']];
 const when = (iso:string) => new Date(iso).toLocaleString('th-TH',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',second:'2-digit'});

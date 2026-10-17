@@ -49,8 +49,8 @@ export class ReceptionController {
     const at = k.atCode ? this.reception.places().find((p) => p.code === k.atCode) : undefined;
     return { ok: true, kiosk: { id: k.id, name: k.name, at }, contact: process.env.HOSPITAL_CONTACT?.trim() || undefined,
       // Speech: the kiosk reads approved text with a voice installed on the kiosk itself (never a cloud voice).
-      // Not built in Release A, so always off: voice input (Release B), an LLM (only after evaluation), queue figures (not approved).
-      capabilities: { wayfinding: true, speech: process.env.RECEPTION_SPEECH !== 'off', voiceInput: false, ai: false, generalQueueInfo: false } };
+      // Voice input (Release B) and an LLM (only after evaluation) are not built, so always off. Queue: as an administrator set it.
+      capabilities: { wayfinding: true, speech: process.env.RECEPTION_SPEECH !== 'off', voiceInput: false, ai: false, generalQueueInfo: this.reception.settings().queueInfo, myQueue: this.reception.settings().myQueue } };
   }
   @Post('sessions')
   @HttpCode(200)

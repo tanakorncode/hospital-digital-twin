@@ -238,7 +238,7 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
     const me = userOf(client);
     if (!me) return SIGN_IN;
     if (!may(me, 'admin')) return DENIED;
-    return { ok: true, kiosks: this.kiosks.list(), enabled: this.features.on('reception') };
+    return { ok: true, kiosks: this.kiosks.list(), enabled: this.features.on('reception'), settings: this.reception.settings() };
   }
   // New kiosk / rename / move. The credential comes back once (new kiosk or rotation) — it is never stored in clear.
   @SubscribeMessage('reception:kiosk:save')
@@ -265,6 +265,15 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
     if (!me) return SIGN_IN;
     if (!may(me, 'admin')) return DENIED;
     return attempt(() => { const d = this.kiosks.revoke(body?.id); this.audit.record({ ...actor(me), action: 'reception.kiosk.revoke', targetType: 'kiosk', targetId: d.id }); return { ok: true, device: d }; });
+  }
+  @SubscribeMessage('reception:settings:set')
+  receptionSettings(@ConnectedSocket() client: Socket, @MessageBody() body: { patch?: unknown }) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (!may(me, 'admin')) return DENIED;
+    return attempt(() => { const r = this.reception.setSettings(body?.patch);
+      if (Object.keys(r.changed).length) this.audit.record({ ...actor(me), action: 'reception.settings', targetType: 'settings', targetId: 'reception', meta: r.changed });
+      return { ok: true, settings: r.settings }; });
   }
   @SubscribeMessage('reception:answers')
   receptionAnswers(@ConnectedSocket() client: Socket) {

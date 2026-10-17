@@ -12,10 +12,12 @@ export type Action =
  | {type:'choose'; options:{kind:'answer'|'place'; id:string; label:string}[]}
  | {type:'show_directory'}
  | {type:'show_menu'}
- | {type:'offer_staff'};
+ | {type:'offer_staff'}
+ | {type:'show_queue'}
+ | {type:'my_queue'};
 export type Reply = {text:string; intent:string; actions:Action[]; sources:{id:string; title:string}[]; handoff:{required:boolean; reason:string|null}};
 export type Turn = {type:'text'; text:string}|{type:'menu'; id:'directory'|'steps'|'hours'|'queue'|'staff'}|{type:'answer'; id:string}|{type:'place'; code:string};
-export type Capabilities = {kiosk:{id:string; name:string; at?:PublicPlace}; contact?:string; capabilities:{wayfinding:boolean; speech:boolean; voiceInput:boolean; ai:boolean; generalQueueInfo:boolean}};
+export type Capabilities = {kiosk:{id:string; name:string; at?:PublicPlace}; contact?:string; capabilities:{wayfinding:boolean; speech:boolean; voiceInput:boolean; ai:boolean; generalQueueInfo:boolean; myQueue:boolean}};
 type Res<T> = ({ok:true} & T) | {ok:false; code?:string; reason:string};
 
 const KEY = 'reception.kiosk';
@@ -23,7 +25,7 @@ export const savedCredential = () => { try { return localStorage.getItem(KEY) ??
 export const saveCredential = (c:string) => { try { if (c) localStorage.setItem(KEY,c); else localStorage.removeItem(KEY); } catch { /* storage blocked: ask again next time */ } };
 
 // The kinds of action this kiosk knows; anything else from the server is dropped (spec §9: reject unknown actions).
-const KNOWN = new Set(['show_place','show_answer','choose','show_directory','show_menu','offer_staff']);
+const KNOWN = new Set(['show_place','show_answer','choose','show_directory','show_menu','offer_staff','show_queue','my_queue']);
 export const knownActions = (a:unknown):Action[] => Array.isArray(a) ? a.filter((x):x is Action=>!!x && typeof x==='object' && KNOWN.has((x as {type?:string}).type ?? '')) : [];
 
 export class KioskClient {

@@ -2285,3 +2285,17 @@ a.liffChoice{text-decoration:none;padding:10px 16px}
 .kioskHelp{display:flex;flex-direction:column;gap:6px;margin:6px 0}
 .kioskHelpRow{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:12px;background:#fff7ed;border:1.5px solid #fdba74;color:#7c2d12}
 .kioskHelpRow span{flex:1}.kioskHelpRow.urgent{background:#fef2f2;border-color:#f87171;color:#991b1b}
+.rcpBoard{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;max-height:58vh;overflow:auto}
+.rcpQ{border:2px solid var(--rc-line);border-radius:18px;padding:14px 16px;display:flex;flex-direction:column;gap:6px}.rcpQ.off{opacity:.55}
+.rcpQ h3{display:flex;align-items:center;gap:8px;margin:0;font-size:20px;color:var(--rc-ink);flex-wrap:wrap}.rcpQ h3 small{font-size:14px;color:var(--rc-muted);font-weight:400}
+.rcpLetter{display:inline-grid;place-items:center;width:30px;height:30px;border-radius:8px;background:var(--rc-blue);color:#fff;font-size:17px}
+.rcpQNow{display:flex;flex-wrap:wrap;gap:8px;min-height:34px}.rcpQNow b{display:inline-flex;align-items:baseline;gap:6px;background:#ecfdf5;color:#047857;border-radius:10px;padding:4px 10px;font-size:20px}.rcpQNow b small{font-size:13px;color:#065f46;font-weight:400}
+.rcpQWait{margin:0;font-size:18px;color:var(--rc-muted)}.rcpQWait b{color:var(--rc-ink);font-size:22px}
+.rcpMine{display:flex;align-items:center;gap:10px;font-size:22px;font-weight:700;padding:16px 20px;border-radius:16px;border:2px solid var(--rc-blue);background:var(--rc-soft);color:var(--rc-ink);cursor:pointer}
+.rcpScan{align-items:center;text-align:center}.rcpScan svg{color:var(--rc-blue)}.rcpScan p{font-size:22px;margin:0}
+.rcpScan form input{font-size:20px;padding:12px 16px;border:2px dashed var(--rc-line);border-radius:14px;width:min(420px,80vw);text-align:center}
+.rcpMineCard{align-items:center;text-align:center}.rcpMineNo{font-size:84px!important;letter-spacing:2px;margin:0;color:var(--rc-blue)}.rcpMineCard.go{border-color:#10b981;background:#ecfdf5}
+.rcpQueueOpts{display:flex;flex-direction:column;gap:10px;margin-bottom:6px}
+.rcpQueueOpts .switch{display:flex;align-items:flex-start;gap:10px}.rcpQueueOpts .switch div{display:flex;flex-direction:column;gap:2px}
+.rcpQueueOpts .switch b{font-size:14px;color:#0f2340}.rcpQueueOpts .switch small{font-size:12px;color:#64748b}
+.rcpQueueOpts .switch{white-space:normal;font-weight:400}.rcpQueueOpts .switch>span{flex-shrink:0;margin-top:2px}

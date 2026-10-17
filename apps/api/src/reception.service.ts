@@ -24,8 +24,15 @@ export type Action =
   | { type: 'choose'; options: { kind: 'answer' | 'place'; id: string; label: string }[] }
   | { type: 'show_directory' }
   | { type: 'show_menu' }
-  | { type: 'offer_staff' };
-export type Intent = 'emergency' | 'wayfinding' | 'clinical' | 'personal' | 'answer' | 'choose' | 'hours' | 'staff' | 'directory' | 'queue_info' | 'unknown';
+  | { type: 'offer_staff' }
+  | { type: 'show_queue' } // the queue board: waiting counts and numbers being called, as on the TV screens
+  | { type: 'my_queue' }; // "my queue": the visitor scans the QR on their own queue slip
+export type Intent = 'emergency' | 'wayfinding' | 'clinical' | 'personal' | 'answer' | 'choose' | 'hours' | 'staff' | 'directory' | 'queue_info' | 'my_queue' | 'unknown';
+// What the hospital lets kiosks show about the queue (both off until an administrator turns them on):
+//  queueInfo — the board: per department/counter, how many wait and which numbers are being called (what the TV shows)
+//  myQueue   — a visitor scans the QR on their own slip and sees their number, where to go, how many are ahead
+// Neither shows a name, an HN or anything about care; "my queue" needs the slip's own QR (a number typed in is not enough).
+export type ReceptionSettings = { queueInfo: boolean; myQueue: boolean };
 export type TurnResponse = { turnId: string; status: 'completed'; response: { text: string; intent: Intent; actions: Action[]; sources: { id: string; title: string }[];
   handoff: { required: boolean; reason: string | null } } };
 export type HelpRequest = { id: string; kioskId: string; kioskName: string; whereTh?: string; reason: 'asked' | 'emergency'; createdAt: string };
@@ -39,11 +46,14 @@ const toAnswer = (r: Row): Answer => ({ id: r.id, topic: r.topic, questionTh: r.
 const bad = (reason: string) => new AppError('VALIDATION_ERROR', reason);
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const IDLE_MS = 5 * 60_000, TURNS_PER_MINUTE = 30;
+const SETTINGS_KEY = 'reception.settings';
 const SAY = {
   emergency: 'หากเป็นเหตุฉุกเฉิน กรุณาแจ้งเจ้าหน้าที่ที่อยู่ใกล้ที่สุดทันที ระบบได้แจ้งเจ้าหน้าที่ให้แล้ว',
   clinical: 'ตู้นี้ให้ข้อมูลการรับบริการและเส้นทางเท่านั้น ไม่สามารถให้คำแนะนำทางการแพทย์ได้ กรุณาสอบถามแพทย์ พยาบาล หรือเจ้าหน้าที่',
   personal: 'ตู้นี้ไม่แสดงข้อมูลส่วนตัวของผู้ป่วย ดูคิวของคุณได้จาก QR บนบัตรคิว หรือ LINE ของโรงพยาบาล หรือสอบถามเคาน์เตอร์',
   queue: 'ข้อมูลคิวทั่วไปยังไม่เปิดให้บริการที่ตู้นี้ ดูคิวของคุณได้จาก QR บนบัตรคิว หรือจอเรียกคิวในพื้นที่รอ',
+  board: 'ภาพรวมคิวตอนนี้ · จำนวนคนรอและหมายเลขที่กำลังเรียก',
+  myQueue: 'สแกน QR บนบัตรคิวของคุณที่เครื่องอ่านของตู้ ข้อมูลคิวจะแสดงบนหน้าจอเท่านั้น',
   directory: 'เลือกจุดบริการที่ต้องการไป หรือพิมพ์ชื่อเพื่อค้นหา',
   where: 'บอกชื่อจุดบริการที่ต้องการไป หรือเลือกจากรายการ',
   unknown: 'ขออภัย ยังไม่เข้าใจคำถามนี้ ลองเลือกจากเมนู ค้นหาชื่อจุดบริการ หรือเรียกเจ้าหน้าที่',
@@ -114,6 +124,16 @@ export class ReceptionService {
     return toAnswer(this.row(r.id)!);
   }
 
+  // ---- what kiosks may show about the queue (administrators) ---------------------------------------------------------
+  settings(): ReceptionSettings { return { queueInfo: false, myQueue: false, ...(this.store.getKv<Partial<ReceptionSettings>>(SETTINGS_KEY) ?? {}) }; }
+  setSettings(patch: unknown): { settings: ReceptionSettings; changed: Partial<ReceptionSettings> } {
+    const p = (patch ?? {}) as Record<string, unknown>, keys = Object.keys(p);
+    if (!keys.length || keys.some((k) => !['queueInfo', 'myQueue'].includes(k) || typeof p[k] !== 'boolean')) throw bad('ค่าที่จะบันทึกไม่ถูกต้อง');
+    const before = this.settings(), next = { ...before, ...(p as Partial<ReceptionSettings>) };
+    this.store.setKv(SETTINGS_KEY, next);
+    return { settings: next, changed: Object.fromEntries(keys.filter((k) => before[k as keyof ReceptionSettings] !== next[k as keyof ReceptionSettings]).map((k) => [k, next[k as keyof ReceptionSettings]])) };
+  }
+
   // ---- a visitor's session at a kiosk ----------------------------------------------------------------------------
   // One visitor at a time per kiosk: a new session ends the kiosk's previous one. Idle for 5 minutes = gone.
   start(kiosk: KioskDevice): { sessionId: string; expiresInSeconds: number } {
@@ -166,7 +186,7 @@ export class ReceptionService {
     }
     if (t.type === 'menu') {
       if (t.id === 'directory') return out('directory', SAY.directory, [{ type: 'show_directory' }]);
-      if (t.id === 'queue') return out('queue_info', SAY.queue);
+      if (t.id === 'queue') return this.queueOut();
       if (t.id === 'staff') return this.staffOut(kiosk);
       if (t.id === 'hours') return this.hoursOut(served);
       const steps = served.filter((a) => a.topic === 'steps');
@@ -181,10 +201,14 @@ export class ReceptionService {
       return out('emergency', approved?.answerTh ?? SAY.emergency, [{ type: 'offer_staff' }],
         { handoff: { required: true, reason: 'emergency' }, sources: approved ? [{ id: `${approved.id}@v${approved.version}`, title: approved.questionTh }] : [] });
     }
+    // "My queue" / "how long is the queue" — before places, so "คิวห้องยา" is about the queue, not the way there.
+    const personal = categoryOf(text, ['personal']), queue = categoryOf(text, ['queue']);
+    if (personal && queue && this.settings().myQueue) return out('my_queue', SAY.myQueue, [{ type: 'my_queue' }]);
+    if (queue && !personal && this.settings().queueInfo) return this.queueOut();
     const place = placeIn(text, this.wayfinding.list());
     if (place) return this.placeOut(kiosk, place);
     if (categoryOf(text, ['clinical'])) return staff('clinical', SAY.clinical, 'clinical');
-    if (categoryOf(text, ['personal'])) return staff('personal', SAY.personal, 'personal');
+    if (personal) return staff('personal', SAY.personal, 'personal');
     const found = bestAnswers(text, served.filter((a) => a.topic !== 'emergency'));
     if (found.length === 1) return answerOut(found[0]);
     if (found.length > 1) return this.chooseOut(found.slice(0, 4).map((a) => ({ kind: 'answer' as const, id: a.id, label: a.questionTh })));
@@ -193,6 +217,13 @@ export class ReceptionService {
     if (cat === 'staff') return this.staffOut(kiosk);
     if (cat === 'where') return out('directory', SAY.where, [{ type: 'show_directory' }]);
     return out('unknown', SAY.unknown, [{ type: 'show_menu' }, { type: 'offer_staff' }]);
+  }
+  private queueOut(): TurnResponse['response'] {
+    const s = this.settings(), actions: Action[] = [];
+    if (s.queueInfo) actions.push({ type: 'show_queue' });
+    if (s.myQueue) actions.push({ type: 'my_queue' });
+    return { text: s.queueInfo ? SAY.board : s.myQueue ? SAY.myQueue : SAY.queue, intent: s.queueInfo ? 'queue_info' : s.myQueue ? 'my_queue' : 'queue_info', actions, sources: [],
+      handoff: { required: false, reason: null } };
   }
   private chooseOut(options: { kind: 'answer' | 'place'; id: string; label: string }[]): TurnResponse['response'] {
     return { text: SAY.choose, intent: 'choose', actions: [{ type: 'choose', options }], sources: [], handoff: { required: false, reason: null } };

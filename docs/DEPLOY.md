@@ -121,4 +121,8 @@ Touch-screen receptionist at `/reception` (Release A — no AI, no camera, no mi
   voices are never used. No local Thai voice = captions only. `RECEPTION_SPEECH=off` in `apps/api/.env` turns speech off everywhere.
 - Lost or moved kiosk: **ออกรหัสใหม่** (old code stops at once) or **ยกเลิกตู้**.
 - Nothing visitors type is stored; Settings → ตู้ต้อนรับ shows daily counts by kind of question only.
+- Queue on kiosks (Settings → ตู้ต้อนรับ, both off by default): **ภาพรวมคิว** = waiting counts and numbers being called (what the TV
+  screens show) · **คิวของฉัน** = the patient scans the QR on their slip with the kiosk's **barcode reader** (it types the link)
+  and sees their number, what to do, people ahead and the wait — on screen only, 30 seconds. A typed queue number is not accepted.
+  Use a dedicated browser profile on the kiosk (never signed in as staff).
 

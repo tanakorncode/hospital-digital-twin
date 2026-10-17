@@ -31,7 +31,7 @@ test('a kiosk signs in with its own credential, shown once; revoked or rotated =
   assert.match(made.credential!, /^k-[a-z0-9]{8}\.[A-Za-z0-9_-]{30,}$/);
   assert.equal(JSON.stringify(api.kiosks.list()).includes(made.credential!.split('.')[1]), false, 'only the hash is kept');
   assert.equal(ctl.capabilities(auth).kiosk.name, 'ตู้ล็อบบี้ OPD');
-  assert.deepEqual(ctl.capabilities(auth).capabilities, { wayfinding: true, speech: true, voiceInput: false, ai: false, generalQueueInfo: false });
+  assert.deepEqual(ctl.capabilities(auth).capabilities, { wayfinding: true, speech: true, voiceInput: false, ai: false, generalQueueInfo: false, myQueue: false });
   assert.equal(await codeOf(() => ctl.signIn('10.0.0.6', { credential: `${made.device!.id}.wrong-secret` })), 'AUTH_REQUIRED');
   assert.equal(await codeOf(() => ctl.capabilities('Bearer not-a-real-token-at-all-xxxx')), 'AUTH_REQUIRED');
   // Rotation: the old credential and the old session stop; the new credential works.
@@ -156,4 +156,29 @@ test('administrators only: kiosks, answers, use', async () => {
     assert.equal((r as R).code, 'FORBIDDEN');
   assert.equal((api.gateway.saveKiosk(admin, { name: 'x', atCode: 'not a code!' }) as R).code, 'VALIDATION_ERROR');
   assert.ok(api.audit.list().some((e) => e.action === 'reception.kiosk.create'));
+});
+
+test(`queue: off until an administrator allows it; then the board and "my queue" (by the slip's QR) — never personal details`, async () => {
+  const { api, admin, ctl, auth, session, say } = setup();
+  const sid = session();
+  // Off: the queue button and questions about one's own queue say where to look instead.
+  assert.deepEqual(say(sid, { type: 'menu', id: 'queue' }).actions, []);
+  assert.equal(say(sid, { type: 'text', text: 'คิวของฉันถึงไหนแล้ว' }).intent, 'personal');
+  // Administrators only, audited.
+  api.gateway.saveUser(admin, { username: 'head.b', name: 'B', role: 'supervisor', password: 'password-2' });
+  assert.equal((api.gateway.receptionSettings(signIn(api, 'head.b', 'password-2'), { patch: { queueInfo: true } }) as R).code, 'FORBIDDEN');
+  assert.equal((api.gateway.receptionSettings(admin, { patch: { queueInfo: 'yes' } }) as R).code, 'VALIDATION_ERROR');
+  assert.equal((api.gateway.receptionSettings(admin, { patch: { queueInfo: true, myQueue: true } }) as R).ok, true);
+  assert.ok(api.audit.list().some((e) => e.action === 'reception.settings'));
+  const caps = ctl.capabilities(auth).capabilities;
+  assert.deepEqual([caps.generalQueueInfo, caps.myQueue], [true, true]);
+  // On: the board, and "my queue" asks for the slip's QR.
+  assert.deepEqual(say(sid, { type: 'menu', id: 'queue' }).actions.map((a) => a.type), ['show_queue', 'my_queue']);
+  const mine = say(sid, { type: 'text', text: 'คิวของฉันถึงไหนแล้ว' });
+  assert.deepEqual([mine.intent, mine.actions.map((a) => a.type)], ['my_queue', ['my_queue']]);
+  assert.match(mine.text, /สแกน QR บนบัตรคิว/);
+  assert.equal(say(sid, { type: 'text', text: 'คิวห้องยายาวไหม' }).intent, 'queue_info', 'about the queue, not the way to the pharmacy');
+  assert.equal(say(sid, { type: 'text', text: 'ห้องยาอยู่ไหน' }).intent, 'wayfinding', 'the way there is unchanged');
+  assert.equal(say(sid, { type: 'text', text: 'ขอดูนัดของฉัน' }).intent, 'personal', 'other personal things still go to staff');
+  void codeOf;
 });

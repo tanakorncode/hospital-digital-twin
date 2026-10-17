@@ -4,7 +4,8 @@ import { useParams, useSearchParams } from 'next/navigation';
 import { Bell, BellOff, BellRing, ChevronRight, FlaskConical, HandHelping, ListChecks, Pill, Route, UsersRound } from 'lucide-react';
 import { etaOf, fmtDurRange, fmtMin, knownUntil, patientAt, patientToken, placeText, statusColor, stepText } from '../../../lib/patients';
 import { useDemoClock } from '../../../lib/use-demo-clock';
-import { PORTER_TOPIC, allStations, applyQueueEvents, basePatients, helpRequests, helpTopics, isLive, moveNote, scopeName, serviceMinutes, stationById, stationDoctor, stationQueue, stepGroup, useQueueEvents, worldKey } from '../../../lib/queue';
+import { peopleAhead, waitRange } from '../../../lib/queue-status';
+import { PORTER_TOPIC, applyQueueEvents, basePatients, helpRequests, helpTopics, isLive, moveNote, scopeName, stationById, stepGroup, useQueueEvents, worldKey } from '../../../lib/queue';
 import type { Step } from '../../../lib/patients';
 import FloorPlanSvg, { liftSpot } from '../../../components/FloorPlanSvg';
 
@@ -49,10 +50,7 @@ function QueueStatusPage() {
   useEffect(()=>{ setNotify(loadJson(`hdt.notify.${token}`,false)); const n = loadJson<Note[]>(`hdt.notes.${token}`,[]); setNotes(n); seen.current = new Set(n.map(x=>x.key)); },[token]);
   const m = minute===null ? 0 : Math.floor(minute), st = patient && minute!==null ? patientAt(patient,m) : null;
   // People ahead in the same queue (what the station console would call next), and the estimate as a range.
-  const ahead = useMemo(()=>{ if (!st || m>=st.step.called || st.status==='calling' || st.status==='held' || st.status==='missed') return undefined;
-    const g = stepGroup(st); if (!g) return undefined;
-    const station = stationById(st.step.assigned ?? st.step.stationId) ?? allStations().find(x=>x.group===g); if (!station) return undefined;
-    const i = stationQueue(patients,station,m,undefined,events).waiting.findIndex(x=>x.s.p.id===st.p.id); return i<0 ? undefined : i; },[st,patients,m,events]);
+  const ahead = useMemo(()=>peopleAhead(st,patients,m,events),[st,patients,m,events]);
   // Notifications: what the LINE Official Account would push (here: on this page, and the browser's own notice if allowed).
   useEffect(()=>{
     if (!st || !patient || family) return;
@@ -82,12 +80,8 @@ function QueueStatusPage() {
   // waiting area), or — while being seen — where the next step waits. The start is the last place we know they were.
   const way = st ? wayOf(st,steps,placeText(st,m)) : undefined;
   const known = knownUntil(patient,m), waiting = !!st && m<st.step.called, eta = st ? etaOf(st,m) : 0, next = current+1<=known ? steps[current+1] : undefined;
-  // Estimate from the queue itself when we know the position: people ahead × minutes each ÷ rooms/counters working,
-  // shown as a range. Otherwise fall back to the planned time.
-  const grp = st ? stepGroup(st) : undefined, serving = grp ? allStations().filter(x=>x.group===grp && (!x.roomId || stationDoctor(x,m)?.status==='active')) : [];
-  const per = serving.length ? serviceMinutes(serving[0],events) : 0;
-  const center = ahead!==undefined && serving.length ? (ahead+0.5)*per/serving.length : eta;
-  const lo = Math.max(ahead===0?0:1,Math.floor(center*0.7)), hi = Math.max(lo+2,Math.ceil(center*1.4)+2);
+  // Estimate from the queue itself when we know the position (lib/queue-status.ts, shared with the reception kiosk).
+  const { center, lo, hi } = st ? waitRange(st,ahead,m,events) : { center:eta, lo:0, hi:2 };
   // Help request: goes to the station (or queue) the patient is waiting for, as a short topic — never free text.
   const myReports = events.filter(e=>e.action==='report' && e.patientId===patient.id).sort((x,y)=>y.at-x.at), lastReport = myReports[0];
   const lastHelp = lastReport ? helpRequests(events).find(h=>h.report.id===lastReport.id) : undefined, resolved = lastHelp?.closed, assignedTo = lastHelp?.assigned?.reason?.slice(7);
