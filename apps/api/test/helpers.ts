@@ -35,7 +35,7 @@ export function makeApi() {
   const audit = new AuditService(db), features = new FeaturesService(db), idempotency = new IdempotencyService(db);
   const booking = new BookingService(db), appts = new AppointmentService(db), checkin = new CheckInService(db, booking, visits, appts), identity = new PatientIdentityService(db, booking);
   const notify = new NotificationService(db, features, identity, visits), wayfinding = new WayfindingService(db);
-  const queue = new QueueService(db, visits), tickets = new TicketsService(db), line = new LineService(db, tickets, notify);
+  const queue = new QueueService(db, visits), tickets = new TicketsService(db), line = new LineService(db, tickets, notify, wayfinding, features);
   const gateway = new FlowGateway(new FlowService(), new LiveFeedService(), queue, auth, tickets, line, audit, features, visits, idempotency, booking, checkin, appts, identity, notify, wayfinding);
   // Broadcasts: `to` = only that room (staff), `except` = everyone else (public screens), neither = everyone.
   const emitted: { event: string; data: unknown; to?: string; except?: string }[] = [];

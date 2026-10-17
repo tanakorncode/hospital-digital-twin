@@ -629,6 +629,35 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
     return { ok: true };
   }
 
+  // ---- LINE OA: what is set up, try the bot, install the rich menu ---------------------------------------------------
+  @SubscribeMessage('line:status')
+  lineStatus(@ConnectedSocket() client: Socket) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (!may(me, 'admin')) return DENIED;
+    return { ok: true, ...this.line.status() };
+  }
+  // What the bot would answer — no message is sent anywhere.
+  @SubscribeMessage('line:try')
+  lineTry(@ConnectedSocket() client: Socket, @MessageBody() body: { text?: unknown }) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (overLimit(client, 'command')) return SLOW;
+    const text = typeof body?.text === 'string' ? body.text.slice(0, 200) : '';
+    return { ok: true, answer: this.line.answer(text) };
+  }
+  @SubscribeMessage('line:richmenu')
+  async lineRichMenu(@ConnectedSocket() client: Socket, @MessageBody() body: { png?: unknown }) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (!may(me, 'admin')) return DENIED;
+    try {
+      const id = await this.line.installRichMenu(body?.png);
+      this.audit.record({ ...actor(me), action: 'line.richmenu', targetType: 'line-oa', meta: { richMenuId: id } });
+      return { ok: true };
+    } catch (err) { if (err instanceof AppError) return err.toJSON(); throw err; }
+  }
+
   // ---- Wayfinding places and QR signs (stage 2.8, administrators) ----------------------------------------------------
   @SubscribeMessage('wayfinding:list')
   wayfindingList(@ConnectedSocket() client: Socket) {
