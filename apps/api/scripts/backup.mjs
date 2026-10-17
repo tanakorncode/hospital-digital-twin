@@ -1,5 +1,6 @@
 // Online backup of the SQLite database (safe while the API runs): VACUUM INTO a dated copy, keep the newest KEEP.
 //   node scripts/backup.mjs            (in the container: docker compose exec api node scripts/backup.mjs)
+// Check a backup / restore one: scripts/restore.mjs
 // Env: DB_PATH (default data/hospital.db), BACKUP_DIR (default data/backups), BACKUP_KEEP (default 14).
 import { mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -10,7 +11,8 @@ const dbPath = process.env.DB_PATH ?? join(root, 'data', 'hospital.db');
 const dir = process.env.BACKUP_DIR ?? join(root, 'data', 'backups');
 const keep = Number(process.env.BACKUP_KEEP ?? 14);
 mkdirSync(dir, { recursive: true });
-const stamp = new Date().toLocaleString('sv-SE').replace(/[: ]/g, '-').slice(0, 16);
+// To the second: two backups in the same minute must not collide (VACUUM INTO refuses an existing file).
+const stamp = new Date().toLocaleString('sv-SE').replace(/[: ]/g, '-').slice(0, 19);
 const out = join(dir, `hospital-${stamp}.db`);
 const db = new DatabaseSync(dbPath, { readOnly: true });
 db.exec(`VACUUM INTO '${out.replace(/'/g, "''")}'`);

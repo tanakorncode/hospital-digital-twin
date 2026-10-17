@@ -5,7 +5,7 @@ import { AuthService, type Role, type User } from './auth.service';
 import { allowOrigin } from './cors';
 import { FlowService, FlowUpdate } from './flow.service';
 import { LiveFeedService } from './live-feed.service';
-import { QueueService, type QueueCommand, type QueueEvent, type SettingsCommand } from './queue.service';
+import { QueueService, type QueueCommand, type QueueEvent, type QueueSettings, type SettingsCommand } from './queue.service';
 import { TicketsService } from './tickets.service';
 import { LineService } from './line.service';
 import { AuditService } from './audit.service';
@@ -46,6 +46,8 @@ const actor = (u: User) => ({ actorType: 'staff' as const, actorId: `user:${u.id
 // queue log without staff names — screens for the public only need numbers, places and states.
 const STAFF_ROOM = 'staff';
 export const publicEvent = ({ by: _by, ...e }: QueueEvent): QueueEvent => e;
+// Settings for public screens: without who changed them last.
+export const publicSettings = ({ updatedBy: _by, ...s }: QueueSettings): QueueSettings => s;
 // Service errors (AppError) become the usual { ok:false, code, reason } reply.
 function attempt<T>(fn: () => T) {
   try { return fn(); } catch (err) { if (err instanceof AppError) return err.toJSON(); throw err; }
@@ -73,7 +75,7 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
     client.emit('flow:snapshot', this.flowService.snapshot());
     client.emit('live:snapshot', this.liveFeed.snapshot());
     this.sendLog(client);
-    client.emit('queue:settings', this.queue.getSettings());
+    client.emit('queue:settings', user ? this.queue.getSettings() : publicSettings(this.queue.getSettings()));
     client.emit('visits', this.visits.list());
   }
   private sendLog(client: Socket) {
@@ -103,6 +105,7 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
     client.data.user = res.user;
     void client.join(STAFF_ROOM);
     this.sendLog(client); // now with the names the public stream leaves out
+    client.emit('queue:settings', this.queue.getSettings());
     return res;
   }
   @SubscribeMessage('auth:logout')
@@ -218,7 +221,7 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
     const res = this.queue.setSettings({ ...cmd, by: me.name });
     if (res.ok) this.audit.record({ ...actor(me), action: 'settings.update', targetType: 'settings', targetId: cmd.scope, reason: cmd.summary, meta: { reset: res.reset } });
     // New service hours reset today's log: send every screen the whole log again.
-    if (res.ok) { this.server.emit('queue:settings', res.settings); if (res.reset) this.publishLog(); else this.publishQueueEvent(res.event); }
+    if (res.ok) { this.server.to(STAFF_ROOM).emit('queue:settings', res.settings); this.server.except(STAFF_ROOM).emit('queue:settings', publicSettings(res.settings)); if (res.reset) this.publishLog(); else this.publishQueueEvent(res.event); }
     return res.ok ? { ok: true } : { ok: false, reason: res.reason };
   }
   // ---- Real patients (live data mode) ---------------------------------------------------------------------------

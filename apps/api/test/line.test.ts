@@ -40,7 +40,8 @@ test('link → code in the OA chat → notified when called, moved and helped; "
   assert.match(sent.at(-1)!.body.messages[0].text, /เปิดการแจ้งเตือนคิว A012/);
   const admin = signIn(api, 'admin', ADMIN_PASSWORD);
   api.gateway.queueCommand(admin, { at: 600, station: 'room:opd-204', action: 'call', patientId: 'p-0010', step: 3 });
-  await new Promise((r) => setTimeout(r, 10));
+  // Sent by the notification worker in the background: wait for it (up to 3 s).
+  for (let i = 0; i < 150 && !sent.some((x) => x.url.endsWith('/push')); i++) await new Promise((r) => setTimeout(r, 20));
   const push = sent.at(-1)!;
   assert.match(push.url, /\/push$/);
   assert.equal(push.body.to, 'U1');
@@ -49,7 +50,7 @@ test('link → code in the OA chat → notified when called, moved and helped; "
   await api.line.handleWebhook(message('U1', 'หยุด'));
   const before = sent.length;
   api.gateway.queueCommand(admin, { at: 601, station: 'room:opd-204', action: 'recall', patientId: 'p-0010', step: 3 });
-  await new Promise((r) => setTimeout(r, 10));
+  await api.notify.process();
   assert.equal(sent.length, before, 'no messages after stopping');
 });
 

@@ -22,6 +22,8 @@ afterEach(() => { globalThis.fetch = realFetch; delete process.env.LINE_CHANNEL_
 
 const U1 = `U${'d'.repeat(32)}`;
 const MED = 'opd-2-0';
+// Background sends finish in their own time: wait for the outcome (up to 3 s) instead of a fixed sleep.
+const waitFor = async (ok: () => boolean) => { for (let i = 0; i < 150 && !ok(); i++) await new Promise((r) => setTimeout(r, 20)); };
 let n = 0;
 const key = () => `nt-key-${String(++n).padStart(6, '0')}`;
 type Job = { template: string; status: string; attempt_count: number; scheduled_at: string; last_error: string | null; dedupe_key: string; id: string };
@@ -110,7 +112,7 @@ test('busy or down: retried later with the same retry key; a rejected message fa
   j = jobs().find((x) => x.status === 'FAILED')!;
   assert.ok(j);
   assert.equal((api.gateway.notifyRetry(admin, { id: j.id }) as { ok: boolean }).ok, true);
-  await new Promise((r) => setTimeout(r, 20));
+  await waitFor(() => jobs().find((x) => x.id === j.id)!.status === 'SENT');
   assert.equal(jobs().find((x) => x.id === j.id)!.status, 'SENT');
   assert.equal((api.gateway.notifyRetry(admin, { id: j.id }) as { ok: boolean }).ok, false, 'only failed ones');
 });
