@@ -46,6 +46,7 @@ export class LiveFeedService implements OnModuleInit, OnModuleDestroy {
   private readonly walk = new Map<string, number>(); // per-entity random walk so values drift plausibly
   private readonly listeners = new Set<(s: LiveSnapshot) => void>();
   private latest: LiveSnapshot = this.simulate(new Date());
+  private lastIngest = 0; // while a real feed (HIS adapter) is sending, the demo feed stays quiet
 
   onModuleInit() {
     if (process.env.DEMO_FEED === 'off') {
@@ -54,6 +55,7 @@ export class LiveFeedService implements OnModuleInit, OnModuleDestroy {
     }
     const every = Number(process.env.DEMO_FEED_MS ?? 3000);
     this.timer = setInterval(() => {
+      if (Date.now() - this.lastIngest < 60_000) return;
       this.latest = this.simulate(new Date());
       this.listeners.forEach((l) => l(this.latest));
     }, every);
@@ -66,6 +68,29 @@ export class LiveFeedService implements OnModuleInit, OnModuleDestroy {
 
   snapshot() {
     return this.latest;
+  }
+
+  // A snapshot from the HIS adapter (POST /ingest/live). Counts are aggregates only — no patient data.
+  ingest(body: unknown): { ok: true } | { ok: false; reason: string } {
+    const b = body as Partial<LiveSnapshot> | null;
+    if (!b || typeof b !== 'object') return { ok: false, reason: 'body must be a LiveSnapshot object' };
+    const at = typeof b.at === 'string' && !Number.isNaN(Date.parse(b.at)) ? b.at : new Date().toISOString();
+    if (Math.abs(Date.parse(at) - Date.now()) > 15 * 60_000) return { ok: false, reason: '`at` is more than 15 minutes from server time' };
+    const floors: Record<string, number> = {};
+    for (const [k, v] of Object.entries(b.floors ?? {})) {
+      if (!/^[a-z]+:\d{1,2}$/.test(k) || !Number.isInteger(v) || v < 0 || v > 20000) return { ok: false, reason: `floors["${k}"] must be a whole number 0–20000 ("buildingId:level")` };
+      floors[k] = v;
+    }
+    const servicePoints: LiveSnapshot['servicePoints'] = {};
+    for (const [k, v] of Object.entries(b.servicePoints ?? {})) {
+      if (!/^[a-z][a-z0-9-]{0,40}$/.test(k) || !v || !Number.isInteger(v.queue) || v.queue < 0 || !Number.isFinite(v.waitMinutes) || v.waitMinutes < 0 || !levels.includes(v.status))
+        return { ok: false, reason: `servicePoints["${k}"] needs queue (int ≥ 0), waitMinutes (≥ 0) and status normal|busy|critical` };
+      servicePoints[k] = { queue: v.queue, waitMinutes: Math.round(v.waitMinutes), status: v.status };
+    }
+    this.latest = { at, source: 'his-adapter', floors: { ...this.latest.floors, ...floors }, servicePoints: { ...this.latest.servicePoints, ...servicePoints } };
+    this.lastIngest = Date.now();
+    this.listeners.forEach((l) => l(this.latest));
+    return { ok: true };
   }
 
   subscribe(listener: (s: LiveSnapshot) => void) {

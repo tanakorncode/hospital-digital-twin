@@ -1,0 +1,45 @@
+# Production-style stack: web + API + Caddy (HTTPS). See docs/DEPLOY.md.
+#   cp apps/api/.env.example apps/api/.env   # set ADMIN_PASSWORD, WEB_ORIGIN
+#   DOMAIN=queue.example.org docker compose up -d --build
+services:
+  api:
+    build: { context: ., dockerfile: apps/api/Dockerfile }
+    env_file: apps/api/.env
+    environment:
+      DB_PATH: /repo/apps/api/data/hospital.db
+      TZ: ${TZ:-Asia/Bangkok}      # the queue day follows the hospital's local date
+    volumes:
+      - api-data:/repo/apps/api/data
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: same-origin
+        NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY:-}
+    environment:
+      API_INTERNAL_URL: http://api:4000
+      TZ: ${TZ:-Asia/Bangkok}
+    depends_on: [api]
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2.8-alpine
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on: [web, api]
+    restart: unless-stopped
+
+volumes:
+  api-data:
+  caddy-data:
+  caddy-config:

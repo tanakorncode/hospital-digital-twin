@@ -1,0 +1,19 @@
+# One public domain for everything. Caddy gets and renews the HTTPS certificate automatically.
+#   DOMAIN=queue.hospital.go.th  → real certificate (port 80/443 must reach this server)
+#   DOMAIN=localhost             → local test with Caddy's own certificate
+{$DOMAIN:localhost} {
+	encode zstd gzip
+	# Live queue (socket.io, WebSocket + polling) and health → API
+	reverse_proxy /socket.io/* api:4000
+	reverse_proxy /health api:4000
+	# Everything else → web
+	reverse_proxy web:3000
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+	log {
+		output stdout
+		format console
+	}
+}

@@ -30,6 +30,11 @@ WebSocket namespace: `/hospital`, events: `flow:update`, `live:snapshot` (on con
 - **Patient links:** `/q/<token>` tokens are 128-bit random values issued by the API (`ticket:issue`, staff only), valid until 23:59 of the service day. Staff can re-issue a lost slip (older links, including family links, stop working). A family link is a separate read-only token (`ticket:family`, ≤ 12 h, never past the patient's link). A help request must carry the patient's own valid link.
 - Sessions last `SESSION_HOURS` (default 12); 5 failed sign-ins in 5 minutes lock that username/address for 5 minutes.
 
+## Deploy and integration
+- [docs/DEPLOY.md](docs/DEPLOY.md) — Docker Compose + Caddy (HTTPS), backups, updates.
+- [docs/HIS-INTEGRATION.md](docs/HIS-INTEGRATION.md) — `POST /ingest/live` and `/ingest/queue` for the HIS adapter.
+- `GET /health` — liveness + database check.
+
 ## Tests
 ```bash
 pnpm typecheck   # web + API
