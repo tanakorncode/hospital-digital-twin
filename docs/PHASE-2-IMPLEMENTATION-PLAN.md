@@ -1,6 +1,6 @@
 # Phase 2 — Implementation Plan (Stage 0: Repository discovery)
 
-สถานะ: ผลการสำรวจ repo จริง ณ commit `a74e0b2` (2026-10-17) · อ้างอิงสเปก [Hospital-Digital-Twin-Phase-2-Spec.md](Hospital-Digital-Twin-Phase-2-Spec.md)
+สถานะ: ผลการสำรวจ repo จริง ณ commit `a74e0b2` (2026-10-17) · อ้างอิง [Hospital-Digital-Twin-Phase-2-Implementation-Ready.md](Hospital-Digital-Twin-Phase-2-Implementation-Ready.md) (ฉบับล่าสุด) และ [Hospital-Digital-Twin-Phase-2-Spec.md](Hospital-Digital-Twin-Phase-2-Spec.md)
 เป้าหมายที่ตกลงแล้ว: **เตรียมนำร่องใช้จริง** (pilot-ready) ไม่ใช่เดโม
 
 รอบนี้ไม่ได้แก้โค้ด schema หรือเทสต์ใด ๆ — สร้างเฉพาะไฟล์นี้
@@ -230,6 +230,27 @@ check-in (Kiosk สแกน / เจ้าหน้าที่ / LIFF + ตำ
 | D9 | server/โดเมน/LINE OA ของโรงพยาบาล และผู้รับผิดชอบ incident | 2.9 |
 
 ระหว่างรอคำตอบ ขั้น 2.0, 2.1, 2.2 (กติกาตั้งค่าได้) และ 2.8 ทำได้ทันที
+
+---
+
+## 8.1 ความคืบหน้า
+
+### ✅ ขั้น 2.0 Foundation — เสร็จ (2026-10-17)
+| งาน | ไฟล์ | หมายเหตุ |
+|---|---|---|
+| แก้ R9: Caddy ส่ง `/line/*`, `/ingest/*`, `/api/*` ไป API | `deploy/Caddyfile`, `docs/DEPLOY.md` | |
+| Migration runner + `schema_migrations` | `apps/api/src/migrations.ts`, `db.service.ts` (`migrate`, `schemaVersion`) | migration เป็น TS (ติดไปกับ `dist` ไม่ต้อง copy ไฟล์ SQL) · migration 1 = `audit_log`, `idempotency_keys` · ตารางเฟส 1 = version 0 ไม่แตะ |
+| Transaction helper | `db.service.ts` `tx()` | `BEGIN IMMEDIATE`, rollback เมื่อ throw, ซ้อนกันได้, ปฏิเสธ async · `busy_timeout = 5000` |
+| Error convention | `apps/api/src/errors.ts` | `{ok:false, code, reason}` + `AppError` + filter สำหรับ REST · คำตอบเดิม (FORBIDDEN, AUTH_REQUIRED, RATE_LIMITED) ได้ `code` เพิ่ม `reason` ไทยเหมือนเดิม |
+| Idempotency | `apps/api/src/idempotency.service.ts` | key ต่อ scope, hash จาก canonical request ฝั่งเซิร์ฟเวอร์, เก็บ 7 วัน, ไม่เก็บผลที่ล้มเหลว |
+| Audit log | `apps/api/src/audit.service.ts` | actor เป็น `user:<id>` · กรอง key ที่เป็นความลับ/ตัวตนออกอัตโนมัติ · บันทึกแล้ว: สร้าง/แก้ผู้ใช้, แก้ตั้งค่า, ออกบัตรคิวใหม่, เปิด/ปิดสวิตช์ |
+| Feature flags `phase2.*` | `apps/api/src/features.service.ts` | 6 สวิตช์ตามเอกสาร §18 ปิดทั้งหมดโดยค่าเริ่มต้น · socket `features:set` / `audit:list` (admin) · `features` event ได้ `phase2` เพิ่ม |
+| Request id | `apps/api/src/main.ts` | header `x-request-id` ทุก HTTP request |
+| Tests | `apps/api/test/foundation.test.ts` | +11 ข้อ รวม concurrency จริง 2 connection บนไฟล์เดียวกัน → **API 41 + Web 16 = 57/57 ผ่าน** |
+
+ยังไม่ทำในขั้นนี้ (ตั้งใจ): หน้าเว็บสำหรับเปิด/ปิดสวิตช์และดู audit (รอพร้อมหน้าจอเจ้าหน้าที่ขั้น 2.7), `domain_events` แยก (ใช้ `notification_jobs` ใน transaction เดียวกันแทน ตาม §4.5)
+
+### ⏭ ถัดไป: ขั้น 2.1 Visit model
 
 ---
 

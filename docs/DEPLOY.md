@@ -1,6 +1,6 @@
 # Deploy (Docker + HTTPS)
 
-One server, one domain. Caddy terminates HTTPS (automatic certificates) and routes `/socket.io/*` and `/health` to the API, everything else to the web app.
+One server, one domain. Caddy terminates HTTPS (automatic certificates) and routes `/socket.io/*`, `/health`, `/line/*` (LINE webhook), `/ingest/*` (HIS) and `/api/*` to the API, everything else to the web app.
 
 ```
 browser ──HTTPS──▶ caddy ──┬─ /socket.io/*, /health ─▶ api  (NestJS · SQLite on a volume)

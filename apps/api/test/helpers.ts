@@ -1,7 +1,10 @@
 import 'reflect-metadata';
 import { Logger } from '@nestjs/common';
+import { AuditService } from '../src/audit.service';
 import { AuthService } from '../src/auth.service';
 import { DbService } from '../src/db.service';
+import { FeaturesService } from '../src/features.service';
+import { IdempotencyService } from '../src/idempotency.service';
 import { FlowGateway } from '../src/flow.gateway';
 import { FlowService } from '../src/flow.service';
 import { LiveFeedService } from '../src/live-feed.service';
@@ -21,10 +24,11 @@ export function makeApi() {
   const auth = new AuthService(db);
   auth.onModuleInit();
   const queue = new QueueService(db), tickets = new TicketsService(db), line = new LineService(db, tickets);
-  const gateway = new FlowGateway(new FlowService(), new LiveFeedService(), queue, auth, tickets, line);
+  const audit = new AuditService(db), features = new FeaturesService(db), idempotency = new IdempotencyService(db);
+  const gateway = new FlowGateway(new FlowService(), new LiveFeedService(), queue, auth, tickets, line, audit, features);
   const emitted: { event: string; data: unknown }[] = [];
   (gateway as unknown as { server: unknown }).server = { emit: (event: string, data: unknown) => emitted.push({ event, data }), to: () => ({ emit: () => undefined }) };
-  return { db, auth, queue, tickets, line, gateway, emitted };
+  return { db, auth, queue, tickets, line, audit, features, idempotency, gateway, emitted };
 }
 // A socket as the gateway sees it, optionally signed in with a session token.
 export function fakeSocket(token = '') {
