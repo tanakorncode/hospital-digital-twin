@@ -41,14 +41,17 @@ export type Patient = {
   clinicKey?:string; // OPD clinic (queue group for screening and exam)
   bed?:{level:number; bed:string; from:number; to?:number}; // ward bed held (inpatients, and admitted ER patients)
   triage?:Triage; // ER only
+  // Real patient (live data mode): built from a server visit, not simulated — no HN here, steps only as far as ordered.
+  live?:boolean; priority?:PriorityKey;
 };
+export type PriorityKey = 'monk'|'pregnant'|'wheelchair'|'disabled'|'elderly';
 export type PatientStatus = 'waiting'|'calling'|'held'|'serving'|'result'|'long'|'missed'|'ward'|'done';
 export const statusText:Record<PatientStatus,string> = {waiting:'รอ',calling:'กำลังเรียก',held:'พักคิว',serving:'กำลังรับบริการ',result:'รอผล',long:'รอนาน',missed:'เรียกแล้วไม่มา',ward:'พักรักษา',done:'เสร็จแล้ว · กำลังกลับ'};
 export const statusColor:Record<PatientStatus,string> = {waiting:'#f5a524',calling:'#0891b2',held:'#94a3b8',serving:'#1677ff',result:'#8b4fe6',long:'#ef4444',missed:'#e0368c',ward:'#6366f1',done:'#22c58b'};
 export const NO_SHOW = 'ไม่มาตามเรียก';
 export const LONG_WAIT = 45; // minutes in one step before a patient is flagged
 
-export const maskHN = (hn:string) => `HN ••-••${hn.slice(-4)}`;
+export const maskHN = (hn:string) => hn ? `HN ••-••${hn.slice(-4)}` : 'HN —';
 // Durations people read at a glance: "45 นาที", "1 ชม. 5 นาที", "4 ชม. 32 นาที" (short: "4 ชม. 32 น.").
 export function fmtDur(min:number, short=false) {
   const m = Math.max(0,Math.round(min)), u = short ? 'น.' : 'นาที';
@@ -414,11 +417,13 @@ const fixedRoute:StepKind[] = ['kiosk','registration','screening','exam','triage
 // Index of the last step that is known at `minute`: everything done so far, the current step and, while still
 // in the fixed opening part of the visit, the next fixed step.
 export function knownUntil(p:Patient, minute:number) {
+  if (p.live) return minute<p.arrival ? -1 : p.steps.length-1; // a real patient's steps are exactly what has been ordered
   const i = p.steps.findIndex(s=>minute>=s.start && minute<s.end);
   if (i<0) return minute<p.arrival ? -1 : p.steps.length-1;
   return fixedRoute.includes(p.steps[i].kind) && fixedRoute.includes(p.steps[i+1]?.kind) ? i+1 : i;
 }
-export const etaOf = (s:PatientState, minute:number) => s.status==='waiting'||s.status==='long'||s.status==='result' ? Math.max(1,Math.round(s.step.called-minute)) : 0;
+// Real patients have no planned time: 0 (unknown) — screens estimate from the queue position instead.
+export const etaOf = (s:PatientState, minute:number) => !s.p.live && (s.status==='waiting'||s.status==='long'||s.status==='result') ? Math.max(1,Math.round(s.step.called-minute)) : 0;
 
 // Patients worth a look right now: long waits first, then missed calls.
 export function alertsAt(patients:Patient[], minute:number) {
@@ -449,4 +454,50 @@ export function searchPatients(patients:Patient[], query:string, minute:number) 
   if (!q) return [];
   const digits = q.replace(/\D/g,'');
   return patients.filter(p=>p.arrival<=minute && (p.queue.includes(q) || (digits.length>=3 && p.hn.replace(/\D/g,'').includes(digits)))).slice(0,6);
+}
+
+// ---- Real patients (live data mode) ---------------------------------------------------------------------
+// A visit from the API (mirrors apps/api/src/visits.service.ts): who is in today's queue, with which number and
+// which steps they have been sent to — no name, no HN.
+export type LiveVisit = {id:string; queue:string; flow:'opd'|'er'; clinicKey?:string; dept:string; priority?:PriorityKey; triage?:number;
+  arrival:number; steps:{kind:StepKind; at:number}[]; status:'active'|'cancelled'};
+type DoneEvent = {action:string; at:number; patientId?:string; step?:number};
+// Each step starts when the previous one was finished (or when it was ordered, if later); nothing is predicted:
+// called / end stay open (DAY) until staff call, start and finish it — applyQueueEvents fills them in from the log.
+// After the last ordered step is done the patient walks out, as in the simulation.
+export function livePatients(visits:LiveVisit[], events:DoneEvent[]):Patient[] {
+  const doneAt = new Map<string,number>();
+  events.forEach(e=>{ if (e.action==='done' && e.patientId?.startsWith('v-') && e.step!==undefined) doneAt.set(`${e.patientId}#${e.step}`,e.at); });
+  const clinics = new Map(opdClinics().map(c=>[c.key,c]));
+  return visits.filter(v=>v.status==='active').map(v=>{
+    const c = v.clinicKey ? clinics.get(v.clinicKey) : undefined, seed = hashOf(v.id+v.queue), r = seeded(seed);
+    let prev:number|undefined = v.arrival;
+    const steps:Step[] = v.steps.map((x,i)=>{
+      const start = prev===undefined ? DAY : Math.min(DAY,Math.max(prev,x.at));
+      prev = doneAt.get(`${v.id}#${i}`);
+      if (prev!==undefined && prev<start) prev = start;
+      return {kind:x.kind,start,called:DAY,end:DAY,place:livePlace(x.kind,c,r)};
+    });
+    if (prev!==undefined && steps.length) steps.push({kind:'leave',start:prev,called:prev,end:prev+8,place:{where:'ทางออก → ลานจอดรถ',serve:PARKING,wait:ENTRANCE}});
+    const deptWhere = c ? where('opd',c.level,c.dept) : where('er',1,'ห้องฉุกเฉิน');
+    return {id:v.id,queue:v.queue,hn:'',flow:v.flow,dept:v.dept,deptWhere,arrival:v.arrival,steps,clinicKey:v.clinicKey,
+      age:v.priority==='elderly'?'elderly':'adult',female:v.priority==='pregnant' || seed%2===0,seed,
+      help:v.priority==='wheelchair'?'รถเข็น':undefined,triage:v.flow==='er' && v.triage ? v.triage as Triage : undefined,live:true,priority:v.priority};
+  });
+}
+// Where a live step happens before a station takes it (the station's own spot replaces `serve` once it calls).
+function livePlace(kind:StepKind, c:Clinic|undefined, r:()=>number):Place {
+  const counter = (id:string, level:number, deptIndex:number, text:string):Place => ({where:where(id,level,text),buildingId:id,level,serve:counterSpot(id,level,deptIndex,0.5),wait:waitingSpot(id,level,deptIndex,r(),r())});
+  if ((kind==='screening' || kind==='exam' || kind==='followup') && c) {
+    const wait = waitingSpot('opd',c.level,c.deptIndex,r(),r());
+    return kind==='screening' ? {...counter('opd',c.level,c.deptIndex,`ซักประวัติ ${c.dept}`),wait}
+      : {where:where('opd',c.level,`ห้องตรวจ ${c.dept}`),buildingId:'opd',level:c.level,serve:c.rooms[0] ? roomSpot(c.rooms[0].id) : wait,wait};
+  }
+  if (kind==='lab') { const st = labStationSpots()[0]; return {where:where('diagnostics',1,st.name),buildingId:'diagnostics',level:1,serve:st.spot,wait:waitingSpot('diagnostics',1,1,r(),r())}; }
+  if (kind==='xray') { const rm = xrayRoomSpots()[0]; return {where:where('diagnostics',2,rm.name),buildingId:'diagnostics',level:2,serve:rm.spot,wait:waitingSpot('diagnostics',2,0,r(),r())}; }
+  if (kind==='pharmacy') return counter('opd',1,1,'ห้องยา');
+  if (kind==='finance') return counter('opd',1,2,'การเงิน');
+  if (kind==='triage') return counter('er',1,0,'คัดแยก (Triage)');
+  if (kind==='treatment') { const wait = waitingSpot('er',1,1,r(),r()); return {where:where('er',1,'ห้องรักษา'),buildingId:'er',level:1,serve:erBedSpots()[0]?.spot ?? wait,wait}; }
+  return counter('opd',1,0,'ลงทะเบียน');
 }

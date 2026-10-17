@@ -1,12 +1,13 @@
 'use client';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { PriorityTag } from '../PriorityIcon';
+import { EnterVisitButton, SendOnBar, type VisitControl } from './LiveVisit';
 import dynamic from 'next/dynamic';
 import QRCode from 'qrcode';
 import { ArrowLeftRight, Camera, Coffee, Copy, Hand, Lock, LockOpen, MapPin, QrCode, Sparkles, CheckCircle2, ChevronDown, ChevronRight, ClipboardList, ExternalLink, HeartPulse, LayoutList, List, Map as MapIcon, Megaphone, Pause, PhoneCall, Pill, Play, Repeat, ScanLine, Settings2, Siren, SkipForward, Stethoscope, TestTube, UserCheck, Volume2, VolumeX, Wallet, X } from 'lucide-react';
 import { LONG_WAIT, NO_SHOW, fmtDur, fmtMin, maskHN, opdClinics, patientAt, patientToken, placeText, statusColor, statusText, stepText, triageLevels, type Patient, type PatientState, type PatientStatus, type StepKind } from '../../lib/patients';
 import { erBoard, serviceNote } from '../../lib/ops';
-import { DEFAULT_POLICY, SYSTEM_BY, actionText, openReports, groupName, moveNote, sameZone, allStations, everyStation, announce, capFor, healthText, modeText, rulesFor, scopeName, suggestionText, type AssistView, type Suggestion, groupOf, openStations, priorityOf, stationById, stationDoctor, stationQueue, stepGroup, type PriorityPolicy, type QueueCommand, type QueueEvent, type QueueSettings, type SettingsPatch, type Station, type AuthUser, type QueueSync, useTicket } from '../../lib/queue';
+import { DEFAULT_POLICY, SYSTEM_BY, actionText, openReports, groupName, moveNote, sameZone, allStations, everyStation, announce, capFor, healthText, modeText, rulesFor, scopeName, suggestionText, type AssistView, type Suggestion, groupOf, openStations, priorityOf, stationById, stationDoctor, stationQueue, stepGroup, type PriorityPolicy, type QueueCommand, type QueueEvent, type QueueSettings, type SettingsPatch, type Station, type AuthUser, type QueueSync, useTicket, canDo, isLive } from '../../lib/queue';
 
 import { DEFAULT_HOURS, buildings, floorRooms, layoutRevision, waitingSeats, deptArea } from '../../lib/scene-data';
 import FloorPlanSvg from '../FloorPlanSvg';
@@ -16,7 +17,10 @@ const FloorScene = dynamic(()=>import('../HospitalScene').then(m=>m.FloorScene),
 type Tab = 'station'|'overview'|'er';
 const tabs:[Tab,string,typeof Siren][] = [['station','ช่องบริการของฉัน',PhoneCall],['overview','ภาพรวมคิว',LayoutList],['er','ห้องฉุกเฉิน',Siren]];
 export type QueueControl = {events:QueueEvent[]; online:boolean; user?:AuthUser|null; resolveTicket?:QueueSync['resolveTicket']; send:(c:QueueCommand)=>Promise<{ok:boolean;reason?:string}>; canAct:boolean; onNow:()=>void; settings:QueueSettings;
- saveSettings?:(patch:SettingsPatch, audit:{at:number; scope:string; summary:string; by?:string})=>Promise<{ok:boolean;reason?:string}>};
+ saveSettings?:(patch:SettingsPatch, audit:{at:number; scope:string; summary:string; by?:string})=>Promise<{ok:boolean;reason?:string}>} & Partial<VisitControl>;
+// Live data mode, signed-in staff on a connected screen: real patients can be taken in and sent on.
+const visitControl = (q:QueueControl):VisitControl|undefined => isLive(q.settings) && q.online && canDo(q.user,'staff') && q.enterVisit && q.addVisitStep && q.cancelVisit
+ ? {enterVisit:q.enterVisit,addVisitStep:q.addVisitStep,cancelVisit:q.cancelVisit} : undefined;
 
 type OpenPlace = (buildingId:string, level:number, roomId?:string)=>void;
 export default function QueuePage({patients,minute,timeNote,onOpenPatient,queue,assist,onOpenSettings,onOpenPlace}:{patients:Patient[];minute:number;timeNote:string;onOpenPatient:(id:string)=>void;queue:QueueControl;assist:AssistView;onOpenSettings:(group:string|null)=>void;onOpenPlace:OpenPlace}) {
@@ -25,6 +29,8 @@ export default function QueuePage({patients,minute,timeNote,onOpenPatient,queue,
  return <div className="page">
   <div className="pageHead"><h2>ติดตามคิว</h2><span className="pageTime">{timeNote}</span>
    <span className={'syncBadge'+(queue.online?' on':'')}>{queue.online?'ซิงก์กับระบบคิวกลาง':'ออฟไลน์ · บันทึกเฉพาะเครื่องนี้'}</span>
+   {isLive(queue.settings) && <span className="syncBadge live">ผู้ป่วยจริง</span>}
+   {visitControl(queue) && <EnterVisitButton visits={visitControl(queue)!} minute={minute} disabled={!queue.canAct} patients={patients} QrButton={QrButton}/>}
    <div className="pageTabs" role="tablist">{tabs.map(([id,label,Icon])=><button key={id} role="tab" aria-selected={tab===id} className={tab===id?'on':''} onClick={()=>setTab(id)}><Icon size={15}/>{label}</button>)}</div>
   </div>
   {serviceNote(m) && <OffHours m={m} queue={queue}/>}
@@ -272,6 +278,7 @@ function StationConsole({patients,minute,queue,onOpen,assist,onOpenSettings}:{pa
       <span className="ncLinks"><button className="linkBtn dark" onClick={()=>onOpen(cur.p.id)}>ดูเส้นทางบนแผนที่</button>
        <button className="linkBtn dark" disabled={disabled} onClick={()=>void lock(cur,!cur.step.locked)}>{cur.step.locked?'ปลดล็อก':'ล็อกไว้กับจุดนี้'}</button>
        <QrButton p={cur.p} label="หน้าคิวผู้ป่วย (QR)"/></span>
+      {cur.p.live && visitControl(queue) && <SendOnBar s={cur} minute={m} visits={visitControl(queue)!} disabled={disabled} onMsg={(text,bad)=>setMsg({text,bad})}/>}
      </div>
     </div> : <div className="ncBody idle">
      {next ? <><span className="ncNextLabel">คิวถัดไป</span><b className="ncQueue soft">{next.p.queue}</b>

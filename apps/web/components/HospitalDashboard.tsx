@@ -4,9 +4,9 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { Bell, MapPin, Tags, Route as RouteIcon, RotateCcw, FastForward, Building2, ChartColumn, ClipboardList, Clock, Droplet, House, Layers, ListOrdered, LocateFixed, Minus, Pill, Plus, Radiation, Search, Settings, Stethoscope, Thermometer, Users, UsersRound, Wallet, Hospital, LayoutGrid, Play, Pause, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, X, Ticket, UserRound, Accessibility, type LucideIcon, BrainCircuit } from 'lucide-react';
 import { findDepts, findDoctors, isOff, type DeptPlace, kiosks, kioskStatusLabel, type Kiosk, DENSITY_HIGH, DENSITY_LOW, doctorName, dutyLabel, findRoom, floorDutyAt, roomDutyAt, HOURS, HOUR_END, HOUR_START, REF_HOUR, buildingDensityAt, buildingStatsAt, buildings, buildingStats, clampHour, crowdFactor, demoFlows, densityColor, densityLevel, floorDepartments, fmtHour, hourlySeries, parkingLots, peakWindow, personTypes, roads, scopeAt, servicePointAt, servicePoints, type PersonType, type Scope, type ServicePoint } from '../lib/scene-data';
 import { useLiveFeed, type LiveStatus } from '../lib/live-feed';
-import { SYSTEM_BY, canDo, useTicket, applyQueueEvents, applyWorld, queueAssist, rulesFor, suggestionText, useQueueEvents, worldKey } from '../lib/queue';
+import { SYSTEM_BY, allStations, canDo, openStations, useTicket, applyQueueEvents, basePatients as startingPatients, isLive, queueAssist, rulesFor, suggestionText, useQueueEvents, worldKey } from '../lib/queue';
 import { demoOffset } from '../lib/use-demo-clock';
-import { LONG_WAIT, alertsAt, bottlenecksAt, etaOf, fmtDur, fmtMin, generatePatients, knownUntil, placeText, patientToken, kioskAt, maskHN, patientAt, searchPatients, statusColor as patientColor, statusText, stepText, type Patient, type StepKind } from '../lib/patients';
+import { LONG_WAIT, alertsAt, bottlenecksAt, etaOf, fmtDur, fmtMin, knownUntil, placeText, patientToken, kioskAt, maskHN, patientAt, searchPatients, statusColor as patientColor, statusText, stepText, type Patient, type StepKind } from '../lib/patients';
 import { LoginScreen, UserChip } from './LoginScreen';
 import type { LabelKind, PickedPerson, SceneApi, SceneMode, SceneView } from './HospitalScene';
 import QRCode from 'qrcode';
@@ -221,7 +221,9 @@ export default function HospitalDashboard() {
  const queueSync = useQueueEvents();
  // One simulated day of journeys (fixed seed so server and browser render the same), built on the OPD hours and the department / station layout in Settings.
  const world = worldKey(queueSync.settings);
- const basePatients = useMemo(()=>{ applyWorld(queueSync.settings); return generatePatients('demo-day'); },[world]); // eslint-disable-line react-hooks/exhaustive-deps
+ // Live data mode: today's real visits instead (rebuilt with the log, since each step starts when the previous one is done).
+ const liveData = isLive(queueSync.settings);
+ const basePatients = useMemo(()=>startingPatients(queueSync.settings,queueSync.visits,queueSync.events),[world,liveData,liveData?queueSync.visits:null,liveData?queueSync.events:null]); // eslint-disable-line react-hooks/exhaustive-deps
  const patients = useMemo(()=>applyQueueEvents(basePatients,queueSync.events),[basePatients,queueSync.events]);
  // following: the timeline tracks the clock and shows realtime values; scrubbing or playing leaves it.
  const [following,setFollowing] = useState(true);
@@ -364,7 +366,16 @@ export default function HospitalDashboard() {
   })();
  },[assist,following]); // eslint-disable-line react-hooks/exhaustive-deps
  const ackAlert = (id:string) => setAcks(prev=>{ const next = {...prev,[id]:{minute:minuteKey,at:new Date().toISOString()}}; try { localStorage.setItem('hdt.alertAcks',JSON.stringify(next)); } catch { /* ignore */ } return next; });
- const timeNote = `ข้อมูล ณ ${fmtHour(hour)} · ${liveNow?'สด':following?'ตามเวลาปัจจุบัน':'ช่วงเวลาที่เลือกในไทม์ไลน์'} · ข้อมูลจำลอง`;
+ const timeNote = `ข้อมูล ณ ${fmtHour(hour)} · ${liveNow?'สด':following?'ตามเวลาปัจจุบัน':'ช่วงเวลาที่เลือกในไทม์ไลน์'} · ${liveData?'ผู้ป่วยจริง':'ข้อมูลจำลอง'}`;
+ // Live data mode: the top figures come from the real patients and the stations staff have opened — no simulated trends.
+ const realStats = useMemo(()=>{
+  if (!liveData) return null;
+  const now = patients.map(p=>patientAt(p,minute)).filter((s):s is NonNullable<typeof s>=>!!s && s.step.kind!=='leave');
+  const waits = now.filter(s=>s.status==='waiting'||s.status==='long').map(s=>s.stepWait);
+  const rooms = allStations().filter(st=>st.roomId), open = new Set(openStations(queueSync.events).map(st=>st.id));
+  return {total:patients.length,serving:now.filter(s=>s.status==='serving').length,wait:waits.length?Math.round(waits.reduce((a,b)=>a+b,0)/waits.length):undefined,
+   rooms:rooms.filter(st=>open.has(st.id)).length,allRooms:rooms.length};
+ },[liveData,patients,minute,queueSync.events]);
  const openOnMap = (id:string) => { setActiveNav('ภาพรวม'); selectPatient(id); };
  const presentNow = patients.filter(p=>patientAt(p,minute)).length;
  const pickBuilding = (id:string|null) => {
@@ -431,10 +442,17 @@ export default function HospitalDashboard() {
   <header className="topbar">
    <div className="brand"><div className="brandIcon"><Plus size={26} strokeWidth={3.4}/></div><div><strong>Hospital Digital Twin</strong><small>โรงพยาบาลตัวอย่าง</small></div></div>
    <div className="metrics">
+    {realStats ? <>
+     <div className="metric"><span className="metricIcon blue"><Users size={24}/></span><div><span>ผู้ป่วยจริงวันนี้</span><strong>{realStats.total} <em>คน</em></strong></div></div>
+     <div className="metric"><span className="metricIcon amber"><Clock size={24}/></span><div><span>รอคิวเฉลี่ยตอนนี้</span><strong>{realStats.wait===undefined?'–':realStats.wait} <em>นาที</em></strong></div></div>
+     <div className="metric"><span className="metricIcon blue"><UsersRound size={24}/></span><div><span>กำลังรับบริการ</span><strong>{realStats.serving} <em>คน</em></strong></div></div>
+     <div className="metric"><span className="metricIcon blue"><Stethoscope size={24}/></span><div><span>ห้องตรวจที่เปิด</span><strong>{realStats.rooms} / {realStats.allRooms}</strong></div></div>
+    </> : <>
     <div className="metric"><span className="metricIcon blue"><Users size={24}/></span><div><span>ผู้ป่วยทั้งหมดวันนี้</span><strong>{todayTotal.toLocaleString()} <em>คน</em></strong></div><b className="positive">+12%</b></div>
     <div className="metric"><span className="metricIcon amber"><Clock size={24}/></span><div><span>รอคิวเฉลี่ย</span><strong>{Math.round(28*(0.4+0.6*opdK))} <em>นาที</em></strong></div><b className="positive">−5%</b></div>
     <div className="metric"><span className="metricIcon blue"><UsersRound size={24}/></span><div><span>กำลังรับบริการ</span><strong>{Math.round(327*campusRatio)} <em>คน</em></strong></div></div>
     <div className="metric"><span className="metricIcon blue"><Stethoscope size={24}/></span><div><span>ห้องตรวจที่ใช้งาน</span><strong>{roomsUsed} / 56</strong></div><b className="positive">{Math.round(roomsUsed/56*100)}%</b></div>
+    </>}
    </div>
    <div className={'clock'+(clockOffset?' testing':'')}><strong>{clock.time}</strong><small>{clock.date}</small>{clockOffset!==0 && <button className="testBadge" title="กำลังใช้เวลาทดสอบ · ปรับที่ ตั้งค่า → โหมดทดสอบ" onClick={()=>setActiveNav('ตั้งค่า')}>ทดสอบ</button>}</div>
    <LiveStatusBadge status={live.status} at={live.snapshot?.at} source={live.snapshot?.source}/>
@@ -544,7 +562,7 @@ export default function HospitalDashboard() {
       <span>{a.status==='missed' ? 'เรียกคิวแล้วไม่มา' : `${stepText[a.step.kind].wait} ${fmtDur(a.stepWait)}`}</span>
      </button>)}
      {!alerts.length && <p className="rosterNone" style={{paddingLeft:6}}>ไม่มีผู้ป่วยรอเกิน {LONG_WAIT} นาที</p>}
-     {bottleneck && <p className="note">คอขวดวันนี้: {stepText[bottleneck.kind].wait} เฉลี่ย {bottleneck.avg} นาที · ข้อมูลจำลอง</p>}
+     {bottleneck && <p className="note">คอขวดวันนี้: {stepText[bottleneck.kind].wait} เฉลี่ย {bottleneck.avg} นาที{liveData?'':' · ข้อมูลจำลอง'}</p>}
     </section>}
     <section className="panel"><h3>ชั้นของ{panelBuilding.name.replace(/ \(.*\)$/,'')}</h3>
      {panelNow.floors.map(f=><button key={f.level} className={'floorRow'+(activeFloor===f.level?' floorActive':'')} onClick={()=>pickFloor(f.level)}>

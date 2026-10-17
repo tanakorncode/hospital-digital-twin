@@ -596,6 +596,7 @@ em{font-style:normal}
 /* Queue console */
 .syncBadge{font-size:11.5px;padding:3px 9px;border-radius:10px;background:#fff3db;color:#7a4b00}
 .syncBadge.on{background:#e2f8ee;color:#0e7a55}
+.syncBadge.live{background:#0f2340;color:#fff;font-weight:700}
 .console{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:12px;align-items:start}
 .consoleMain{display:flex;flex-direction:column;gap:12px}
 .consoleHead{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
@@ -1470,6 +1471,7 @@ kbd{margin-left:6px;padding:1px 6px;border-radius:5px;background:#ffffff33;borde
 .setIco.i-groups{background:linear-gradient(135deg,#5eead4,#0d9488);--sh:#0d948840}
 .setIco.i-history{background:linear-gradient(135deg,#cbd5e1,#64748b);--sh:#64748b40}
 .setIco.i-test{background:linear-gradient(135deg,#fcd34d,#ea580c);--sh:#ea580c40}
+.setIco.i-data{background:linear-gradient(135deg,#6ee7b7,#047857);--sh:#04785740}
 .setPane{position:relative;display:flex;flex-direction:column;gap:12px;min-width:0}
 .setToast{margin:0;padding:10px 14px;border-radius:12px;background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46;font-size:13.5px;font-weight:600}
 .setToast.bad{background:#fff1f2;border-color:#fecdd3;color:#be123c}
@@ -1483,6 +1485,7 @@ kbd{margin-left:6px;padding:1px 6px;border-radius:5px;background:#ffffff33;borde
 .setSub small{font-weight:500;color:#94a3b8}
 .modePick{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
 .modePick.four{grid-template-columns:repeat(4,1fr)}
+.modePick.two{grid-template-columns:repeat(2,1fr)}
 .modePick button{display:flex;flex-direction:column;gap:3px;padding:12px 14px;border:1.5px solid #e2e8f0;border-radius:14px;background:#fff;text-align:left;cursor:pointer;font:inherit;color:#0f2340}
 .modePick button small{font-size:12px;color:#7a8ca0}
 .modePick button.on{border-color:#7c3aed;background:#f5f3ff;box-shadow:0 0 0 3px #7c3aed1f}
@@ -1901,3 +1904,31 @@ kbd{margin-left:6px;padding:1px 6px;border-radius:5px;background:#ffffff33;borde
 .qsLine b{font-size:14px;color:#14532d}
 .qsLineCode{font:800 34px/1 Inter,sans-serif;letter-spacing:6px;color:#0f2340}
 .qsLine small{font-size:12px;color:#3f6b52;line-height:1.5}
+
+/* ---- Real patients (live data mode): take into the queue, send on ---- */
+.visitDialog{width:min(640px,100%);overflow-y:auto}
+.visitDialog header small{display:block;margin-top:2px;font-size:12.5px}
+.visitDialog footer{display:flex;justify-content:flex-end;gap:8px;padding-top:4px}
+.visitRow{display:flex;flex-direction:column;gap:6px}
+.visitRow>span{font-size:13px;font-weight:700;color:#10233b}
+.segBtns{display:flex;flex-wrap:wrap;gap:6px}
+.segBtns button{min-height:40px;padding:6px 12px;border:1.5px solid #d5e0ec;border-radius:10px;background:#fff;color:#0f2340;font:inherit;font-size:13.5px;cursor:pointer}
+.segBtns button.on{border-color:#1677ff;background:#eef5ff;box-shadow:0 0 0 3px #1677ff1f;font-weight:700}
+.visitClinics{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px}
+.visitClinics button{display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto auto;column-gap:8px;align-items:center;padding:8px 10px;border:1.5px solid #d5e0ec;border-radius:10px;background:#fff;text-align:left;font:inherit;cursor:pointer;color:#0f2340}
+.visitClinics button b{grid-row:span 2;display:grid;place-items:center;width:30px;height:30px;border-radius:8px;background:#0f2340;color:#fff;font-size:15px}
+.visitClinics button span{font-size:13px;font-weight:600;line-height:1.25}
+.visitClinics button small{font-size:11.5px;color:#7a8ca0}
+.visitClinics button.on{border-color:#1677ff;background:#eef5ff;box-shadow:0 0 0 3px #1677ff1f}
+.visitMade{display:flex;flex-direction:column;align-items:center;gap:6px;padding:18px 0 6px;text-align:center;color:#0e7a55}
+.visitMade>span{font-weight:700}
+.mvQueue.big{margin:4px 0;padding:4px 18px;font-size:40px;line-height:1.1;letter-spacing:1px}
+.visitMade .qrActs{margin-top:8px}
+.sendOn{display:flex;flex-direction:column;gap:6px;margin-top:8px;padding:8px 10px;border-radius:10px;background:#f4f8fd;border:1px solid #dde7f3}
+.sendOnHead{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700;color:#10233b}
+.sendOnHead small{font-weight:500;color:#60738a}
+.sendOnBtns{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.sendOnBtns button{min-height:34px;padding:4px 10px;border:1px solid #c9daf0;border-radius:8px;background:#fff;color:#0f4fa8;font:inherit;font-size:12.5px;font-weight:600;cursor:pointer}
+.sendOnBtns button:disabled{opacity:.5;cursor:default}
+.sendOnBtns button.danger{display:inline-flex;align-items:center;gap:4px;border-color:#fecdd3;color:#be123c}
+@media (max-width:640px){.visitClinics{grid-template-columns:1fr 1fr}}

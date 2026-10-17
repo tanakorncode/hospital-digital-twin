@@ -1,9 +1,9 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
-import { clinicOpen, fmtMin, generatePatients, opdClinics, patientAt, type PatientState } from '../../lib/patients';
+import { clinicOpen, fmtMin, opdClinics, patientAt, type PatientState } from '../../lib/patients';
 import { dutyLabel, isOff, roomDutyAt } from '../../lib/scene-data';
 import { useDemoClock } from '../../lib/use-demo-clock';
-import { allStations, applyQueueEvents, applyWorld, pausedUntil, stationById, useQueueEvents, worldKey } from '../../lib/queue';
+import { allStations, applyQueueEvents, basePatients, isLive, pausedUntil, stationById, useQueueEvents, worldKey } from '../../lib/queue';
 import { counterZones, deptScreen, nowStates, screenData, screenDepts, stationScreen, type ScreenData, type StationScreen } from '../../lib/queue-screen';
 
 // Public queue screens. Queue numbers only — no names, no HN — because they hang in public areas.
@@ -14,7 +14,7 @@ import { counterZones, deptScreen, nowStates, screenData, screenDepts, stationSc
 //  /tv                   index of all screens
 type Mode = {kind:'index'} | {kind:'floor'; level:number} | {kind:'dept'; name:string} | {kind:'station'; id:string};
 export default function TvPage() {
-  const { events, settings } = useQueueEvents(); // staff calls appear here the moment they are made
+  const { events, settings, visits } = useQueueEvents(); // staff calls appear here the moment they are made
   const [mode,setMode] = useState<Mode|null>(null);
   useEffect(()=>{ const q = new URLSearchParams(window.location.search), f = Number(q.get('floor'));
     setMode(q.get('station') ? {kind:'station',id:q.get('station')!} : q.get('dept') ? {kind:'dept',name:q.get('dept')!} : f>=1 && f<=4 ? {kind:'floor',level:f} : {kind:'index'}); },[]);
@@ -22,7 +22,8 @@ export default function TvPage() {
   const minute = useDemoClock(mode?.kind==='station' || mode?.kind==='dept' ? 2000 : 10000,settings.demoOffset ?? 0);
   const level = mode?.kind==='floor' ? mode.level : 2;
   const world = worldKey(settings);
-  const base = useMemo(()=>{ applyWorld(settings); return generatePatients('demo-day'); },[world]); // eslint-disable-line react-hooks/exhaustive-deps
+  const liveData = isLive(settings);
+  const base = useMemo(()=>basePatients(settings,visits,events),[world,liveData,liveData?visits:null,liveData?events:null]); // eslint-disable-line react-hooks/exhaustive-deps
   const patients = useMemo(()=>applyQueueEvents(base,events),[base,events]);
   const clinics = useMemo(()=>opdClinics().filter(c=>c.level===level),[level,base]); // base changes with the layout
   if (minute===null || !mode) return <main className="tv"/>;

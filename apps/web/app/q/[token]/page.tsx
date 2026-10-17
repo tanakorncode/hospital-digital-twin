@@ -2,9 +2,9 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import { Bell, BellOff, BellRing, ChevronRight, FlaskConical, HandHelping, ListChecks, Pill, Route, UsersRound } from 'lucide-react';
-import { etaOf, fmtDurRange, fmtMin, generatePatients, knownUntil, patientAt, patientToken, placeText, statusColor, stepText } from '../../../lib/patients';
+import { etaOf, fmtDurRange, fmtMin, knownUntil, patientAt, patientToken, placeText, statusColor, stepText } from '../../../lib/patients';
 import { useDemoClock } from '../../../lib/use-demo-clock';
-import { PORTER_TOPIC, allStations, applyQueueEvents, applyWorld, helpRequests, helpTopics, moveNote, scopeName, serviceMinutes, stationById, stationDoctor, stationQueue, stepGroup, useQueueEvents, worldKey } from '../../../lib/queue';
+import { PORTER_TOPIC, allStations, applyQueueEvents, basePatients, helpRequests, helpTopics, isLive, moveNote, scopeName, serviceMinutes, stationById, stationDoctor, stationQueue, stepGroup, useQueueEvents, worldKey } from '../../../lib/queue';
 import type { Step } from '../../../lib/patients';
 import FloorPlanSvg, { liftSpot } from '../../../components/FloorPlanSvg';
 
@@ -26,7 +26,7 @@ function QsLoading() {
 function QueueStatusPage() {
   const { token } = useParams<{token:string}>();
   const params = useSearchParams();
-  const { events, send, settings, online, resolveTicket, familyTicket, features, lineLink } = useQueueEvents();
+  const { events, send, settings, online, resolveTicket, familyTicket, features, lineLink, visits } = useQueueEvents();
   const [lineCode,setLineCode] = useState<{code:string; url:string}|null>(null);
   // Who this link belongs to: the API's answer, or — when the API can't be reached (local demo) — the offline demo link.
   const [ticket,setTicket] = useState<{patientId?:string; kind?:'patient'|'family'; expiresAt?:string; error?:string; offline?:boolean}|null>(null);
@@ -37,7 +37,8 @@ function QueueStatusPage() {
   const family = ticket?.kind==='family';
   const minute = useDemoClock(15000,settings.demoOffset ?? 0);
   const world = worldKey(settings);
-  const all = useMemo(()=>{ applyWorld(settings); return generatePatients('demo-day'); },[world]); // eslint-disable-line react-hooks/exhaustive-deps
+  const liveData = isLive(settings);
+  const all = useMemo(()=>basePatients(settings,visits,events),[world,liveData,liveData?visits:null,liveData?events:null]); // eslint-disable-line react-hooks/exhaustive-deps
   const patients = useMemo(()=>applyQueueEvents(all,events),[all,events]);
   const patient = ticket?.patientId ? patients.find(p=>p.id===ticket.patientId) : ticket?.offline ? patients.find(p=>patientToken(p)===token) : undefined;
   const [notify,setNotify] = useState(false);
@@ -153,7 +154,7 @@ function QueueStatusPage() {
         {!family && st && st.step.kind!=='leave' && <button className="t-help" onClick={()=>setSheet('help')}><span className="qsIco"><HandHelping size={22}/></span>ขอช่วยเหลือ</button>}
         {family && <button className="t-steps" onClick={()=>setSheet('steps')}><span className="qsIco"><ListChecks size={22}/></span>ขั้นตอน</button>}
       </div>
-      <p className="qsFoot">อัปเดตอัตโนมัติ · {fmtMin(m)} น. · ข้อมูลจำลอง<br/>{family?'ลิงก์นี้ไม่แสดงชื่อ HN หรือผลการรักษา':'ไม่ต้องนั่งรอหน้าห้อง ระบบจะแจ้งเมื่อใกล้ถึงคิว'}</p>
+      <p className="qsFoot">อัปเดตอัตโนมัติ · {fmtMin(m)} น.{liveData?'':' · ข้อมูลจำลอง'}<br/>{family?'ลิงก์นี้ไม่แสดงชื่อ HN หรือผลการรักษา':'ไม่ต้องนั่งรอหน้าห้อง ระบบจะแจ้งเมื่อใกล้ถึงคิว'}</p>
     </section>
 
     {sheet && <div className="qsSheetBack" onClick={()=>setSheet(null)}>

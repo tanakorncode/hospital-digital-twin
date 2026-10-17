@@ -1,9 +1,9 @@
 'use client';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Building2, Clock, FlaskConical, History, KeyRound, Layers, Minus, Plus, RotateCcw, Search, Sparkles, Trash2, UserCog, X, type LucideIcon } from 'lucide-react';
+import { Building2, Clock, Database, FlaskConical, History, KeyRound, Layers, Minus, Plus, RotateCcw, Search, Sparkles, Trash2, UserCog, X, type LucideIcon } from 'lucide-react';
 import { fmtMin, opdClinics, screeningCounters, screeningStationId, type Clinic } from '../../lib/patients';
 import { CLINIC_FLOORS, DEFAULT_HOURS, buildingStats, builtInDeptCount, buildings, roomsPerFloor, type CustomDept } from '../../lib/scene-data';
-import { DEFAULT_RULES, canDo, roleText, type AuthUser, type QueueSync, type Role, type UserInput, counterServices, everyStation, modeText, queueGroups, rulesFor, scopeName, type AssistMode, type QueueEvent, type QueueGroup, type QueueRules, type QueueSettings, type SettingsPatch } from '../../lib/queue';
+import { DEFAULT_RULES, canDo, isLive, roleText, type AuthUser, type QueueSync, type Role, type UserInput, counterServices, everyStation, modeText, queueGroups, rulesFor, scopeName, type AssistMode, type QueueEvent, type QueueGroup, type QueueRules, type QueueSettings, type SettingsPatch } from '../../lib/queue';
 
 // Settings, one topic at a time (left menu). Rules read as sentences with − / + steppers; several changes are saved
 // together from a bar at the bottom. Hospital defaults, per-department overrides and the test clock are separate
@@ -21,7 +21,7 @@ const modes:{id:AssistMode; hint:string}[] = [{id:'off',hint:'แสดงสถ
 const valText = (k:keyof QueueRules, v:unknown) => k==='mode' ? modeText[v as AssistMode] : k==='cap' && v===0 ? 'ไม่จำกัด' : String(v);
 const ruleName:Record<keyof QueueRules,string> = {mode:'ระดับตัวช่วย',stallMin:'เกณฑ์ไม่ตอบรับ',slowFactor:'เกณฑ์ช้ากว่าปกติ',cap:'เพดานคิว',imbalance:'เกณฑ์เกลี่ยคิว'};
 const loadPref = (k:string, d:string) => { try { return localStorage.getItem(k) ?? d; } catch { return d; } };
-type Pane = 'hours'|'units'|'assist'|'groups'|'history'|'test'|'users';
+type Pane = 'hours'|'units'|'assist'|'groups'|'history'|'test'|'data'|'users';
 const panes:{id:Pane; icon:LucideIcon; title:string; sub:string}[] = [
  {id:'hours',icon:Clock,title:'เวลาให้บริการ',sub:'เวลาเปิด–ปิด OPD'},
  {id:'units',icon:Building2,title:'แผนกและจุดบริการ',sub:'เพิ่มแผนก · เปิด–ปิดห้อง/ช่อง'},
@@ -29,11 +29,12 @@ const panes:{id:Pane; icon:LucideIcon; title:string; sub:string}[] = [
  {id:'groups',icon:Layers,title:'ปรับรายแผนก',sub:'แผนกที่ต่างจากค่าทั้งโรงพยาบาล'},
  {id:'history',icon:History,title:'ประวัติการเปลี่ยน',sub:'ใครเปลี่ยนอะไร เมื่อไร'},
  {id:'test',icon:FlaskConical,title:'โหมดทดสอบ',sub:'เวลาจำลองสำหรับทดสอบ/สาธิต'},
+ {id:'data',icon:Database,title:'ข้อมูลผู้ป่วย',sub:'สาธิต หรือ ผู้ป่วยจริง'},
  {id:'users',icon:UserCog,title:'ผู้ใช้งาน',sub:'บัญชีเจ้าหน้าที่และสิทธิ์'},
 ];
-// What each role may open (the API enforces the same). Offline / not connected: everything except accounts.
+// What each role may open (the API enforces the same). Offline / not connected: everything except accounts and real data.
 const panesFor = (u:AuthUser|null):Pane[] => !u ? ['hours','units','assist','groups','history','test']
- : u.role==='admin' ? ['hours','units','assist','groups','history','test','users'] : ['groups','history'];
+ : u.role==='admin' ? ['hours','units','assist','groups','history','test','data','users'] : ['groups','history'];
 
 export default function SettingsPage({settings,save,events,minute,timeNote,focusGroup,user=null,listUsers,saveUser}:{settings:QueueSettings;save:Save;events:QueueEvent[];minute:number;timeNote:string;focusGroup?:string|null;
  user?:AuthUser|null;listUsers?:QueueSync['listUsers'];saveUser?:QueueSync['saveUser']}) {
@@ -52,7 +53,7 @@ export default function SettingsPage({settings,save,events,minute,timeNote,focus
  const history = events.filter(e=>e.action==='config');
  const custom = Object.keys(settings.groups).length+Object.keys(settings.stations).length;
  const offCount = settings.layout?.off?.length ?? 0;
- const badge:Partial<Record<Pane,string>> = {units:offCount?`ปิด ${offCount}`:'',groups:custom?String(custom):'',history:history.length?String(history.length):'',test:settings.demoOffset?'เปิดอยู่':''};
+ const badge:Partial<Record<Pane,string>> = {units:offCount?`ปิด ${offCount}`:'',groups:custom?String(custom):'',history:history.length?String(history.length):'',test:settings.demoOffset?'เปิดอยู่':'',data:isLive(settings)?'จริง':''};
  return <div className="page settingsPage v2">
   <div className="pageHead"><h2>ตั้งค่า</h2><span className="pageTime">{timeNote}</span>
    {user ? <span className="setBy">บันทึกในชื่อ <b>{user.name}</b> · {roleText[user.role]}</span> : <label className="setBy">บันทึกในชื่อ <input value={by} maxLength={40} placeholder="ชื่อ / รหัส" onChange={e=>{ setBy(e.target.value); try { localStorage.setItem('hdt.operator',e.target.value); } catch { /* ignore */ } }}/></label>}</div>
@@ -68,6 +69,7 @@ export default function SettingsPage({settings,save,events,minute,timeNote,focus
     {pane==='groups' && <GroupsPane settings={settings} commit={commit} focus={focusGroup ?? null}/>}
     {pane==='history' && <HistoryPane history={history}/>}
     {pane==='test' && <TestPane settings={settings} commit={commit}/>}
+    {pane==='data' && <DataPane settings={settings} commit={commit}/>}
     {pane==='users' && user && listUsers && saveUser && <UsersPane me={user} listUsers={listUsers} saveUser={saveUser}/>}
    </div>
   </div>
@@ -244,6 +246,29 @@ function TestPane({settings,commit}:{settings:QueueSettings;commit:Commit}) {
    <span className={'testCustom'+(customMin!==undefined && opdState(customMin)!=='open'?' warn':'')}><input type="time" value={custom} onChange={e=>setCustom(e.target.value)} aria-label="เวลาที่ต้องการ"/><button className="btn" disabled={!custom} onClick={()=>{ const [h,mm] = custom.split(':').map(Number); setClock(h*60+mm); }}>ใช้เวลานี้</button></span></div>
   {customMin!==undefined && opdState(customMin)!=='open' && <p className="testHint">{fmtMin(customMin)} อยู่นอกเวลาให้บริการ OPD · ตั้งได้ แต่จะไม่มีคิวผู้ป่วยนอก</p>}
   <p className="cmdNote">ลิงก์ที่มี ?hour หรือ ?demoStart ใช้เวลาของลิงก์แทน · ขณะทดสอบ นาฬิกาด้านบนของแดชบอร์ดจะมีป้าย "ทดสอบ"</p>
+ </section>;
+}
+
+// ---- Patient data: the simulated day, or real patients ----------------------------------------------------------
+// Live: the simulation stops; only patients taken into the queue (registration / check-in, or sent by the HIS) appear
+// on every console, map, TV board and patient page. Switching back shows the simulated day again; real visits are kept.
+function DataPane({settings,commit}:{settings:QueueSettings;commit:Commit}) {
+ const live = isLive(settings);
+ const [confirm,setConfirm] = useState(false);
+ const set = (mode:'demo'|'live') => { setConfirm(false);
+  void (mode==='live' ? commit({dataMode:'live'},'system','ข้อมูลผู้ป่วย: ผู้ป่วยจริง','ทุกหน้าจอแสดงเฉพาะผู้ป่วยที่รับเข้าคิว')
+   : commit({dataMode:null},'system','ข้อมูลผู้ป่วย: สาธิต','ทุกหน้าจอกลับไปแสดงวันจำลอง')); };
+ return <section className="setCard">
+  <PaneHead icon="data" title="ข้อมูลผู้ป่วย" scope="ทุกหน้าจอที่เชื่อมระบบกลาง">เลือกว่าคอนโซล แผนที่ จอทีวี และหน้าคิวของผู้ป่วย แสดงวันจำลองหรือผู้ป่วยจริง</PaneHead>
+  <div className="modePick two">
+   <button className={!live?'on':''} onClick={()=>live && set('demo')} aria-pressed={!live}><b>สาธิต</b><small>ผู้ป่วยจำลองทั้งวัน · สำหรับนำเสนอและฝึกใช้งาน</small></button>
+   <button className={live?'on':''} onClick={()=>!live && setConfirm(true)} aria-pressed={live}><b>ผู้ป่วยจริง</b><small>เฉพาะผู้ป่วยที่เจ้าหน้าที่หรือ HIS รับเข้าคิว · เลขคิวออกจากระบบกลาง</small></button>
+  </div>
+  {confirm && <div className="testWarn"><b>เปลี่ยนเป็นผู้ป่วยจริง?</b>
+   <span>ผู้ป่วยจำลองจะหายจากทุกหน้าจอทันที · ช่องบริการที่ยังไม่มีใครเปิดจะไม่เรียกคิวเอง · ควรเปลี่ยนก่อนเริ่มให้บริการ</span>
+   <button className="btn ghost" onClick={()=>setConfirm(false)}>ยกเลิก</button><button className="btn" onClick={()=>set('live')}>เปลี่ยนเป็นผู้ป่วยจริง</button></div>}
+  <p className="cmdNote">{live ? 'รับผู้ป่วยเข้าคิวได้ที่หน้าคิว → "รับผู้ป่วยเข้าคิว" · เปลี่ยนกลับเป็นสาธิตได้ รายการผู้ป่วยจริงของวันนี้ยังเก็บไว้'
+   : 'ระบบกลางต้องเชื่อมต่ออยู่ · การเปลี่ยนบันทึกในประวัติการเปลี่ยน'}</p>
  </section>;
 }
 

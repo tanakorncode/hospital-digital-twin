@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { io, type Socket } from 'socket.io-client';
 import { apiSocket } from './api-url';
-import { DEFAULT_CAPACITY, NO_SHOW, labStationSpots, opdClinics, patientAt, patientToken, screeningCounters, screeningStationId, xrayRoomSpots, type Patient, type PatientState, type StepKind } from './patients';
+import { DEFAULT_CAPACITY, NO_SHOW, generatePatients, labStationSpots, livePatients, opdClinics, patientAt, patientToken, screeningCounters, screeningStationId, xrayRoomSpots, type LiveVisit, type Patient, type PatientState, type StepKind } from './patients';
 import { buildings, counterSpot, doctorName, isOff, layoutRevision, roomDutyAt, roomSpot, setLayout, setServiceHours, waitingSpot, type Layout, type Spot } from './scene-data';
 
 const DAY = 24*60;
@@ -95,7 +95,7 @@ export function applyQueueEvents(patients:Patient[], events:QueueEvent[]):Patien
     let shift = 0, changed = false;
     const steps = p.steps.map((orig,i)=>{
       const s = {...orig};
-      if (shift) { s.start = Math.min(DAY,s.start+shift); s.called = Math.min(DAY,s.called+shift); s.end = Math.min(DAY,s.end+shift); changed = true; }
+      if (shift && !p.live) { s.start = Math.min(DAY,s.start+shift); s.called = Math.min(DAY,s.called+shift); s.end = Math.min(DAY,s.end+shift); changed = true; }
       const all = byStep.get(`${p.id}#${i}`) ?? [];
       const lockEv = all.filter(e=>e.action==='lock'||e.action==='unlock').at(-1);
       if (lockEv) { s.locked = lockEv.action==='lock'; changed = true; }
@@ -147,7 +147,11 @@ export function applyQueueEvents(patients:Patient[], events:QueueEvent[]):Patien
 // (simulated here by a stable hash, so the same patients carry the flag on every screen).
 export type Priority = {key:'monk'|'pregnant'|'wheelchair'|'disabled'|'elderly'; label:string};
 const hash = (str:string) => { let h = 2166136261; for (let i=0;i<str.length;i++) { h ^= str.charCodeAt(i); h = Math.imul(h,16777619); } return h>>>0; };
+const priorityLabel:Record<Priority['key'],string> = {monk:'พระภิกษุ',pregnant:'หญิงตั้งครรภ์',wheelchair:'ใช้รถเข็น',disabled:'ผู้พิการ',elderly:'ผู้สูงอายุ'};
+export const priorityKeys = Object.keys(priorityLabel) as Priority['key'][];
+export const priorityText = (k:Priority['key']) => priorityLabel[k];
 export function priorityOf(p:Patient):Priority|undefined {
+  if (p.live) return p.priority ? {key:p.priority,label:priorityLabel[p.priority]} : undefined; // set by staff at registration
   const h = hash(`prio:${p.id}`)%100;
   if (!p.female && p.age!=='child' && h<2) return {key:'monk',label:'พระภิกษุ'};
   if (p.female && p.age==='adult' && h<6) return {key:'pregnant',label:'หญิงตั้งครรภ์'};
@@ -223,24 +227,36 @@ export type AssistMode = 'off'|'suggest'|'auto';
 export type QueueRules = {mode:AssistMode; cap:number; stallMin:number; slowFactor:number; imbalance:number};
 // hours: OPD service hours the simulated day is built on · demoOffset: minutes every screen adds to the real clock (testing).
 // layout: departments added and departments / rooms / counters switched off (see setLayout in scene-data).
-export type QueueSettings = {system:QueueRules; groups:Record<string,Partial<QueueRules>>; stations:Record<string,{cap?:number}>; hours?:{opdOpen:number; opdClose:number}; demoOffset?:number; layout?:Layout; updatedAt?:string; updatedBy?:string};
-export type SettingsPatch = {system?:Partial<QueueRules>; groups?:Record<string,Partial<Record<keyof QueueRules,QueueRules[keyof QueueRules]|null>>|null>; stations?:Record<string,{cap?:number|null}|null>; hours?:{opdOpen:number; opdClose:number}|null; demoOffset?:number|null; layout?:Layout|null};
+export type QueueSettings = {system:QueueRules; groups:Record<string,Partial<QueueRules>>; stations:Record<string,{cap?:number}>; hours?:{opdOpen:number; opdClose:number}; demoOffset?:number; layout?:Layout; dataMode?:DataMode; updatedAt?:string; updatedBy?:string};
+// demo: the simulated day (default) · live: only real patients taken into the queue (visits), no simulation.
+export type DataMode = 'demo'|'live';
+export type SettingsPatch = {system?:Partial<QueueRules>; groups?:Record<string,Partial<Record<keyof QueueRules,QueueRules[keyof QueueRules]|null>>|null>; stations?:Record<string,{cap?:number|null}|null>; hours?:{opdOpen:number; opdClose:number}|null; demoOffset?:number|null; layout?:Layout|null; dataMode?:DataMode|null};
 export const DEFAULT_RULES:QueueRules = {mode:'suggest',cap:12,stallMin:5,slowFactor:2,imbalance:4};
 export const DEFAULT_SETTINGS:QueueSettings = {system:DEFAULT_RULES,groups:{},stations:{}};
 // The simulated day is built on the OPD hours and the layout: every screen applies them before generating patients
 // and regenerates when worldKey changes.
 export const worldKey = (s:QueueSettings) => JSON.stringify([s.hours ?? null,s.layout ?? null]);
-export function applyWorld(s:QueueSettings) { setServiceHours(s.hours); setLayout(s.layout); }
+let liveMode = false;
+export function applyWorld(s:QueueSettings) { setServiceHours(s.hours); setLayout(s.layout); liveMode = s.dataMode==='live'; }
+export const isLive = (s:QueueSettings) => s.dataMode==='live';
+// The patients every screen starts from: the simulated day, or (live mode) today's real visits. Live patients
+// depend on the log (each step starts when the previous one was finished), so they are rebuilt with it.
+export function basePatients(s:QueueSettings, visits:LiveVisit[], events:QueueEvent[]):Patient[] {
+  applyWorld(s);
+  return isLive(s) ? livePatients(visits,events) : generatePatients('demo-day');
+}
 export const modeText:Record<AssistMode,string> = {off:'ปิด',suggest:'แนะนำ',auto:'อัตโนมัติ'};
 export const rulesFor = (s:QueueSettings, group:string):QueueRules => ({...s.system,...(s.groups[group] ?? {})});
 export const capFor = (s:QueueSettings, st:Station) => s.stations[st.id]?.cap ?? rulesFor(s,st.group).cap; // 0 = no cap
 // Same merge on the API and offline: null clears an override (back to the inherited value).
 export function mergeSettings(s:QueueSettings, patch:SettingsPatch):QueueSettings {
-  const out:QueueSettings = {system:{...s.system,...(patch.system ?? {})},groups:{...s.groups},stations:{...s.stations},hours:s.hours,demoOffset:s.demoOffset,layout:s.layout,updatedAt:s.updatedAt,updatedBy:s.updatedBy};
+  const out:QueueSettings = {system:{...s.system,...(patch.system ?? {})},groups:{...s.groups},stations:{...s.stations},hours:s.hours,demoOffset:s.demoOffset,layout:s.layout,dataMode:s.dataMode,updatedAt:s.updatedAt,updatedBy:s.updatedBy};
   if (patch.layout!==undefined) { if (patch.layout===null) delete out.layout; else out.layout = {off:[...(patch.layout.off ?? [])],depts:[...(patch.layout.depts ?? [])]}; }
   if (!out.layout) delete out.layout;
   if (patch.hours!==undefined) { if (patch.hours===null) delete out.hours; else out.hours = {...patch.hours}; }
   if (patch.demoOffset!==undefined) { if (patch.demoOffset===null) delete out.demoOffset; else out.demoOffset = patch.demoOffset; }
+  if (patch.dataMode!==undefined) { if (patch.dataMode===null || patch.dataMode==='demo') delete out.dataMode; else out.dataMode = patch.dataMode; }
+  if (!out.dataMode) delete out.dataMode;
   for (const [g,v] of Object.entries(patch.groups ?? {})) {
     if (v===null) { delete out.groups[g]; continue; }
     const next:Record<string,unknown> = {...(out.groups[g] ?? {})};
@@ -291,7 +307,7 @@ export function stationHealth(st:Station, minute:number, events:QueueEvent[], ru
   if (pause!==undefined) return {state:'paused',text:pause>=DAY?'พักช่อง (ไม่กำหนดเวลา)':`พักช่องถึง ${String(Math.floor(pause/60)).padStart(2,'0')}:${String(Math.floor(pause%60)).padStart(2,'0')}`,until:pause};
   const doc = stationDoctor(st,minute);
   if (doc && doc.status!=='active') return {state:'away',text:doc.status==='break'?'แพทย์พัก':'ไม่มีแพทย์เข้าเวร'};
-  if (!open) return {state:'auto',text:'ตัวจำลองเรียกคิวแทน'};
+  if (!open) return {state:'auto',text:liveMode?'ยังไม่เปิดช่อง · ไม่มีผู้เรียกคิว':'ตัวจำลองเรียกคิวแทน'};
   if (cur?.status==='calling') { const last = cur.step.calls?.at(-1) ?? minute;
     if (minute-last>=rules.stallMin) return {state:'stalled',text:`เรียก ${cur.p.queue} แล้วไม่มีการตอบรับ ${Math.floor(minute-last)} นาที`}; }
   else if (cur?.status==='serving') { const took = minute-cur.step.called, avg = serviceMinutes(st,events);
@@ -381,7 +397,15 @@ export type QueueSync = {events:QueueEvent[]; online:boolean; send:(cmd:QueueCom
   listUsers:()=>Promise<{ok:boolean; reason?:string; users?:AuthUser[]}>; saveUser:(u:UserInput)=>Promise<{ok:boolean; reason?:string; users?:AuthUser[]}>;
   resolveTicket:(token:string)=>Promise<TicketRes>; familyTicket:(token:string)=>Promise<TicketRes>;
   // features: what the API has switched on (LINE notifications need the hospital's OA settings).
-  features:{line:boolean}; lineLink:(token:string, queue:string)=>Promise<Res & {code?:string; url?:string; expiresAt?:string}>};
+  features:{line:boolean}; lineLink:(token:string, queue:string)=>Promise<Res & {code?:string; url?:string; expiresAt?:string}>;
+  // Real patients (live data mode): today's visits, and the staff commands that take patients in and send them on.
+  visits:LiveVisit[]; enterVisit:(v:VisitInput, key:string)=>Promise<VisitRes>; addVisitStep:(visitId:string, kind:StepKind, at:number, key:string)=>Promise<VisitRes>;
+  cancelVisit:(visitId:string, reason:string)=>Promise<VisitRes>};
+export type VisitInput = {flow:'opd'|'er'; clinicKey?:string; dept?:string; prefix?:string; priority?:Priority['key']; triage?:number; at:number};
+export type VisitRes = Res & {code?:string; visit?:LiveVisit};
+// One key per intended action, kept by the form until it succeeds: tapping again after "no reply" returns the
+// first result instead of a second patient / step.
+export const actionKey = () => `w-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,10)}`;
 
 // ---- Patient links (/q/<token>) ----------------------------------------------------------------------------
 // The API issues random tokens that expire at the end of the day; staff can re-issue (older links stop working).
@@ -414,6 +438,7 @@ export function useQueueEvents():QueueSync {
   const [user,setUser] = useState<AuthUser|null>(null);
   const [authReady,setAuthReady] = useState(false);
   const [features,setFeatures] = useState<{line:boolean}>({line:false});
+  const [visits,setVisits] = useState<LiveVisit[]>([]);
   const socket = useRef<Socket|null>(null);
   useEffect(()=>{
     setEvents(loadLocal()); setSettings(loadSettings());
@@ -424,6 +449,8 @@ export function useQueueEvents():QueueSync {
     s.on('auth:me',(u:AuthUser|null)=>{ setUser(u); setAuthReady(true); if (!u) { try { localStorage.removeItem(sessionKey); } catch { /* ignore */ } } });
     s.on('features',(f:{line?:boolean})=>setFeatures({line:!!f?.line}));
     s.on('disconnect',()=>setOnline(false));
+    s.on('visits',(list:LiveVisit[])=>setVisits(Array.isArray(list)?list:[]));
+    s.on('visit',(v:LiveVisit)=>setVisits(prev=>{ const i = prev.findIndex(x=>x.id===v.id); if (i<0) return [...prev,v]; const next = [...prev]; next[i] = v; return next; }));
     s.on('connect_error',()=>setOnline(false));
     s.on('queue:events',(list:QueueEvent[])=>{ setEvents(list); saveLocal(list); });
     s.on('queue:event',(e:QueueEvent)=>setEvents(prev=>{ if (prev.some(x=>x.id===e.id)) return prev; const next = [...prev,e]; saveLocal(next); return next; }));
@@ -468,7 +495,10 @@ export function useQueueEvents():QueueSync {
     addLocal({at:audit.at,station:audit.scope,action:'config',reason:audit.summary,by:audit.by});
     return {ok:true};
   },[request]);
-  return {events,online,send,settings,saveSettings,user,authReady,login,logout,listUsers,saveUser,resolveTicket,familyTicket,features,lineLink};
+  const enterVisit = useCallback((v:VisitInput, key:string)=>request<VisitRes>('visit:enter',{...v,key}),[request]);
+  const addVisitStep = useCallback((visitId:string, kind:StepKind, at:number, key:string)=>request<VisitRes>('visit:step',{visitId,kind,at,key}),[request]);
+  const cancelVisit = useCallback((visitId:string, reason:string)=>request<VisitRes>('visit:cancel',{visitId,reason}),[request]);
+  return {events,online,send,settings,saveSettings,user,authReady,login,logout,listUsers,saveUser,resolveTicket,familyTicket,features,lineLink,visits,enterVisit,addVisitStep,cancelVisit};
 }
 
 // Thai announcement, read character by character so queue numbers are unambiguous.
