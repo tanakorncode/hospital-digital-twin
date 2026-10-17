@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "share": "NEXT_DIST_DIR=.next-share next build && NEXT_DIST_DIR=.next-share next start -p 3200"
+    "share": "NEXT_DIST_DIR=.next-share next build && NEXT_DIST_DIR=.next-share next start -p 3200",
+    "test": "node --import tsx --test test/*.test.ts",
+    "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {
     "3d-tiles-renderer": "0.5.3",

@@ -347,7 +347,8 @@ export function generatePatients(dayKey:string, opts:GenerateOptions={}):Patient
       if (x.kind==='rx') return;
       const prev = res[i-1], merged = x.kind==='pharmacy' && prev?.kind==='rx', start = merged ? prev.start : x.start;
       const place = x.stage.place(x.srv);
-      const step:Step = {kind:x.kind as StepKind,start,called:Math.min(x.called,DAY),end:Math.min(x.end,DAY),place:x.wait?{...place,wait:x.wait,waitArea:{buildingId:'er',level:1}}:place,stationId:stationOf(x,plan)};
+      // Everything is clamped to the simulated day (late-night ER visits run past midnight).
+      const step:Step = {kind:x.kind as StepKind,start:Math.min(start,DAY),called:Math.min(x.called,DAY),end:Math.min(x.end,DAY),place:x.wait?{...place,wait:x.wait,waitArea:{buildingId:'er',level:1}}:place,stationId:stationOf(x,plan)};
       // Follow-up with the same doctor: queued for that room only; about 4 in 10 have an appointment that must stay with them.
       if (merged) step.ready = Math.min(prev.end,DAY);
       const exam = res.find(e=>e.kind==='exam');

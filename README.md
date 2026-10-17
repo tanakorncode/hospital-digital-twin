@@ -30,6 +30,15 @@ WebSocket namespace: `/hospital`, events: `flow:update`, `live:snapshot` (on con
 - **Patient links:** `/q/<token>` tokens are 128-bit random values issued by the API (`ticket:issue`, staff only), valid until 23:59 of the service day. Staff can re-issue a lost slip (older links, including family links, stop working). A family link is a separate read-only token (`ticket:family`, ≤ 12 h, never past the patient's link). A help request must carry the patient's own valid link.
 - Sessions last `SESSION_HOURS` (default 12); 5 failed sign-ins in 5 minutes lock that username/address for 5 minutes.
 
+## Tests
+```bash
+pnpm typecheck   # web + API
+pnpm test        # node:test via tsx — apps/api/test, apps/web/test
+```
+- **API** (in-memory SQLite, no network): sign-in, lockout, roles on every gateway command, audit names, persistence across restarts, settings validation, patient links (issue, family, re-issue, expiry, help requests).
+- **Web logic:** deterministic simulation, journeys in time order, layout switches (rooms / departments / added departments), service hours, durations, map search, queue events, priority interleave, queue assistant stays within a group, public screens never show HN.
+- GitHub Actions (`.github/workflows/ci.yml`) runs both on every push and pull request.
+
 ## Realtime feed
 The API pushes a `LiveSnapshot` (see `packages/contracts`) every few seconds: aggregate people per floor
 (`"buildingId:level"`) and queue / wait / status per service point. No patient-level data.
