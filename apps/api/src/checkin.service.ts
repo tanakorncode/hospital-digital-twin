@@ -19,7 +19,7 @@ export type SourceInfo = { kind: 'BOOKING' | 'APPOINTMENT'; id: string; code: st
 export type CheckInResult = { visit: Visit; source: SourceInfo; already: boolean; late: boolean };
 const CODE_RE = /^(BK|AP)[A-Z0-9]{6}$/;
 const hhmm = (iso: string) => new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-type Found = SourceInfo & { status: string; clinicCode: string; profileId: string; prefix?: string; early: number; lateMin: number };
+type Found = SourceInfo & { status: string; clinicCode: string; profileId: string; prefix?: string; early: number; lateMin: number; room?: string };
 
 @Injectable()
 export class CheckInService {
@@ -53,7 +53,7 @@ export class CheckInService {
         throw new AppError('POLICY_REJECTED', now < opensAt ? `เช็กอินได้ตั้งแต่ ${hhmm(opensAt.toISOString())} น.` : `เลยเวลาเช็กอินของ${what}นี้แล้ว กรุณาติดต่อเคาน์เตอร์`);
       const label = f.kind === 'BOOKING' ? `จอง ${hhmm(f.startsAt)}–${hhmm(f.endsAt)}` : `นัด ${hhmm(f.startsAt)} · ${f.providerName}`;
       const { visit } = this.visits.enter({ flow: 'opd', clinicKey: f.clinicCode, dept: f.serviceName, prefix: f.prefix ?? opts.prefix, at: opts.at },
-        { type: f.kind, id: f.id }, { profileId: f.profileId, bookedSlot: label.slice(0, 60) });
+        { type: f.kind, id: f.id }, { profileId: f.profileId, bookedSlot: label.slice(0, 60), examRoom: f.room });
       const at = now.toISOString();
       const moved = f.kind === 'BOOKING'
         ? this.store.db.prepare(`UPDATE bookings SET status = 'CONVERTED_TO_QUEUE', visit_id = ?, checked_in_at = ?, updated_at = ? WHERE id = ? AND status = 'CONFIRMED'`).run(visit.id, at, at, f.id).changes === 1
@@ -79,6 +79,6 @@ export class CheckInService {
     if (!a) return undefined;
     const p = this.appts.policy(a.clinicCode);
     return { kind: 'APPOINTMENT', id: a.id, code: a.code, serviceName: a.clinicName, startsAt: a.startsAt, endsAt: a.endsAt, providerName: a.providerName, status: a.status,
-      clinicCode: a.clinicCode, profileId: this.appts.profileOf(a.id)!, prefix: p?.queuePrefix, early: p?.checkinEarlyMinutes ?? 120, lateMin: p?.checkinLateMinutes ?? 60 };
+      clinicCode: a.clinicCode, profileId: this.appts.profileOf(a.id)!, prefix: p?.queuePrefix, early: p?.checkinEarlyMinutes ?? 120, lateMin: p?.checkinLateMinutes ?? 60, room: a.roomId };
   }
 }

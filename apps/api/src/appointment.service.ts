@@ -12,16 +12,18 @@ import { AppError } from './errors';
 // NO_SHOW: only by a supervisor, after the appointment's time, with a reason. Unanswered LINE messages mean nothing.
 export type ApptPolicy = { clinicCode: string; displayName: string; enabled: boolean; advanceDays: number; cancelCutoffMinutes: number; rescheduleNeedsApproval: boolean;
   patientSelectsProvider: boolean; queuePrefix?: string; checkinEarlyMinutes: number; checkinLateMinutes: number; version: number };
-export type Session = { id: string; providerCode: string; providerName: string; clinicCode: string; startsAt: string; endsAt: string; status: 'OPEN' | 'CLOSED' | 'CANCELLED'; capacity: number; reserved: number };
+// roomId: the OPD exam room the doctor works in for this session (optional) — appointment patients wait for that room.
+export type Session = { id: string; providerCode: string; providerName: string; clinicCode: string; startsAt: string; endsAt: string; status: 'OPEN' | 'CLOSED' | 'CANCELLED'; capacity: number; reserved: number; roomId?: string };
 export type ApptSlot = { id: string; scheduleId: string; providerCode: string; providerName: string; clinicCode: string; startsAt: string; endsAt: string; capacity: number; reserved: number; remaining: number; status: 'OPEN' | 'CLOSED' | 'CANCELLED' };
 export type ApptStatus = 'CONFIRMED' | 'CANCELLED' | 'CHECKED_IN' | 'COMPLETED' | 'NO_SHOW' | 'EXPIRED';
 export type Appointment = { id: string; code: string; clinicCode: string; clinicName: string; providerCode: string; providerName: string; startsAt: string; endsAt: string;
-  status: ApptStatus; channel: 'STAFF' | 'LINE'; hn: string; createdAt: string; cancellationReason?: string; noShowReason?: string; visitId?: string;
+  status: ApptStatus; channel: 'STAFF' | 'LINE'; hn: string; createdAt: string; roomId?: string; cancellationReason?: string; noShowReason?: string; visitId?: string;
   pendingRequest?: { id: string; startsAt: string; endsAt: string; providerName: string; reason?: string } };
 export type RescheduleRequest = { id: string; status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED'; reason?: string; createdAt: string; decisionNote?: string;
   appointment: Appointment; to: { slotId: string; startsAt: string; endsAt: string; providerName: string } };
 export type Actor = { kind: 'staff'; id: number; canOverride: boolean } | { kind: 'patient'; profileId: string };
 
+export const ROOM_RE = /^opd-\d{3,4}$/;
 const CLINIC_RE = /^opd-\d-\d{1,2}$/, PROVIDER_RE = /^[A-Za-z0-9ก-๙._-]{1,20}$/, DATE_RE = /^\d{4}-\d{2}-\d{2}$/, TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 const CODE_CHARS = 'ACDEFGHJKLMNPQRTUVWXY3479';
 const bad = (reason: string) => new AppError('VALIDATION_ERROR', reason);
@@ -35,7 +37,7 @@ type PolicyRow = { clinic_code: string; display_name: string; enabled: number; a
 type SlotRow = { id: string; schedule_id: string; starts_at: string; ends_at: string; capacity: number; reserved_count: number; status: ApptSlot['status'];
   provider_code: string; provider_name: string; clinic_code: string; schedule_status: ApptSlot['status'] };
 type ApptRow = { id: string; appointment_code: string; clinic_code: string; provider_code: string; status: ApptStatus; channel: 'STAFF' | 'LINE'; created_at: string;
-  cancellation_reason: string | null; no_show_reason: string | null; visit_id: string | null; starts_at: string; ends_at: string; provider_name: string; display_name: string | null; hn: string | null };
+  cancellation_reason: string | null; no_show_reason: string | null; visit_id: string | null; starts_at: string; ends_at: string; provider_name: string; display_name: string | null; hn: string | null; room_id: string | null };
 const toPolicy = (r: PolicyRow): ApptPolicy => ({ clinicCode: r.clinic_code, displayName: r.display_name, enabled: !!r.enabled, advanceDays: r.advance_days,
   cancelCutoffMinutes: r.cancel_cutoff_minutes, rescheduleNeedsApproval: !!r.reschedule_needs_approval, patientSelectsProvider: !!r.patient_selects_provider,
   queuePrefix: r.queue_prefix ?? undefined, checkinEarlyMinutes: r.checkin_early_minutes, checkinLateMinutes: r.checkin_late_minutes, version: r.policy_version });
@@ -43,7 +45,7 @@ const toSlot = (r: SlotRow): ApptSlot => ({ id: r.id, scheduleId: r.schedule_id,
   startsAt: r.starts_at, endsAt: r.ends_at, capacity: r.capacity, reserved: r.reserved_count, remaining: Math.max(0, r.capacity - r.reserved_count),
   status: r.schedule_status === 'OPEN' ? r.status : r.schedule_status });
 const SLOT_SELECT = `SELECT s.*, p.provider_code, p.provider_name, p.clinic_code, p.status AS schedule_status FROM appointment_slots s JOIN provider_schedules p ON p.id = s.schedule_id`;
-const APPT_SELECT = `SELECT a.*, s.starts_at, s.ends_at, p.provider_name, pol.display_name, pp.external_patient_id AS hn FROM appointments a
+const APPT_SELECT = `SELECT a.*, s.starts_at, s.ends_at, p.provider_name, p.room_id, pol.display_name, pp.external_patient_id AS hn FROM appointments a
   JOIN appointment_slots s ON s.id = a.slot_id JOIN provider_schedules p ON p.id = s.schedule_id
   LEFT JOIN appointment_policies pol ON pol.clinic_code = a.clinic_code JOIN patient_profiles pp ON pp.id = a.patient_profile_id`;
 
@@ -95,7 +97,8 @@ export class AppointmentService implements OnModuleInit, OnModuleDestroy {
   // One session per chosen day (start–end), cut into slots of `minutes` with `capacity` places each. A day where the
   // doctor already has an overlapping session (in any clinic) is skipped and reported, never double-booked.
   createSessions(plan: Record<string, unknown>): { sessions: number; slots: number; skipped: number; conflicts: string[] } {
-    const { clinicCode, providerCode, providerName, from, to, weekdays, start, end, minutes, capacity } = plan;
+    const { clinicCode, providerCode, providerName, from, to, weekdays, start, end, minutes, capacity, roomId } = plan;
+    if (roomId !== undefined && roomId !== null && roomId !== '' && (typeof roomId !== 'string' || !ROOM_RE.test(roomId))) throw bad('ห้องตรวจไม่ถูกต้อง');
     if (typeof clinicCode !== 'string' || !this.policy(clinicCode)) throw bad('ตั้งกติกาการนัดของคลินิกนี้ก่อน');
     if (typeof providerCode !== 'string' || !PROVIDER_RE.test(providerCode)) throw bad('ระบุรหัสแพทย์ (เช่น รหัสใน HIS หรือเลข ว.)');
     if (typeof providerName !== 'string' || !providerName.trim() || providerName.length > 60) throw bad('ระบุชื่อแพทย์');
@@ -122,8 +125,8 @@ export class AppointmentService implements OnModuleInit, OnModuleDestroy {
         const clash = this.store.db.prepare(`SELECT starts_at FROM provider_schedules WHERE provider_code = ? AND status <> 'CANCELLED' AND starts_at < ? AND ends_at > ?`).get(providerCode, e, s) as { starts_at: string } | undefined;
         if (clash) { if (clash.starts_at === s) skipped++; else conflicts.push(day); continue; }
         const sid = newId('ps');
-        this.store.db.prepare(`INSERT INTO provider_schedules (id, provider_code, provider_name, clinic_code, starts_at, ends_at, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'OPEN', ?, ?)`)
-          .run(sid, providerCode, providerName.trim(), clinicCode, s, e, at, at);
+        this.store.db.prepare(`INSERT INTO provider_schedules (id, provider_code, provider_name, clinic_code, starts_at, ends_at, status, created_at, updated_at, room_id) VALUES (?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?)`)
+          .run(sid, providerCode, providerName.trim(), clinicCode, s, e, at, at, typeof roomId === 'string' && roomId ? roomId : null);
         sessions++;
         for (const [a, b] of times) {
           this.store.db.prepare(`INSERT INTO appointment_slots (id, schedule_id, starts_at, ends_at, capacity, reserved_count, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 0, 'OPEN', ?, ?)`)
@@ -141,7 +144,7 @@ export class AppointmentService implements OnModuleInit, OnModuleDestroy {
     return (this.store.db.prepare(`SELECT p.*, COALESCE(SUM(s.capacity), 0) AS cap, COALESCE(SUM(s.reserved_count), 0) AS res FROM provider_schedules p
       LEFT JOIN appointment_slots s ON s.schedule_id = p.id WHERE p.clinic_code = ? AND p.starts_at >= ? AND p.starts_at < ? GROUP BY p.id ORDER BY p.starts_at, p.provider_name`)
       .all(clinic, a, b) as (Record<string, string> & { cap: number; res: number })[]).map((r) => ({ id: r.id, providerCode: r.provider_code, providerName: r.provider_name,
-      clinicCode: r.clinic_code, startsAt: r.starts_at, endsAt: r.ends_at, status: r.status as Session['status'], capacity: r.cap, reserved: r.res }));
+      clinicCode: r.clinic_code, startsAt: r.starts_at, endsAt: r.ends_at, status: r.status as Session['status'], capacity: r.cap, reserved: r.res, ...(r.room_id ? { roomId: r.room_id } : {}) }));
   }
 
   slots(clinic: unknown, date: unknown, provider?: unknown): ApptSlot[] {
@@ -159,16 +162,26 @@ export class AppointmentService implements OnModuleInit, OnModuleDestroy {
   private limit(p: ApptPolicy) { const l = new Date(this.now().getTime()); l.setDate(l.getDate() + p.advanceDays); l.setHours(23, 59, 59, 999); return l; }
 
   // Close (no new appointments), reopen, or cancel a whole session (the doctor is away): its appointments are cancelled
-  // with the reason, and requests to move into it are closed.
-  setSession(id: unknown, change: { status?: unknown; reason?: unknown }, by: string): { session: Session; cancelled: Appointment[] } {
+  // with the reason, and requests to move into it are closed. Or change its room (`roomId`, '' = none): patients of the
+  // session already in today's queue are then held for the new room (`movedVisits`).
+  setSession(id: unknown, change: { status?: unknown; reason?: unknown; roomId?: unknown }, by: string): { session: Session; cancelled: Appointment[]; movedVisits: string[] } {
     return this.store.tx(() => {
       const r = typeof id === 'string' ? this.store.db.prepare('SELECT * FROM provider_schedules WHERE id = ?').get(id) as { id: string; status: string; clinic_code: string; starts_at: string } | undefined : undefined;
       if (!r) throw new AppError('RESOURCE_NOT_FOUND', 'ไม่พบตารางออกตรวจนี้');
       if (r.status === 'CANCELLED') throw new AppError('INVALID_STATE_TRANSITION', 'ตารางนี้ถูกยกเลิกแล้ว');
-      const st = change.status;
-      if (st !== 'OPEN' && st !== 'CLOSED' && st !== 'CANCELLED') throw bad('สถานะไม่ถูกต้อง');
+      const st = change.status, room = change.roomId;
+      if (st === undefined && room === undefined) throw bad('ไม่มีสิ่งที่จะเปลี่ยน');
+      if (st !== undefined && st !== 'OPEN' && st !== 'CLOSED' && st !== 'CANCELLED') throw bad('สถานะไม่ถูกต้อง');
+      if (room !== undefined && room !== null && room !== '' && (typeof room !== 'string' || !ROOM_RE.test(room))) throw bad('ห้องตรวจไม่ถูกต้อง');
       const at = this.now().toISOString();
-      let cancelled: Appointment[] = [];
+      let cancelled: Appointment[] = [], movedVisits: string[] = [];
+      if (room !== undefined) {
+        const next = typeof room === 'string' && room ? room : null;
+        this.store.db.prepare('UPDATE provider_schedules SET room_id = ?, updated_at = ? WHERE id = ?').run(next, at, r.id);
+        const today = new Date().toLocaleDateString('sv-SE');
+        movedVisits = (this.store.db.prepare(`UPDATE visits SET exam_room = ? WHERE day = ? AND source_type = 'APPOINTMENT' AND source_id IN
+          (SELECT a.id FROM appointments a JOIN appointment_slots s ON s.id = a.slot_id WHERE s.schedule_id = ?) RETURNING id`).all(next, today, r.id) as { id: string }[]).map((x) => x.id);
+      }
       if (st === 'CANCELLED') {
         const reason = typeof change.reason === 'string' ? change.reason.trim().slice(0, 100) : '';
         if (!reason) throw bad('ระบุเหตุผลที่ยกเลิก เช่น แพทย์ลาประชุม');
@@ -177,9 +190,9 @@ export class AppointmentService implements OnModuleInit, OnModuleDestroy {
         this.store.db.prepare(`UPDATE appointment_reschedule_requests SET status = 'CANCELLED', decided_by = ?, decided_at = ?, decision_note = ? WHERE status = 'PENDING'
           AND requested_slot_id IN (SELECT id FROM appointment_slots WHERE schedule_id = ?)`).run(by, at, `ตารางแพทย์ถูกยกเลิก: ${reason}`, r.id);
       }
-      this.store.db.prepare('UPDATE provider_schedules SET status = ?, updated_at = ? WHERE id = ?').run(st, at, r.id);
+      if (st !== undefined) this.store.db.prepare('UPDATE provider_schedules SET status = ?, updated_at = ? WHERE id = ?').run(st, at, r.id);
       const day = new Date(r.starts_at).toLocaleDateString('sv-SE');
-      return { session: this.sessions(r.clinic_code, day).find((x) => x.id === r.id)!, cancelled };
+      return { session: this.sessions(r.clinic_code, day).find((x) => x.id === r.id)!, cancelled, movedVisits };
     });
   }
 
@@ -343,6 +356,9 @@ export class AppointmentService implements OnModuleInit, OnModuleDestroy {
   slotClinic(slotId: unknown) {
     return typeof slotId === 'string' ? (this.store.db.prepare('SELECT p.clinic_code AS c FROM appointment_slots s JOIN provider_schedules p ON p.id = s.schedule_id WHERE s.id = ?').get(slotId) as { c: string } | undefined)?.c : undefined;
   }
+  sessionClinic(sessionId: unknown) {
+    return typeof sessionId === 'string' ? (this.store.db.prepare('SELECT clinic_code AS c FROM provider_schedules WHERE id = ?').get(sessionId) as { c: string } | undefined)?.c : undefined;
+  }
   requestClinic(requestId: unknown) {
     return typeof requestId === 'string' ? (this.store.db.prepare('SELECT a.clinic_code AS c FROM appointment_reschedule_requests r JOIN appointments a ON a.id = r.appointment_id WHERE r.id = ?').get(requestId) as { c: string } | undefined)?.c : undefined;
   }
@@ -363,7 +379,7 @@ export class AppointmentService implements OnModuleInit, OnModuleDestroy {
     return { id: r.id, code: r.appointment_code, clinicCode: r.clinic_code, clinicName: r.display_name ?? r.clinic_code, providerCode: r.provider_code, providerName: r.provider_name,
       startsAt: r.starts_at, endsAt: r.ends_at, status: r.status, channel: r.channel, hn: r.hn ? maskHN(r.hn) : '', createdAt: r.created_at,
       cancellationReason: r.cancellation_reason ?? undefined, noShowReason: r.no_show_reason ?? undefined, visitId: r.visit_id ?? undefined,
-      pendingRequest: pr ? { id: pr.id, startsAt: pr.starts_at, endsAt: pr.ends_at, providerName: pr.provider_name, reason: pr.reason ?? undefined } : undefined };
+      pendingRequest: pr ? { id: pr.id, startsAt: pr.starts_at, endsAt: pr.ends_at, providerName: pr.provider_name, reason: pr.reason ?? undefined } : undefined, ...(r.room_id ? { roomId: r.room_id } : {}) };
   }
 
   // ---- helpers -----------------------------------------------------------------------------------------------------

@@ -367,4 +367,15 @@ export const MIGRATIONS: Migration[] = [
         PRIMARY KEY (user_id, clinic_key));
     `,
   },
+  {
+    version: 10,
+    name: 'doctor rooms',
+    sql: `
+      -- The exam room a doctor's session runs in (a room of the OPD building, e.g. opd-205). A patient checked in for an
+      -- appointment then waits for that room — that doctor — instead of the next free room of the clinic.
+      ALTER TABLE provider_schedules ADD COLUMN room_id TEXT;
+      -- The room a visit's exam step is held for (from the appointment). Only a room code, nothing about the patient.
+      ALTER TABLE visits ADD COLUMN exam_room TEXT;
+    `,
+  },
 ];

@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CalendarClock, CalendarPlus, Check, CheckCircle2, LogIn, MoveRight, RefreshCw, Search, X } from 'lucide-react';
 import { opdClinics, type Clinic } from '../../lib/patients';
+import { findRoom } from '../../lib/scene-data';
 import { actionKey, canDo, covers, type AuthUser, type QueueSync } from '../../lib/queue';
 import { CheckInCard, type CheckInResult } from '../CheckInCard';
 import { NumPick, addDays, dayOf, timeOf, today, weekdayNames } from './Booking';
@@ -11,9 +12,11 @@ import { NumPick, addDays, dayOf, timeOf, today, weekdayNames } from './Booking'
 // with a reason). The server checks everything; these screens show what it says.
 type Api = QueueSync['api'];
 type Policy = {clinicCode:string; displayName:string; enabled:boolean; advanceDays:number; cancelCutoffMinutes:number; rescheduleNeedsApproval:boolean; version:number};
-type Session = {id:string; providerCode:string; providerName:string; startsAt:string; endsAt:string; status:'OPEN'|'CLOSED'|'CANCELLED'; capacity:number; reserved:number};
+type Session = {id:string; providerCode:string; providerName:string; startsAt:string; endsAt:string; status:'OPEN'|'CLOSED'|'CANCELLED'; capacity:number; reserved:number; roomId?:string};
+// A doctor's exam room (opd-205 → "ห้องตรวจ 205"); appointment patients wait for that room.
+const roomLabel = (id?:string) => id ? findRoom(id)?.name ?? id : '';
 type Slot = {id:string; providerCode:string; providerName:string; startsAt:string; endsAt:string; remaining:number; status:string};
-type Appt = {id:string; code:string; clinicCode:string; clinicName:string; providerName:string; startsAt:string; endsAt:string; hn:string; channel:'STAFF'|'LINE';
+type Appt = {id:string; code:string; clinicCode:string; clinicName:string; providerName:string; roomId?:string; startsAt:string; endsAt:string; hn:string; channel:'STAFF'|'LINE';
  status:'CONFIRMED'|'CANCELLED'|'CHECKED_IN'|'COMPLETED'|'NO_SHOW'|'EXPIRED'; cancellationReason?:string; noShowReason?:string;
  pendingRequest?:{id:string; startsAt:string; endsAt:string; providerName:string; reason?:string}};
 type Req = {id:string; reason?:string; createdAt:string; appointment:Appt; to:{startsAt:string; endsAt:string; providerName:string}};
@@ -67,11 +70,14 @@ function SessionPlanner({api,clinics,say}:{api:Api; clinics:Clinic[]; say:Say}) 
  const [end,setEnd] = useState('12:00');
  const [minutes,setMinutes] = useState(15);
  const [capacity,setCapacity] = useState(2);
+ const [room,setRoom] = useState('');
  const [busy,setBusy] = useState(false);
+ const rooms = clinics.find(c=>c.key===clinic)?.rooms ?? [];
+ useEffect(()=>setRoom(''),[clinic]);
  const make = async () => {
   setBusy(true);
   const r = await api<{ok:boolean; reason?:string; sessions?:number; slots?:number; skipped?:number; conflicts?:string[]}>('appt:sessions:create',
-   {clinicCode:clinic,providerCode:code.trim(),providerName:name.trim(),from,to,weekdays:days,start,end,minutes,capacity});
+   {clinicCode:clinic,providerCode:code.trim(),providerName:name.trim(),from,to,weekdays:days,start,end,minutes,capacity,...(room?{roomId:room}:{})});
   setBusy(false);
   say(r,`สร้างตารางออกตรวจ ${r.sessions ?? 0} วัน (${r.slots ?? 0} ช่วงนัด)${r.skipped?` · มีอยู่แล้ว ${r.skipped} วัน`:''}${r.conflicts?.length?` · ข้าม ${r.conflicts.length} วันที่แพทย์มีตารางซ้อน: ${r.conflicts.map(d=>dayOf(d)).join(', ')}`:''}`);
  };
@@ -86,15 +92,18 @@ function SessionPlanner({api,clinics,say}:{api:Api; clinics:Clinic[]; say:Say}) 
    <label className="wide">เวลา<span className="timeRange"><input type="time" value={start} onChange={e=>setStart(e.target.value)}/>–<input type="time" value={end} onChange={e=>setEnd(e.target.value)}/></span></label>
    <label>ช่วงละ<select value={minutes} onChange={e=>setMinutes(Number(e.target.value))}>{[10,15,20,30,60].map(m=><option key={m} value={m}>{m} นาที</option>)}</select></label>
    <label>นัดต่อช่วง<input type="number" min={1} max={100} value={capacity} onChange={e=>setCapacity(Math.max(1,Math.min(100,Number(e.target.value)||1)))}/></label>
+   <label className="wide">ห้องตรวจ<select value={room} onChange={e=>setRoom(e.target.value)}><option value="">ไม่ระบุ (ห้องที่ว่างของคลินิก)</option>{rooms.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select></label>
   </div>
   <div className="segBtns">{weekdayNames.map((d,i)=><button key={i} className={days.includes(i)?'on':''} aria-pressed={days.includes(i)} onClick={()=>setDays(x=>x.includes(i)?x.filter(y=>y!==i):[...x,i].sort())}>{d}</button>)}
    <button className="btn" disabled={busy || !days.length || !code.trim() || !name.trim()} onClick={()=>void make()}><CalendarPlus size={15}/> {busy?'กำลังสร้าง…':'สร้างตาราง'}</button></div>
  </div>;
 }
 
-function SessionList({api,rev,clinics,say}:{api:Api; rev:number; clinics:Clinic[]; say:Say}) {
+// roomOnly: the supervisors' view on the queue page — today's doctors and their rooms, nothing else to change.
+function SessionList({api,rev,clinics,say,roomOnly=false}:{api:Api; rev:number; clinics:Clinic[]; say:Say; roomOnly?:boolean}) {
  const [clinic,setClinic] = useState(clinics[0].key);
- const [date,setDate] = useState(()=>addDays(today(),1));
+ const [date,setDate] = useState(()=>roomOnly ? today() : addDays(today(),1));
+ const rooms = clinics.find(c=>c.key===clinic)?.rooms ?? [];
  const [list,setList] = useState<Session[]>([]);
  const [cancelFor,setCancelFor] = useState<string|null>(null);
  const [reason,setReason] = useState('');
@@ -102,19 +111,24 @@ function SessionList({api,rev,clinics,say}:{api:Api; rev:number; clinics:Clinic[
  useEffect(()=>{ void load(); },[load,rev]);
  const set = async (s:Session, change:Record<string,unknown>, ok:string) => { const r = await api('appt:session:set',{sessionId:s.id,...change}); say(r,ok); setCancelFor(null); setReason(''); void load(); };
  return <div className="slotList">
-  <h4 className="setSub">ตารางแพทย์ของวัน <small>ปิดรับ = ไม่รับนัดเพิ่ม · ยกเลิก = แพทย์ไม่ออกตรวจ นัดทั้งหมดในตารางถูกยกเลิกพร้อมเหตุผล</small></h4>
+  {roomOnly ? <h4 className="setSub">ห้องตรวจของแพทย์ <small>ผู้ป่วยนัดรอที่ห้องของแพทย์ · แพทย์ย้ายห้อง: เปลี่ยนที่นี่ ผู้ป่วยที่รออยู่ย้ายตามไปด้วย</small></h4>
+   : <h4 className="setSub">ตารางแพทย์ของวัน <small>ปิดรับ = ไม่รับนัดเพิ่ม · ยกเลิก = แพทย์ไม่ออกตรวจ นัดทั้งหมดในตารางถูกยกเลิกพร้อมเหตุผล · ห้องตรวจ: ผู้ป่วยนัดรอที่ห้องนี้</small></h4>}
   <div className="slotListHead"><select value={clinic} onChange={e=>setClinic(e.target.value)}>{clinics.map(c=><option key={c.key} value={c.key}>{clinicName(c)}</option>)}</select>
    <input type="date" value={date} onChange={e=>setDate(e.target.value)}/><span className="muted">{dayOf(date)}</span></div>
-  {list.length ? <div className="tableWrap"><table className="dataTable compact"><thead><tr><th>แพทย์</th><th>เวลา</th><th className="num">นัดแล้ว</th><th className="num">รับได้</th><th>สถานะ</th><th/></tr></thead>
+  {list.length ? <div className="tableWrap"><table className="dataTable compact"><thead><tr><th>แพทย์</th><th>เวลา</th><th>ห้องตรวจ</th><th className="num">นัดแล้ว</th>{!roomOnly && <th className="num">รับได้</th>}<th>สถานะ</th>{!roomOnly && <th/>}</tr></thead>
    <tbody>{list.map(s=><tr key={s.id} className={s.status!=='OPEN'?'muted':''}><td><b>{s.providerName}</b> <small className="muted">{s.providerCode}</small></td>
-    <td>{timeOf(s.startsAt)}–{timeOf(s.endsAt)}</td><td className="num">{s.reserved}</td><td className="num">{s.capacity}</td><td>{s.status==='OPEN'?'เปิด':s.status==='CLOSED'?'ปิดรับ':'ยกเลิก'}</td>
-    <td className="slotActs">{s.status==='OPEN' && <button className="btn ghost sm" onClick={()=>void set(s,{status:'CLOSED'},`ปิดรับนัด ${s.providerName} แล้ว`)}>ปิดรับ</button>}
+    <td>{timeOf(s.startsAt)}–{timeOf(s.endsAt)}</td>
+    <td>{s.status==='CANCELLED' ? roomLabel(s.roomId) || '—' : <select className="roomPick" aria-label={`ห้องตรวจของ ${s.providerName}`} value={s.roomId ?? ''}
+     onChange={e=>void set(s,{roomId:e.target.value},e.target.value?`${s.providerName} ตรวจที่${roomLabel(e.target.value)}`:`${s.providerName} ไม่ระบุห้อง`)}>
+     <option value="">ไม่ระบุ</option>{rooms.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select>}</td>
+    <td className="num">{s.reserved}</td>{!roomOnly && <td className="num">{s.capacity}</td>}<td>{s.status==='OPEN'?'เปิด':s.status==='CLOSED'?'ปิดรับ':'ยกเลิก'}</td>
+    {!roomOnly && <td className="slotActs">{s.status==='OPEN' && <button className="btn ghost sm" onClick={()=>void set(s,{status:'CLOSED'},`ปิดรับนัด ${s.providerName} แล้ว`)}>ปิดรับ</button>}
      {s.status==='CLOSED' && <button className="btn ghost sm" onClick={()=>void set(s,{status:'OPEN'},`เปิดรับนัด ${s.providerName} แล้ว`)}>เปิดรับ</button>}
      {s.status!=='CANCELLED' && (cancelFor===s.id
       ? <span className="slotCancel"><input value={reason} maxLength={100} placeholder="เหตุผล เช่น แพทย์ลาประชุม" onChange={e=>setReason(e.target.value)}/>
          <button className="btn sm" disabled={!reason.trim()} onClick={()=>void set(s,{status:'CANCELLED',reason},`ยกเลิกตาราง ${s.providerName} แล้ว`)}>ยืนยัน</button>
          <button className="iconBtn" aria-label="ไม่ยกเลิก" onClick={()=>setCancelFor(null)}><X size={14}/></button></span>
-      : <button className="linkBtn danger" onClick={()=>{ setCancelFor(s.id); setReason(''); }}>ยกเลิกตาราง{s.reserved?` (${s.reserved} นัด)`:''}</button>)}</td></tr>)}</tbody></table></div>
+      : <button className="linkBtn danger" onClick={()=>{ setCancelFor(s.id); setReason(''); }}>ยกเลิกตาราง{s.reserved?` (${s.reserved} นัด)`:''}</button>)}</td>}</tr>)}</tbody></table></div>
    : <p className="cmdNote">ยังไม่มีตารางแพทย์ของวันนี้</p>}
  </div>;
 }
@@ -186,11 +200,13 @@ export function ApptTab({api,rev,user,features}:{api:Api; rev:number; user?:Auth
       <button className="btn sm" disabled={!note.trim()} onClick={()=>void decide(q,false)}>ไม่อนุมัติ</button><button className="iconBtn" aria-label="กลับ" onClick={()=>setRejectFor(null)}><X size={14}/></button></span>
      : <span className="slotActs"><button className="btn sm" onClick={()=>void decide(q,true)}><Check size={13}/> อนุมัติ</button><button className="linkBtn danger" onClick={()=>{ setRejectFor(q.id); setNote(''); }}>ไม่อนุมัติ</button></span>}
    </div>)}</div>}
+  {supervisor && open.length>0 && <details className="roomDetails"><summary>ห้องตรวจของแพทย์วันนี้ (หัวหน้างาน)</summary>
+   <SessionList api={api} rev={rev} clinics={clinics.filter(c=>policies.some(p=>p.clinicCode===c.key))} say={say} roomOnly/></details>}
   <p className="cmdNote">{found ? `ผลค้นหา ${found.length} รายการ` : `${dayOf(date)} · นัด ${list.filter(a=>a.status!=='CANCELLED').length} คน`} · HN แสดง 4 ตัวท้าย · ผู้ป่วยเช็กอินที่ตู้หรือเคาน์เตอร์ด้วยรหัส AP</p>
   {rows.length ? <div className="tableWrap"><table className="dataTable bookList"><thead><tr><th>เวลา</th><th>รหัสนัด</th><th>แพทย์</th><th>คลินิก</th><th>HN</th><th>สถานะ</th><th/></tr></thead>
    <tbody>{rows.map(a=>{ const isToday = new Date(a.startsAt).toLocaleDateString('sv-SE')===today(), over = new Date(a.endsAt)<now;
     return <tr key={a.id} className={['CANCELLED','EXPIRED','NO_SHOW'].includes(a.status)?'muted':''}>
-    <td>{found?`${dayOf(a.startsAt)} `:''}{timeOf(a.startsAt)}</td><td><b className="bookCode">{a.code}</b></td><td>{a.providerName}</td><td>{a.clinicName}</td><td>{a.hn}</td>
+    <td>{found?`${dayOf(a.startsAt)} `:''}{timeOf(a.startsAt)}</td><td><b className="bookCode">{a.code}</b></td><td>{a.providerName}{a.roomId && <small className="muted"> · {roomLabel(a.roomId)}</small>}</td><td>{a.clinicName}</td><td>{a.hn}</td>
     <td><span className={'bookState s-'+(a.status==='CHECKED_IN'?'CHECKED_IN':a.status)}>{statusText[a.status]}</span>
      {a.pendingRequest && <small className="apptPending"> · ขอเลื่อนเป็น {dayOf(a.pendingRequest.startsAt)} {timeOf(a.pendingRequest.startsAt)}</small>}
      {(a.cancellationReason || a.noShowReason) && <small className="muted"> · {a.cancellationReason ?? a.noShowReason}</small>}</td>

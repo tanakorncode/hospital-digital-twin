@@ -1,7 +1,7 @@
 // Simulated patient journeys for one day (demo). Real journeys would be assembled from events that
 // existing systems already record (kiosk ticket, queue call, vital signs, HIS orders, LIS, pharmacy,
 // cashier), so no extra data entry for doctors or nurses. No names: an opaque id, queue number and HN.
-import { buildings, buildingStats, builtInDeptCount, counterSpot, floorRooms, isDoctorRoom, isOff, kiosks, layoutRevision, roomOpenIntervals, roomSpot, waitingSpot, type Room, type Spot, getServiceHours, opdOpenMin } from './scene-data';
+import { buildings, buildingStats, builtInDeptCount, counterSpot, floorRooms, isDoctorRoom, findRoom, isOff, kiosks, layoutRevision, roomOpenIntervals, roomSpot, waitingSpot, type Room, type Spot, getServiceHours, opdOpenMin } from './scene-data';
 
 export type StepKind = 'kiosk'|'registration'|'screening'|'exam'|'lab'|'labResult'|'xray'|'followup'|'pharmacy'|'finance'|'triage'|'treatment'|'admit'|'ward'|'leave';
 // Wording while waiting for the step, and while being served.
@@ -461,7 +461,7 @@ export function searchPatients(patients:Patient[], query:string, minute:number) 
 // A visit from the API (mirrors apps/api/src/visits.service.ts): who is in today's queue, with which number and
 // which steps they have been sent to — no name, no HN.
 export type LiveVisit = {id:string; queue:string; flow:'opd'|'er'; clinicKey?:string; dept:string; priority?:PriorityKey; triage?:number;
-  arrival:number; steps:{kind:StepKind; at:number}[]; status:'active'|'cancelled'; bookedSlot?:string};
+  arrival:number; steps:{kind:StepKind; at:number}[]; status:'active'|'cancelled'; bookedSlot?:string; examRoom?:string};
 type DoneEvent = {action:string; at:number; patientId?:string; step?:number};
 // Each step starts when the previous one was finished (or when it was ordered, if later); nothing is predicted:
 // called / end stay open (DAY) until staff call, start and finish it — applyQueueEvents fills them in from the log.
@@ -477,7 +477,13 @@ export function livePatients(visits:LiveVisit[], events:DoneEvent[]):Patient[] {
       const start = prev===undefined ? DAY : Math.min(DAY,Math.max(prev,x.at));
       prev = doneAt.get(`${v.id}#${i}`);
       if (prev!==undefined && prev<start) prev = start;
-      return {kind:x.kind,start,called:DAY,end:DAY,place:livePlace(x.kind,c,r)};
+      const step:Step = {kind:x.kind,start,called:DAY,end:DAY,place:livePlace(x.kind,c,r)};
+      // An appointment with a doctor who has a room: the exam (and a later follow-up) waits for that room only, locked so
+      // the queue assistant does not send the patient to another doctor. Staff can still unlock or move it.
+      if (v.examRoom && (x.kind==='exam' || x.kind==='followup') && findRoom(v.examRoom)) {
+        step.assigned = `room:${v.examRoom}`; step.owner = true; step.locked = true; step.place = {...step.place,serve:roomSpot(v.examRoom)};
+      }
+      return step;
     });
     if (prev!==undefined && steps.length) steps.push({kind:'leave',start:prev,called:prev,end:prev+8,place:{where:'ทางออก → ลานจอดรถ',serve:PARKING,wait:ENTRANCE}});
     const deptWhere = c ? where('opd',c.level,c.dept) : where('er',1,'ห้องฉุกเฉิน');

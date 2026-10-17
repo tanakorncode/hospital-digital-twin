@@ -72,3 +72,18 @@ test('every ordered step of a real patient counts as known (nothing is predicted
   const [p] = build([visit({ steps: [...visit().steps, { kind: 'pharmacy', at: 480 }] })], []);
   assert.equal(knownUntil(p, 490), 2);
 });
+
+test("an appointment with the doctor's room waits for that room only, locked; without a room any room of the clinic", () => {
+  if (clinic.rooms.length < 2) return; // needs two rooms to tell them apart
+  const [mine, other] = clinic.rooms;
+  const steps = [{ kind: 'exam' as const, at: 480 }];
+  const ps = build([visit({ steps, examRoom: mine.id }), visit({ id: 'v-0002', queue: `${clinic.letter}002`, steps })], []);
+  const waiting = (roomId: string) => stationQueue(ps, stationById(`room:${roomId}`)!, 500).waiting.map((e) => e.s.p.id);
+  assert.deepEqual(waiting(mine.id), ['v-0001', 'v-0002']);
+  assert.deepEqual(waiting(other.id), ['v-0002'], 'not offered to another doctor');
+  const s = patientAt(ps[0], 500)!;
+  assert.deepEqual([s.step.assigned, s.step.owner, s.step.locked], [`room:${mine.id}`, true, true]);
+  // An unknown room code (layout changed) falls back to the clinic, so the patient is never stuck.
+  const [lost] = build([visit({ steps, examRoom: 'opd-999' })], []);
+  assert.equal(patientAt(lost, 500)!.step.assigned, undefined);
+});

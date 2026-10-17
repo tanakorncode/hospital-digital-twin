@@ -540,19 +540,23 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
     return attempt(() => ({ ok: true, sessions: this.appts.sessions(body?.clinicCode, body?.date) }));
   }
   @SubscribeMessage('appt:session:set')
-  setApptSession(@ConnectedSocket() client: Socket, @MessageBody() body: { sessionId?: unknown; status?: unknown; reason?: unknown }) {
+  // Close / reopen / cancel a session: administrators. Change only its room (the doctor works in another room today):
+  // also supervisors of that clinic — patients of the session already waiting move with the doctor.
+  setApptSession(@ConnectedSocket() client: Socket, @MessageBody() body: { sessionId?: unknown; status?: unknown; reason?: unknown; roomId?: unknown }) {
     const me = userOf(client);
     if (!me) return SIGN_IN;
-    if (!may(me, 'admin')) return DENIED;
+    if (!may(me, body?.status === undefined && body?.roomId !== undefined ? 'supervisor' : 'admin')) return DENIED;
     return attempt(() => {
+      mustCover(me, this.appts.sessionClinic(body?.sessionId));
       const r = this.notify.tx(() => { const x = this.appts.setSession(body?.sessionId, body ?? {}, `user:${me.id}`);
         for (const a of x.cancelled) this.notify.appointmentCancelled(a, this.appts.profileOf(a.id)!, true); return x; });
       this.notify.kick();
       this.audit.record({ ...actor(me), action: 'appointment.session.update', targetType: 'provider-schedule', targetId: r.session.id,
-        reason: typeof body?.reason === 'string' ? body.reason : undefined, meta: { status: r.session.status, cancelledAppointments: r.cancelled.length } });
+        reason: typeof body?.reason === 'string' ? body.reason : undefined, meta: { status: r.session.status, cancelledAppointments: r.cancelled.length, ...(body?.roomId !== undefined ? { room: r.session.roomId ?? null, movedVisits: r.movedVisits.length } : {}) } });
       for (const a of r.cancelled) this.audit.record({ ...actor(me), action: 'appointment.cancel', targetType: 'appointment', targetId: a.id, reason: a.cancellationReason, meta: { sessionCancelled: true } });
+      for (const id of r.movedVisits) { const v = this.visits.get(id); if (v) this.server.emit('visit', v); }
       this.apptChanged();
-      return { ok: true, session: r.session, cancelled: r.cancelled.length };
+      return { ok: true, session: r.session, cancelled: r.cancelled.length, movedVisits: r.movedVisits.length };
     });
   }
   @SubscribeMessage('appt:slots')

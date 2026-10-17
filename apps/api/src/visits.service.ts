@@ -15,6 +15,7 @@ export type Visit = {
   id: string; queue: string; flow: 'opd' | 'er'; clinicKey?: string; dept: string; priority?: PriorityKey; triage?: number;
   arrival: number; steps: VisitStep[]; status: 'active' | 'cancelled';
   bookedSlot?: string; // came with a booking: its time (e.g. 08:00–09:00), shown to staff beside the number
+  examRoom?: string; // came for an appointment: the doctor's exam room (e.g. opd-205) — the exam waits for that room
 };
 export type VisitSource = { type: 'STAFF' | 'HIS' | 'BOOKING' | 'APPOINTMENT'; id: string };
 export type EnterInput = { flow?: unknown; clinicKey?: unknown; dept?: unknown; prefix?: unknown; priority?: unknown; triage?: unknown; steps?: unknown; at?: unknown };
@@ -26,9 +27,9 @@ const PRIORITIES: PriorityKey[] = ['monk', 'pregnant', 'wheelchair', 'disabled',
 const DEFAULT_STEPS = { opd: ['screening', 'exam'] as StepKind[], er: ['triage', 'treatment'] as StepKind[] };
 const MAX_STEPS = 16;
 export const VISIT_ID_RE = /^v-\d{4,6}$/;
-type Row = { id: string; queue: string; flow: 'opd' | 'er'; clinic_key: string | null; dept: string; priority: PriorityKey | null; triage: number | null; arrival: number; steps_json: string; status: 'active' | 'cancelled'; booked_slot: string | null };
+type Row = { id: string; queue: string; flow: 'opd' | 'er'; clinic_key: string | null; dept: string; priority: PriorityKey | null; triage: number | null; arrival: number; steps_json: string; status: 'active' | 'cancelled'; booked_slot: string | null; exam_room: string | null };
 const toVisit = (r: Row): Visit => ({ id: r.id, queue: r.queue, flow: r.flow, clinicKey: r.clinic_key ?? undefined, dept: r.dept, priority: r.priority ?? undefined,
-  triage: r.triage ?? undefined, arrival: r.arrival, steps: JSON.parse(r.steps_json) as VisitStep[], status: r.status, ...(r.booked_slot ? { bookedSlot: r.booked_slot } : {}) });
+  triage: r.triage ?? undefined, arrival: r.arrival, steps: JSON.parse(r.steps_json) as VisitStep[], status: r.status, ...(r.booked_slot ? { bookedSlot: r.booked_slot } : {}), ...(r.exam_room ? { examRoom: r.exam_room } : {}) });
 const bad = (reason: string) => new AppError('VALIDATION_ERROR', reason);
 const minuteOk = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 24 * 60;
 // The hospital's local calendar day, as the queue log uses.
@@ -60,8 +61,8 @@ export class VisitsService {
 
   // Take a patient into the queue: a new visit with the next number for its prefix.
   // The same source (an HIS visit number, a booking) never gives a second visit: the first is returned (created=false).
-  // extra: who the patient is (check-in from a booking — kept off the screens) and the booked time.
-  enter(input: EnterInput, source?: VisitSource, extra: { profileId?: string; bookedSlot?: string } = {}): { visit: Visit; created: boolean } {
+  // extra: who the patient is (check-in from a booking — kept off the screens), the booked time, the doctor's room.
+  enter(input: EnterInput, source?: VisitSource, extra: { profileId?: string; bookedSlot?: string; examRoom?: string } = {}): { visit: Visit; created: boolean } {
     const flow = input.flow;
     if (flow !== 'opd' && flow !== 'er') throw bad('ระบุประเภทผู้ป่วย (OPD / ER)');
     if (!minuteOk(input.at)) throw bad('เวลาไม่ถูกต้อง');
@@ -88,9 +89,9 @@ export class VisitsService {
       const id = `v-${String(this.next(day, '#visit')).padStart(4, '0')}`;
       const queue = `${prefix}${String(this.next(day, prefix)).padStart(3, '0')}`;
       const at = Math.floor(input.at as number), steps = (kinds as StepKind[]).map((kind) => ({ kind, at }));
-      this.store.db.prepare(`INSERT INTO visits (day, id, queue, flow, clinic_key, dept, priority, triage, arrival, steps_json, status, source_type, source_id, created_at, patient_profile_id, booked_slot)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?)`).run(day, id, queue, flow, clinicKey ?? null, dept, (priority as string | undefined) ?? null,
-        (triage as number | undefined) ?? null, at, JSON.stringify(steps), source?.type ?? null, source?.id ?? null, new Date().toISOString(), extra.profileId ?? null, extra.bookedSlot ?? null);
+      this.store.db.prepare(`INSERT INTO visits (day, id, queue, flow, clinic_key, dept, priority, triage, arrival, steps_json, status, source_type, source_id, created_at, patient_profile_id, booked_slot, exam_room)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?)`).run(day, id, queue, flow, clinicKey ?? null, dept, (priority as string | undefined) ?? null,
+        (triage as number | undefined) ?? null, at, JSON.stringify(steps), source?.type ?? null, source?.id ?? null, new Date().toISOString(), extra.profileId ?? null, extra.bookedSlot ?? null, flow === 'opd' ? extra.examRoom ?? null : null);
       return { visit: this.get(id)!, created: true };
     });
   }
