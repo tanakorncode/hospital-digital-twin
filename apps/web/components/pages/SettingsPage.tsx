@@ -73,7 +73,8 @@ export default function SettingsPage({settings,save,events,minute,timeNote,focus
     {pane==='groups' && <GroupsPane settings={settings} commit={commit} focus={focusGroup ?? null}/>}
     {pane==='history' && <HistoryPane history={history}/>}
     {pane==='test' && <TestPane settings={settings} commit={commit}/>}
-    {pane==='data' && <DataPane settings={settings} commit={commit}/>}
+    {pane==='data' && <DataPane settings={settings} commit={commit} linking={sync ? {on:!!sync.features.phase2.accountLinking,set:async on=>{
+     const r = await sync.api('features:set',{patch:{accountLinking:on}}); setMsg(r.ok ? {text:on?'เปิดการเชื่อมบัญชี LINE แล้ว':'ปิดการเชื่อมบัญชี LINE แล้ว'} : {text:r.reason ?? 'บันทึกไม่สำเร็จ',bad:true}); }} : undefined}/>}
     {pane==='appts' && sync && <ApptAdminPane api={sync.api} rev={sync.apptRev} features={sync.features}
      setFeature={async on=>{ const r = await sync.api('features:set',{patch:{appointments:on}}); setMsg(r.ok ? {text:on?'เปิดระบบนัดแพทย์แล้ว':'ปิดระบบนัดแพทย์แล้ว'} : {text:r.reason ?? 'บันทึกไม่สำเร็จ',bad:true}); }}/>}
     {pane==='booking' && sync && <BookingAdminPane api={sync.api} rev={sync.bookingRev} features={sync.features}
@@ -260,7 +261,7 @@ function TestPane({settings,commit}:{settings:QueueSettings;commit:Commit}) {
 // ---- Patient data: the simulated day, or real patients ----------------------------------------------------------
 // Live: the simulation stops; only patients taken into the queue (registration / check-in, or sent by the HIS) appear
 // on every console, map, TV board and patient page. Switching back shows the simulated day again; real visits are kept.
-function DataPane({settings,commit}:{settings:QueueSettings;commit:Commit}) {
+function DataPane({settings,commit,linking}:{settings:QueueSettings;commit:Commit;linking?:{on:boolean; set:(on:boolean)=>Promise<void>}}) {
  const live = isLive(settings);
  const [confirm,setConfirm] = useState(false);
  const set = (mode:'demo'|'live') => { setConfirm(false);
@@ -275,6 +276,9 @@ function DataPane({settings,commit}:{settings:QueueSettings;commit:Commit}) {
   {confirm && <div className="testWarn"><b>เปลี่ยนเป็นผู้ป่วยจริง?</b>
    <span>ผู้ป่วยจำลองจะหายจากทุกหน้าจอทันที · ช่องบริการที่ยังไม่มีใครเปิดจะไม่เรียกคิวเอง · ควรเปลี่ยนก่อนเริ่มให้บริการ</span>
    <button className="btn ghost" onClick={()=>setConfirm(false)}>ยกเลิก</button><button className="btn" onClick={()=>set('live')}>เปลี่ยนเป็นผู้ป่วยจริง</button></div>}
+  {linking && <div className={'bookSwitch'+(linking.on?' on':'')}><div><b>เชื่อมบัญชี LINE ของผู้ป่วย {linking.on?'เปิดอยู่':'ปิดอยู่'}</b>
+   <small>ผู้ป่วยขอรหัสในหน้า LINE แล้วยืนยันตัวตนที่เคาน์เตอร์ด้วยบัตรประชาชน (หน้าคิว → เชื่อม LINE) · ต้องตั้งค่า LINE Login ของโรงพยาบาลก่อนใช้จริง</small></div>
+   <button className={linking.on?'btn ghost':'btn'} onClick={()=>void linking.set(!linking.on)}>{linking.on?'ปิด':'เปิด'}</button></div>}
   <p className="cmdNote">{live ? 'รับผู้ป่วยเข้าคิวได้ที่หน้าคิว → "รับผู้ป่วยเข้าคิว" · เปลี่ยนกลับเป็นสาธิตได้ รายการผู้ป่วยจริงของวันนี้ยังเก็บไว้'
    : 'ระบบกลางต้องเชื่อมต่ออยู่ · การเปลี่ยนบันทึกในประวัติการเปลี่ยน'}</p>
  </section>;

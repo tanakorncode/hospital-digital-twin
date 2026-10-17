@@ -4,9 +4,10 @@ import { PriorityTag } from '../PriorityIcon';
 import { EnterVisitButton, SendOnBar, type VisitControl } from './LiveVisit';
 import { BookingTab } from './Booking';
 import { ApptTab } from './Appointments';
+import { LineLinkTab } from './LineLink';
 import dynamic from 'next/dynamic';
 import QRCode from 'qrcode';
-import { ArrowLeftRight, CalendarCheck, CalendarClock, Camera, Coffee, Copy, Hand, Lock, LockOpen, MapPin, QrCode, Sparkles, CheckCircle2, ChevronDown, ChevronRight, ClipboardList, ExternalLink, HeartPulse, LayoutList, List, Map as MapIcon, Megaphone, Pause, PhoneCall, Pill, Play, Repeat, ScanLine, Settings2, Siren, SkipForward, Stethoscope, TestTube, UserCheck, Volume2, VolumeX, Wallet, X } from 'lucide-react';
+import { ArrowLeftRight, CalendarCheck, CalendarClock, Camera, Link2, Coffee, Copy, Hand, Lock, LockOpen, MapPin, QrCode, Sparkles, CheckCircle2, ChevronDown, ChevronRight, ClipboardList, ExternalLink, HeartPulse, LayoutList, List, Map as MapIcon, Megaphone, Pause, PhoneCall, Pill, Play, Repeat, ScanLine, Settings2, Siren, SkipForward, Stethoscope, TestTube, UserCheck, Volume2, VolumeX, Wallet, X } from 'lucide-react';
 import { LONG_WAIT, NO_SHOW, fmtDur, fmtMin, maskHN, opdClinics, patientAt, patientToken, placeText, statusColor, statusText, stepText, triageLevels, type Patient, type PatientState, type PatientStatus, type StepKind } from '../../lib/patients';
 import { erBoard, serviceNote } from '../../lib/ops';
 import { DEFAULT_POLICY, SYSTEM_BY, actionText, openReports, groupName, moveNote, sameZone, allStations, everyStation, announce, capFor, healthText, modeText, rulesFor, scopeName, suggestionText, type AssistView, type Suggestion, groupOf, openStations, priorityOf, stationById, stationDoctor, stationQueue, stepGroup, type PriorityPolicy, type QueueCommand, type QueueEvent, type QueueSettings, type SettingsPatch, type Station, type AuthUser, type QueueSync, useTicket, canDo, isLive } from '../../lib/queue';
@@ -16,8 +17,8 @@ import FloorPlanSvg from '../FloorPlanSvg';
 import type { FloorUnit, SceneMode } from '../HospitalScene';
 const FloorScene = dynamic(()=>import('../HospitalScene').then(m=>m.FloorScene),{ssr:false,loading:()=><div className="loading">กำลังโหลดผัง…</div>});
 
-type Tab = 'station'|'overview'|'er'|'booking'|'appts';
-const tabs:[Tab,string,typeof Siren][] = [['station','ช่องบริการของฉัน',PhoneCall],['overview','ภาพรวมคิว',LayoutList],['er','ห้องฉุกเฉิน',Siren],['booking','การจอง',CalendarCheck],['appts','นัดหมาย',CalendarClock]];
+type Tab = 'station'|'overview'|'er'|'booking'|'appts'|'line';
+const tabs:[Tab,string,typeof Siren][] = [['station','ช่องบริการของฉัน',PhoneCall],['overview','ภาพรวมคิว',LayoutList],['er','ห้องฉุกเฉิน',Siren],['booking','การจอง',CalendarCheck],['appts','นัดหมาย',CalendarClock],['line','เชื่อม LINE',Link2]];
 export type QueueControl = {events:QueueEvent[]; online:boolean; user?:AuthUser|null; resolveTicket?:QueueSync['resolveTicket']; send:(c:QueueCommand)=>Promise<{ok:boolean;reason?:string}>; canAct:boolean; onNow:()=>void; settings:QueueSettings;
  saveSettings?:(patch:SettingsPatch, audit:{at:number; scope:string; summary:string; by?:string})=>Promise<{ok:boolean;reason?:string}>} & Partial<VisitControl> & Partial<Pick<QueueSync,'api'|'bookingRev'|'apptRev'|'features'>>;
 // Live data mode, signed-in staff on a connected screen: real patients can be taken in and sent on.
@@ -35,11 +36,12 @@ export default function QueuePage({patients,minute,timeNote,onOpenPatient,queue,
    <span className={'syncBadge'+(queue.online?' on':'')}>{queue.online?'ซิงก์กับระบบคิวกลาง':'ออฟไลน์ · บันทึกเฉพาะเครื่องนี้'}</span>
    {isLive(queue.settings) && <span className="syncBadge live">ผู้ป่วยจริง</span>}
    {visitControl(queue) && <EnterVisitButton visits={visitControl(queue)!} minute={minute} disabled={!queue.canAct} patients={patients} QrButton={QrButton}/>}
-   <div className="pageTabs" role="tablist">{tabs.filter(([id])=>(id!=='booking' && id!=='appts') || bookingOk).map(([id,label,Icon])=><button key={id} role="tab" aria-selected={tab===id} className={tab===id?'on':''} onClick={()=>setTab(id)}><Icon size={15}/>{label}</button>)}</div>
+   <div className="pageTabs" role="tablist">{tabs.filter(([id])=>!['booking','appts','line'].includes(id) || bookingOk).map(([id,label,Icon])=><button key={id} role="tab" aria-selected={tab===id} className={tab===id?'on':''} onClick={()=>setTab(id)}><Icon size={15}/>{label}</button>)}</div>
   </div>
   {serviceNote(m) && <OffHours m={m} queue={queue}/>}
   {tab==='station' ? <StationConsole patients={patients} minute={minute} queue={queue} onOpen={onOpenPatient} assist={assist} onOpenSettings={onOpenSettings}/>
    : tab==='booking' && bookingOk ? <BookingTab api={queue.api!} rev={queue.bookingRev ?? 0} features={queue.features!}/>
+   : tab==='line' && bookingOk ? <LineLinkTab api={queue.api!} features={queue.features!} Scanner={CameraScanner}/>
    : tab==='appts' && bookingOk ? <ApptTab api={queue.api!} rev={queue.apptRev ?? 0} user={queue.user} features={queue.features!}/>
    : tab==='overview' ? <OverviewTab patients={patients} m={m} onOpen={onOpenPatient} queue={queue} assist={assist} onOpenSettings={onOpenSettings} onOpenPlace={onOpenPlace}/>
    : <ErTab patients={patients} m={m} onOpen={onOpenPatient}/>}
@@ -603,7 +605,7 @@ function StationMap({initialFloor,stations,patients,minute,openIds,waitingBy,doc
 // Webcam QR scanning with the browser's built-in BarcodeDetector (Chrome / Edge / Android). A USB/Bluetooth
 // barcode scanner needs none of this: it types into the scan box like a keyboard.
 type Detector = {detect:(v:HTMLVideoElement)=>Promise<{rawValue:string}[]>};
-function CameraScanner({onResult,onClose}:{onResult:(t:string)=>void;onClose:()=>void}) {
+export function CameraScanner({onResult,onClose,title='สแกน QR บนบัตรคิว'}:{onResult:(t:string)=>void;onClose:()=>void;title?:string}) {
  const video = useRef<HTMLVideoElement>(null);
  const [err,setErr] = useState('');
  useEffect(()=>{
@@ -621,7 +623,7 @@ function CameraScanner({onResult,onClose}:{onResult:(t:string)=>void;onClose:()=
   return ()=>{ stop = true; stream?.getTracks().forEach(t=>t.stop()); };
  },[onResult]);
  return <div className="camModal" role="dialog" aria-label="สแกน QR ด้วยกล้อง"><div className="camBox">
-  <div className="panelHead"><h3>สแกน QR บนบัตรคิว</h3><button className="iconBtn" aria-label="ปิด" onClick={onClose}><X size={18}/></button></div>
+  <div className="panelHead"><h3>{title}</h3><button className="iconBtn" aria-label="ปิด" onClick={onClose}><X size={18}/></button></div>
   {err ? <p className="serviceNote">{err}</p> : <video ref={video} muted playsInline/>}
  </div></div>;
 }

@@ -3,6 +3,15 @@
 // · Opened from anywhere else (a phone through ngrok, another PC on the LAN): the page's own origin — Next.js
 //   relays socket.io to the API (app/sio/route.ts) — over HTTP long-polling, so one tunnel serves both.
 // NEXT_PUBLIC_API_URL, when set, always wins: a URL of a deployed API, or "same-origin" (one domain, reverse proxy).
+// Where the browser reaches the API's REST routes (/api/v1 …): the same choices as for the socket. Through a tunnel
+// (polling relay) the page's own origin is used — the reverse proxy in front of it must send /api to the API.
+export function apiBase():string {
+  const env = process.env.NEXT_PUBLIC_API_URL;
+  if (env==='same-origin') return '';
+  if (env) return env.replace(/\/$/,'');
+  if (typeof window!=='undefined' && ['localhost','127.0.0.1','[::1]'].includes(window.location.hostname)) return 'http://localhost:4000';
+  return '';
+}
 export function apiSocket():{url:string; opts:{transports:string[]; path?:string}} {
   const env = process.env.NEXT_PUBLIC_API_URL;
   // "same-origin": deployed behind one reverse proxy that sends /socket.io/ to the API (deploy/Caddyfile).

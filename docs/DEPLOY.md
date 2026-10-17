@@ -66,3 +66,17 @@ Patients can get "ถึงคิวแล้ว" messages in LINE even with the
 2. `apps/api/.env`: `LINE_CHANNEL_SECRET`, `LINE_CHANNEL_ACCESS_TOKEN` (long-lived), `LINE_OA_ID` (e.g. `@123abcde`), then restart the API.
 3. Webhook URL: `https://<domain>/line/webhook` → **Use webhook: on**; turn off the OA's auto-reply messages.
 4. On the patient page, **แจ้งเตือน → รับแจ้งเตือนทาง LINE** opens the OA chat with a 6-digit code typed in; sending it links that LINE user to the queue until the end of the day. Messages: called / called again, moved to another point, help request taken on. Queue number and place only — no names or HN. "หยุด" in the chat stops it; re-issuing the slip ends it too.
+
+## Patient pages inside LINE (LIFF) and account linking (optional)
+Patients open `https://<domain>/liff` from the OA's rich menu, sign in with LINE, and link their LINE account to their
+hospital record once, at the counter.
+1. In the same LINE Developers provider create a **LINE Login** channel; add a **LIFF app**: endpoint URL
+   `https://<domain>/liff`, size *Full*, scope `openid` (no profile, no email needed).
+2. `apps/api/.env`: `LINE_LOGIN_CHANNEL_ID` (the LINE Login channel id) and `LINE_LIFF_ID`, then restart the API. The API
+   checks every ID token with LINE (issuer, audience = this channel, expiry) — the LINE user id is never taken from the page.
+3. Settings → **ข้อมูลผู้ป่วย** → switch on *เชื่อมบัญชี LINE ของผู้ป่วย*.
+4. Linking: the patient taps **ขอรหัสเชื่อมบัญชี** and shows the QR (or the 8-character code); at the counter, Queue →
+   **เชื่อม LINE**: scan, check the ID card as at registration, type the HN, confirm. A new phone replaces the old link.
+   Staff can look up a patient's link status and end a link with a reason.
+- Testing without LINE: `PATIENT_DEV_LOGIN=on` (and no `LINE_LIFF_ID`) shows a test sign-in on `/liff` as a made-up LINE
+  user. It is refused when `NODE_ENV=production` (the Docker image) — never use it with real patients.

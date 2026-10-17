@@ -308,7 +308,19 @@ check-in (Kiosk สแกน / เจ้าหน้าที่ / LIFF + ตำ
 ค่าตั้งต้น (รอโรงพยาบาลยืนยัน D4): นัดล่วงหน้า 90 วัน · ยกเลิก/ขอเลื่อนก่อน 24 ชม. · การเลื่อนต้องอนุมัติ · ผู้ป่วยยังไม่เลือกแพทย์เอง
 **ข้อควรระวัง (เอกสาร §2.3 release blocker):** ถ้า HIS เป็นเจ้าของตารางนัด ให้ปิด `appointments` และทำ adapter อ่านนัดจาก HIS แทน
 
-### ⏭ ถัดไป: ขั้น 2.5 LINE identity (LIFF session + ผูกบัญชี)
+### ✅ ขั้น 2.5 LINE identity + ผูกบัญชี — เสร็จ (2026-10-17)
+| งาน | ไฟล์ | หมายเหตุ |
+|---|---|---|
+| `patient_sessions`, `line_patient_links`, `link_requests` (migration 6) | `apps/api/src/migrations.ts` | session เก็บเฉพาะ hash · 1 ลิงก์ ACTIVE ต่อบัญชี LINE และต่อผู้ป่วย (partial unique) |
+| `PatientIdentityService` | `apps/api/src/patient-identity.service.ts` | ตรวจ ID token กับ LINE (issuer / audience = channel ของเรา / expiry) ก่อนออก session · โหมดทดสอบ `PATIENT_DEV_LOGIN=on` เท่านั้น และถูกปฏิเสธเมื่อ `NODE_ENV=production` · **D1 เลือกวิธี "เจ้าหน้าที่ช่วยยืนยัน"**: QR ใช้ครั้งเดียว 10 นาที + รหัสสำรอง 8 ตัว, ขอได้ 5 ครั้ง/ชม., มีรหัสใช้งานได้ทีละ 1 · เปลี่ยนเครื่อง = ลิงก์เดิมถูกยกเลิก · ผู้ป่วยยกเลิกเองได้ · เจ้าหน้าที่ยกเลิกได้พร้อมเหตุผล |
+| REST ของผู้ป่วย `/api/v1/patient/*` | `apps/api/src/patient.controller.ts` | REST ชุดแรกของระบบ (Bearer, ไม่ใช้ cookie → ไม่มี CSRF) · จำกัด 30 ครั้ง/นาทีต่อ IP · ตัวตนมาจาก session เท่านั้น |
+| คำสั่งเจ้าหน้าที่ `link:confirm/status/revoke` | `flow.gateway.ts` | audit ไม่มี LINE id และ HN (ใช้ hash อ้างอิง) |
+| UI | `app/liff/page.tsx`, `components/pages/LineLink.tsx`, ตั้งค่า → ข้อมูลผู้ป่วย | หน้า LIFF (ตัวใหญ่ ปุ่มใหญ่ อธิบายวัตถุประสงค์และข้อมูลที่ใช้, QR + นับถอยหลัง, เปลี่ยนเองเมื่อเชื่อมสำเร็จ, ยกเลิกการเชื่อม) · แท็บ "เชื่อม LINE" (สแกนด้วยกล้อง/พิมพ์รหัส, ต้องติ๊ก "ตรวจบัตรแล้ว" ก่อนยืนยัน, ตรวจสถานะ, ยกเลิก) · สวิตช์ `accountLinking` |
+| Tests | `apps/api/test/identity.test.ts` | +9 ข้อ (รวมตรวจ token ปลอม/ผิด channel/หมดอายุ/LINE ล่ม) → **API 93 + Web 22 = 115/115** · ทดสอบในเบราว์เซอร์: มือถือ (390 px) + เคาน์เตอร์ ครบวงจร |
+
+ยังต้องมีจากโรงพยาบาลก่อนใช้จริง: LINE Login channel + LIFF app (ดู `docs/DEPLOY.md`) · ถ้าต้องการ OTP ทาง SMS หรือ ThaID เพิ่มเป็น method ใหม่ได้ (ตาราง `line_patient_links.method` รองรับไว้แล้ว)
+
+### ⏭ ถัดไป: ขั้น 2.6 หน้า LIFF (คิวของฉัน, จองคิว, นัดหมาย, แผนที่)
 
 ---
 
