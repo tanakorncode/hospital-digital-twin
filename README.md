@@ -30,10 +30,19 @@ WebSocket namespace: `/hospital`, events: `flow:update`, `live:snapshot` (on con
 - **Patient links:** `/q/<token>` tokens are 128-bit random values issued by the API (`ticket:issue`, staff only), valid until 23:59 of the service day. Staff can re-issue a lost slip (older links, including family links, stop working). A family link is a separate read-only token (`ticket:family`, ≤ 12 h, never past the patient's link). A help request must carry the patient's own valid link.
 - Sessions last `SESSION_HOURS` (default 12); 5 failed sign-ins in 5 minutes lock that username/address for 5 minutes.
 
+## Phase 2 — patients through LINE (pilot-ready, every part behind its own switch)
+Real-patient **live data mode** (visits with server-issued queue numbers, alongside the demo) · **advance booking** with
+quotas · **doctor appointments** (sessions, moves with approval, staff-only no-show) · **check-in** at the counter or the
+**kiosk** (`/kiosk`, BK/AP codes) · **LINE**: verified sign-in, staff-assisted account linking, the patient's own queue,
+bookings, appointments and map (`/liff`) · **messages** through a durable outbox (retries, no duplicates) ·
+**wayfinding** QR signs (`/wayfinding`) · audit trail, restore tooling, privacy gate, load test.
+- Design: [Implementation-Ready spec](docs/Hospital-Digital-Twin-Phase-2-Implementation-Ready.md) · build log: [PHASE-2-IMPLEMENTATION-PLAN.md](docs/PHASE-2-IMPLEMENTATION-PLAN.md)
+- Before a pilot: [PILOT-READINESS.md](docs/PILOT-READINESS.md) · staff: [STAFF-GUIDE.md](docs/STAFF-GUIDE.md)
+
 ## Deploy and integration
 - [docs/DEPLOY.md](docs/DEPLOY.md) — Docker Compose + Caddy (HTTPS), backups, updates.
 - [docs/HIS-INTEGRATION.md](docs/HIS-INTEGRATION.md) — `POST /ingest/live` and `/ingest/queue` for the HIS adapter.
-- `GET /health` — liveness + database check.
+- `GET /health` — liveness, database, schema version, message backlog.
 
 ## Tests
 ```bash

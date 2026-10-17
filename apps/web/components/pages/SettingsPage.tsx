@@ -1,12 +1,13 @@
 'use client';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { BellRing, Building2, CalendarClock, Clock, Database, Navigation, Stethoscope, FlaskConical, History, KeyRound, Layers, Minus, Plus, RotateCcw, Search, Sparkles, Trash2, UserCog, X, type LucideIcon } from 'lucide-react';
+import { BellRing, Building2, CalendarClock, Clock, Database, Navigation, ScrollText, Stethoscope, FlaskConical, History, KeyRound, Layers, Minus, Plus, RotateCcw, Search, Sparkles, Trash2, UserCog, X, type LucideIcon } from 'lucide-react';
 import { fmtMin, opdClinics, screeningCounters, screeningStationId, type Clinic } from '../../lib/patients';
 import { CLINIC_FLOORS, DEFAULT_HOURS, buildingStats, builtInDeptCount, buildings, roomsPerFloor, type CustomDept } from '../../lib/scene-data';
 import { BookingAdminPane } from './Booking';
 import { ApptAdminPane } from './Appointments';
 import { NotificationsPane } from './Notifications';
 import { WayfindingAdminPane } from './WayfindingAdmin';
+import { AuditPane } from './AuditPane';
 import { DEFAULT_RULES, canDo, isLive, roleText, type AuthUser, type QueueSync, type Role, type UserInput, counterServices, everyStation, modeText, queueGroups, rulesFor, scopeName, type AssistMode, type QueueEvent, type QueueGroup, type QueueRules, type QueueSettings, type SettingsPatch } from '../../lib/queue';
 
 // Settings, one topic at a time (left menu). Rules read as sentences with − / + steppers; several changes are saved
@@ -25,7 +26,7 @@ const modes:{id:AssistMode; hint:string}[] = [{id:'off',hint:'แสดงสถ
 const valText = (k:keyof QueueRules, v:unknown) => k==='mode' ? modeText[v as AssistMode] : k==='cap' && v===0 ? 'ไม่จำกัด' : String(v);
 const ruleName:Record<keyof QueueRules,string> = {mode:'ระดับตัวช่วย',stallMin:'เกณฑ์ไม่ตอบรับ',slowFactor:'เกณฑ์ช้ากว่าปกติ',cap:'เพดานคิว',imbalance:'เกณฑ์เกลี่ยคิว'};
 const loadPref = (k:string, d:string) => { try { return localStorage.getItem(k) ?? d; } catch { return d; } };
-type Pane = 'hours'|'units'|'assist'|'groups'|'history'|'test'|'data'|'booking'|'appts'|'notify'|'wayfinding'|'users';
+type Pane = 'hours'|'units'|'assist'|'groups'|'history'|'test'|'data'|'booking'|'appts'|'notify'|'wayfinding'|'audit'|'users';
 const panes:{id:Pane; icon:LucideIcon; title:string; sub:string}[] = [
  {id:'hours',icon:Clock,title:'เวลาให้บริการ',sub:'เวลาเปิด–ปิด OPD'},
  {id:'units',icon:Building2,title:'แผนกและจุดบริการ',sub:'เพิ่มแผนก · เปิด–ปิดห้อง/ช่อง'},
@@ -38,11 +39,12 @@ const panes:{id:Pane; icon:LucideIcon; title:string; sub:string}[] = [
  {id:'appts',icon:Stethoscope,title:'นัดแพทย์',sub:'กติกาและตารางออกตรวจ'},
  {id:'notify',icon:BellRing,title:'การแจ้งเตือน',sub:'ข้อความถึงผู้ป่วยทาง LINE'},
  {id:'wayfinding',icon:Navigation,title:'QR นำทาง',sub:'จุดหมายและป้าย QR'},
+ {id:'audit',icon:ScrollText,title:'บันทึกการใช้งาน',sub:'ใครทำอะไร เมื่อไร (audit)'},
  {id:'users',icon:UserCog,title:'ผู้ใช้งาน',sub:'บัญชีเจ้าหน้าที่และสิทธิ์'},
 ];
 // What each role may open (the API enforces the same). Offline / not connected: everything except accounts and real data.
 const panesFor = (u:AuthUser|null):Pane[] => !u ? ['hours','units','assist','groups','history','test']
- : u.role==='admin' ? ['hours','units','assist','groups','history','test','data','booking','appts','notify','wayfinding','users'] : ['groups','history'];
+ : u.role==='admin' ? ['hours','units','assist','groups','history','test','data','booking','appts','notify','wayfinding','audit','users'] : ['groups','history'];
 
 export default function SettingsPage({settings,save,events,minute,timeNote,focusGroup,user=null,listUsers,saveUser,sync}:{settings:QueueSettings;save:Save;events:QueueEvent[];minute:number;timeNote:string;focusGroup?:string|null;
  user?:AuthUser|null;listUsers?:QueueSync['listUsers'];saveUser?:QueueSync['saveUser'];sync?:Pick<QueueSync,'api'|'bookingRev'|'apptRev'|'features'>}) {
@@ -79,6 +81,7 @@ export default function SettingsPage({settings,save,events,minute,timeNote,focus
     {pane==='test' && <TestPane settings={settings} commit={commit}/>}
     {pane==='data' && <DataPane settings={settings} commit={commit} linking={sync ? {on:!!sync.features.phase2.accountLinking,set:async on=>{
      const r = await sync.api('features:set',{patch:{accountLinking:on}}); setMsg(r.ok ? {text:on?'เปิดการเชื่อมบัญชี LINE แล้ว':'ปิดการเชื่อมบัญชี LINE แล้ว'} : {text:r.reason ?? 'บันทึกไม่สำเร็จ',bad:true}); }} : undefined}/>}
+    {pane==='audit' && sync && listUsers && <AuditPane api={sync.api} listUsers={listUsers}/>}
     {pane==='wayfinding' && sync && <WayfindingAdminPane api={sync.api} features={sync.features}
      setFeature={async on=>{ const r = await sync.api('features:set',{patch:{wayfinding:on}}); setMsg(r.ok ? {text:on?'เปิด QR นำทางแล้ว':'ปิด QR นำทางแล้ว'} : {text:r.reason ?? 'บันทึกไม่สำเร็จ',bad:true}); }}/>}
     {pane==='notify' && sync && <NotificationsPane api={sync.api} features={sync.features}

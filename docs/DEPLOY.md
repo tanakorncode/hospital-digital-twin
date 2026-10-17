@@ -47,7 +47,16 @@ docker compose exec api node scripts/backup.mjs          # → /repo/apps/api/da
 # copy backups off the server, e.g.
 docker compose cp api:/repo/apps/api/data/backups ./backups
 ```
-Restore: stop the API, copy a backup over `hospital.db` on the volume, start again.
+Check a backup / restore (the replaced database is kept as `hospital.db.before-restore-<time>`; a damaged backup is refused):
+```bash
+docker compose exec api node scripts/restore.mjs data/backups/<file>.db            # check only
+docker compose stop api
+docker compose run --rm api node scripts/restore.mjs data/backups/<file>.db --yes  # restore
+docker compose start api
+```
+Rehearse a restore before going live, and copy backups off the server (they contain HNs — restrict and encrypt them).
+Monitoring: `GET /health` → `{ ok, schema, messages: { waiting, failed24h } }`. Load test (test database only):
+`ADMIN_USERNAME=… ADMIN_PASSWORD=… node apps/api/scripts/load-test.mjs`. Pilot checklist: [PILOT-READINESS.md](PILOT-READINESS.md).
 
 ## Update
 ```bash
