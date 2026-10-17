@@ -1,4 +1,5 @@
 import { ArgumentsHost, Catch, ExceptionFilter } from '@nestjs/common';
+import { metrics } from './metrics';
 
 // One error shape for every new API (REST and socket): { ok: false, code, reason }.
 // `code` is stable for programs; `reason` is the Thai sentence the screens show. Phase 1 replies keep their `reason`
@@ -34,6 +35,7 @@ export class AppError extends Error {
 export class AppErrorFilter implements ExceptionFilter {
   catch(err: AppError, host: ArgumentsHost) {
     const res = host.switchToHttp().getResponse<{ status: (n: number) => { json: (b: unknown) => void } }>();
+    metrics.refused('rest', err.code);
     res.status(err.status).json(err.toJSON());
   }
 }

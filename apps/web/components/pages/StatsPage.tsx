@@ -2,6 +2,8 @@
 import { useMemo, useRef, useState, type MouseEvent as RMouseEvent, type ReactNode } from 'react';
 import { Download, Minus, Plus, RotateCcw, Table2 } from 'lucide-react';
 import { DEFAULT_CAPACITY, capacityText, opdClinics, stepText, type Capacity, type CapacityKey, type Patient } from '../../lib/patients';
+import { canDo, type AuthUser, type QueueSync } from '../../lib/queue';
+import { Phase2Report } from './Phase2Report';
 import { STAT_HOURS, STEP_ORDER, runScenario, summarize, toCsv, weekSummaries, type DaySummary } from '../../lib/ops';
 
 // Sequential blue ramp (light → dark) for the heatmap; series colours for single / paired bars.
@@ -18,7 +20,8 @@ function useTooltip() {
  return {host,show,hide:()=>setTip(null),el};
 }
 
-export default function StatsPage({patients,minute,timeNote}:{patients:Patient[];minute:number;timeNote:string}) {
+// report: the signed-in supervisor / administrator — adds the report from real records (bookings, appointments, LINE).
+export default function StatsPage({patients,minute,timeNote,report}:{patients:Patient[];minute:number;timeNote:string;report?:{api:QueueSync['api'];user:AuthUser|null}}) {
  const tt = useTooltip();
  const today = useMemo(()=>summarize('วันนี้',patients,Math.floor(minute)),[patients,minute]);
  const week = useMemo(()=>weekSummaries(),[]);
@@ -38,6 +41,8 @@ export default function StatsPage({patients,minute,timeNote}:{patients:Patient[]
  return <div className="page viz-root" ref={tt.host}>
   <div className="pageHead"><h2>สถิติและรายงาน</h2><span className="pageTime">{timeNote}</span>
    <button className="btn ghost" onClick={exportCsv}><Download size={14}/> ส่งออก CSV</button></div>
+
+  {report?.user && canDo(report.user,'supervisor') && <Phase2Report api={report.api} user={report.user} tip={tt.show} hide={tt.hide}/>}
 
   <div className="tileRow">
    <div className="tile"><small>ผู้มารับบริการวันนี้ (OPD + ER)</small><b>{today.total.toLocaleString()}<em> คน</em></b><span className="muted">ถึงเวลาที่เลือก</span></div>

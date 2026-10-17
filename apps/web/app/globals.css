@@ -2204,3 +2204,9 @@ a.liffChoice{text-decoration:none;padding:10px 16px}
 .retDays{display:inline-flex;align-items:center;gap:4px;font-size:13px;color:#475569}.retDays input{width:72px;padding:5px 8px;border:1px solid #cbd5e1;border-radius:8px}
 .retPreview{padding:10px 12px;border-radius:12px;background:#f1f5f9;margin-bottom:10px;font-size:13px}.retPreview p{margin:2px 0}
 @media (max-width:720px){.retRow{grid-template-columns:1fr}}
+.dayBars{display:flex;align-items:flex-end;gap:2px;height:160px;padding:6px 0;border-bottom:1px solid #cbd5e1}
+.dayBar{flex:1;min-width:3px;height:100%;display:flex;align-items:flex-end;cursor:default}
+.dayBar:hover{background:#f1f5f9}
+.dayStack{display:flex;flex-direction:column;justify-content:flex-end;gap:2px;width:100%;height:100%}
+.dayStack i{display:block;width:100%;min-height:2px}.dayStack i:first-child{border-radius:4px 4px 0 0}
+.dayAxis{display:flex;justify-content:space-between;font-size:11px;color:#64748b;margin-top:4px}

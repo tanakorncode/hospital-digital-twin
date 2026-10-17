@@ -20,6 +20,8 @@ import { FeaturesService } from './features.service';
 import { IdempotencyService } from './idempotency.service';
 import { VisitsService, type EnterInput } from './visits.service';
 import { RetentionService } from './retention.service';
+import { metrics } from './metrics';
+import { ReportService } from './report.service';
 
 // Who may do what. Public screens (TV boards, the patient's QR page) connect without signing in: they receive the
 // queue log, may look up a patient link ('ticket:resolve'), make a family link from a patient link, and send the
@@ -39,7 +41,8 @@ function overLimit(c: Socket, kind: keyof typeof LIMITS) {
   const [max, windowMs] = LIMITS[kind], now = Date.now();
   const hits = ((c.data[`rl:${kind}`] as number[] | undefined) ?? []).filter((t) => now - t < windowMs);
   hits.push(now); c.data[`rl:${kind}`] = hits;
-  return hits.length > max;
+  if (hits.length > max) { metrics.inc(`rateLimited.${kind}`); return true; }
+  return false;
 }
 const SIGN_IN = { ...fail('AUTH_REQUIRED', 'กรุณาเข้าสู่ระบบก่อน'), auth: true };
 // Clinic scope (spec §14.2): staff and supervisors may be limited to some clinics — they then find, book, move, cancel
@@ -56,14 +59,14 @@ export const publicEvent = ({ by: _by, ...e }: QueueEvent): QueueEvent => e;
 export const publicSettings = ({ updatedBy: _by, ...s }: QueueSettings): QueueSettings => s;
 // Service errors (AppError) become the usual { ok:false, code, reason } reply.
 function attempt<T>(fn: () => T) {
-  try { return fn(); } catch (err) { if (err instanceof AppError) return err.toJSON(); throw err; }
+  try { return fn(); } catch (err) { if (err instanceof AppError) { metrics.refused('socket', err.code); return err.toJSON(); } throw err; }
 }
 
 @WebSocketGateway({ namespace: '/hospital', cors: { origin: allowOrigin } })
 export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
   @WebSocketServer() server!: Server;
   private unsubscribe?: () => void;
-  constructor(private readonly flowService: FlowService, private readonly liveFeed: LiveFeedService, private readonly queue: QueueService, private readonly auth: AuthService, private readonly tickets: TicketsService, private readonly line: LineService, private readonly audit: AuditService, private readonly features: FeaturesService, private readonly visits: VisitsService, private readonly idempotency: IdempotencyService, private readonly booking: BookingService, private readonly checkin: CheckInService, private readonly appts: AppointmentService, private readonly identity: PatientIdentityService, private readonly notify: NotificationService, private readonly wayfinding: WayfindingService, private readonly retention: RetentionService) {}
+  constructor(private readonly flowService: FlowService, private readonly liveFeed: LiveFeedService, private readonly queue: QueueService, private readonly auth: AuthService, private readonly tickets: TicketsService, private readonly line: LineService, private readonly audit: AuditService, private readonly features: FeaturesService, private readonly visits: VisitsService, private readonly idempotency: IdempotencyService, private readonly booking: BookingService, private readonly checkin: CheckInService, private readonly appts: AppointmentService, private readonly identity: PatientIdentityService, private readonly notify: NotificationService, private readonly wayfinding: WayfindingService, private readonly retention: RetentionService, private readonly report: ReportService) {}
   // Every connected dashboard receives each live snapshot ('live:update').
   afterInit() {
     this.unsubscribe = this.liveFeed.subscribe((snap) => this.server.emit('live:update', snap));
@@ -203,6 +206,23 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
     if (!me) return SIGN_IN;
     if (!may(me, 'admin')) return DENIED;
     return attempt(() => { const r = this.retention.run(); this.audit.record({ ...actor(me), action: 'retention.run', targetType: 'database', meta: r.removed }); return { ok: true, last: r }; });
+  }
+
+  // Reports (spec §15.1). The Phase 2 report: supervisors and administrators, limited to the account's clinics.
+  // The operation counters (refusals by code, replays, rate limits, HTTP latency): administrators.
+  @SubscribeMessage('report:phase2')
+  phase2Report(@ConnectedSocket() client: Socket, @MessageBody() body: { from?: unknown; to?: unknown }) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (!may(me, 'supervisor')) return DENIED;
+    return attempt(() => ({ ok: true, report: this.report.phase2(body?.from, body?.to, me.role === 'admin' ? [] : me.clinics) }));
+  }
+  @SubscribeMessage('report:metrics')
+  metricsReport(@ConnectedSocket() client: Socket) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (!may(me, 'admin')) return DENIED;
+    return { ok: true, metrics: metrics.snapshot() };
   }
 
   // ---- patient links (/q/<token>) ------------------------------------------------------------------------------

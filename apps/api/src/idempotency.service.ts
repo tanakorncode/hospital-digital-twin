@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { DbService } from './db.service';
+import { metrics } from './metrics';
 import { AppError } from './errors';
 
 // Idempotent mutations: the client sends a fresh key per intended action (Idempotency-Key header, or `key` in a
@@ -37,6 +38,7 @@ export class IdempotencyService {
       const row = this.store.db.prepare('SELECT request_hash, result_json FROM idempotency_keys WHERE scope = ? AND key = ?').get(scope, key) as { request_hash: string; result_json: string } | undefined;
       if (row) {
         if (row.request_hash !== hash) throw new AppError('IDEMPOTENCY_KEY_REUSED', 'รหัสคำขอนี้ถูกใช้กับรายการอื่นแล้ว');
+        metrics.inc(`replayed.${scope.split(':').slice(0, 2).join(':')}`); // the operation, not who
         return { result: JSON.parse(row.result_json) as T, replayed: true };
       }
       const result = fn();

@@ -20,8 +20,9 @@ import { PatientIdentityService } from './patient-identity.service';
 import { WayfindingController } from './wayfinding.controller';
 import { WayfindingService } from './wayfinding.service';
 import { RetentionService } from './retention.service';
+import { ReportService } from './report.service';
 import { QueueService } from './queue.service';
 import { TicketsService } from './tickets.service';
 import { VisitsService } from './visits.service';
-@Module({ controllers: [HealthController, IngestController, LineController, PatientController, WayfindingController], providers: [DbService, AuditService, IdempotencyService, FeaturesService, AuthService, FlowGateway, FlowService, LiveFeedService, QueueService, TicketsService, LineService, VisitsService, BookingService, AppointmentService, CheckInService, PatientIdentityService, NotificationService, WayfindingService, RetentionService] })
+@Module({ controllers: [HealthController, IngestController, LineController, PatientController, WayfindingController], providers: [DbService, AuditService, IdempotencyService, FeaturesService, AuthService, FlowGateway, FlowService, LiveFeedService, QueueService, TicketsService, LineService, VisitsService, BookingService, AppointmentService, CheckInService, PatientIdentityService, NotificationService, WayfindingService, RetentionService, ReportService] })
 export class AppModule {}

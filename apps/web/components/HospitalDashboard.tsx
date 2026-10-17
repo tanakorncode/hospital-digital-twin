@@ -483,7 +483,7 @@ export default function HospitalDashboard() {
     queue={{...queueSync,canAct:following,onNow:()=>{ setPlaying(false); setFollowing(true); }}} assist={assist}
     onOpenSettings={g=>{ setSettingsFocus(g); setActiveNav('ตั้งค่า'); }} onOpenPlace={openPlaceOnMap}/>}
    {activeNav==='ศูนย์อัจฉริยะ' && <CommandPage base={liveData ? usualDay : basePatients} liveData={liveData} patients={patients} minute={minute} queue={{events:queueSync.events,send:queueSync.send,canAct:following}} assist={assist} timeNote={timeNote}/>}
-   {activeNav==='สถิติและรายงาน' && <StatsPage patients={patients} minute={minute} timeNote={timeNote}/>}
+   {activeNav==='สถิติและรายงาน' && <StatsPage patients={patients} minute={minute} timeNote={timeNote} report={queueSync.online && queueSync.api ? {api:queueSync.api,user:queueSync.user} : undefined}/>}
    {activeNav==='การแจ้งเตือน' && <AlertsPage alerts={opsAlerts} rules={rules} onRules={saveRules} acks={acks} onAck={ackAlert} minute={minute} timeNote={timeNote} onOpenPatient={openOnMap}/>}
    {activeNav==='ผังโรงพยาบาล' && <CapacityPage patients={patients} minute={minute} timeNote={timeNote} onOpenPatient={openOnMap}/>}
    {activeNav==='ตั้งค่า' && <SettingsPage settings={queueSync.settings} save={queueSync.saveSettings} events={queueSync.events} minute={minute} timeNote={timeNote} focusGroup={settingsFocus}

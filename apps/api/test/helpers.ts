@@ -20,6 +20,7 @@ import { NotificationService } from '../src/notification.service';
 import { WayfindingService } from '../src/wayfinding.service';
 import { VisitsService } from '../src/visits.service';
 import { RetentionService } from '../src/retention.service';
+import { ReportService } from '../src/report.service';
 
 Logger.overrideLogger(false); // keep test output clean
 
@@ -38,7 +39,7 @@ export function makeApi() {
   const notify = new NotificationService(db, features, identity, visits), wayfinding = new WayfindingService(db);
   const queue = new QueueService(db, visits), tickets = new TicketsService(db), line = new LineService(db, tickets, notify, wayfinding, features);
   const retention = new RetentionService(db, audit);
-  const gateway = new FlowGateway(new FlowService(), new LiveFeedService(), queue, auth, tickets, line, audit, features, visits, idempotency, booking, checkin, appts, identity, notify, wayfinding, retention);
+  const gateway = new FlowGateway(new FlowService(), new LiveFeedService(), queue, auth, tickets, line, audit, features, visits, idempotency, booking, checkin, appts, identity, notify, wayfinding, retention, new ReportService(db));
   // Broadcasts: `to` = only that room (staff), `except` = everyone else (public screens), neither = everyone.
   const emitted: { event: string; data: unknown; to?: string; except?: string }[] = [];
   // `sockets`: the connected screens (signIn adds its socket), so account changes can reach screens already open.
