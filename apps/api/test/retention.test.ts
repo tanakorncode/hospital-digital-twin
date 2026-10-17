@@ -49,10 +49,14 @@ function setup() {
 
 test('by default nothing is removed — the hospital has not decided yet (D7)', () => {
   const { api } = setup();
-  const before = ['bookings', 'appointments', 'audit_log', 'line_patient_links', 'notification_jobs', 'visits'].map((t) => count(api, t));
+  const tables = ['bookings', 'appointments', 'line_patient_links', 'notification_jobs', 'visits', 'queue_events', 'patient_profiles'];
+  const before = tables.map((t) => count(api, t)), audit = count(api, 'audit_log');
   const r = api.retention.run();
-  assert.equal(r.removed.bookings, undefined);
-  assert.deepEqual(['bookings', 'appointments', 'audit_log', 'line_patient_links', 'notification_jobs', 'visits'].map((t) => count(api, t)), before);
+  // Only housekeeping may run (e.g. a staff session that has expired by the test's "now", depending on the time zone).
+  const housekeeping = ['retry keys', 'staff sessions', 'patient sessions', 'link codes', 'LINE codes', 'LINE queue subscriptions', 'queue-slip links'];
+  assert.deepEqual(Object.keys(r.removed).filter((k) => !housekeeping.includes(k)), []);
+  assert.deepEqual(tables.map((t) => count(api, t)), before);
+  assert.ok(count(api, 'audit_log') >= audit, 'the audit trail is never shortened by default');
 });
 
 test('once set, only finished records past the period go; confirmed, active, waiting and today stay', () => {
