@@ -11,6 +11,7 @@ import { LiveFeedService } from '../src/live-feed.service';
 import { QueueService } from '../src/queue.service';
 import { TicketsService } from '../src/tickets.service';
 import { LineService } from '../src/line.service';
+import { VisitsService } from '../src/visits.service';
 
 Logger.overrideLogger(false); // keep test output clean
 
@@ -23,17 +24,23 @@ export function makeApi() {
   const db = new DbService();
   const auth = new AuthService(db);
   auth.onModuleInit();
-  const queue = new QueueService(db), tickets = new TicketsService(db), line = new LineService(db, tickets);
+  const visits = new VisitsService(db);
+  const queue = new QueueService(db, visits), tickets = new TicketsService(db), line = new LineService(db, tickets);
   const audit = new AuditService(db), features = new FeaturesService(db), idempotency = new IdempotencyService(db);
-  const gateway = new FlowGateway(new FlowService(), new LiveFeedService(), queue, auth, tickets, line, audit, features);
-  const emitted: { event: string; data: unknown }[] = [];
-  (gateway as unknown as { server: unknown }).server = { emit: (event: string, data: unknown) => emitted.push({ event, data }), to: () => ({ emit: () => undefined }) };
-  return { db, auth, queue, tickets, line, audit, features, idempotency, gateway, emitted };
+  const gateway = new FlowGateway(new FlowService(), new LiveFeedService(), queue, auth, tickets, line, audit, features, visits, idempotency);
+  // Broadcasts: `to` = only that room (staff), `except` = everyone else (public screens), neither = everyone.
+  const emitted: { event: string; data: unknown; to?: string; except?: string }[] = [];
+  (gateway as unknown as { server: unknown }).server = {
+    emit: (event: string, data: unknown) => emitted.push({ event, data }),
+    to: (room: string) => ({ emit: (event: string, data: unknown) => emitted.push({ event, data, to: room }) }),
+    except: (room: string) => ({ emit: (event: string, data: unknown) => emitted.push({ event, data, except: room }) }),
+  };
+  return { db, auth, queue, tickets, line, audit, features, idempotency, visits, gateway, emitted };
 }
 // A socket as the gateway sees it, optionally signed in with a session token.
 export function fakeSocket(token = '') {
-  const sent: { event: string; data: unknown }[] = [];
-  return { handshake: { auth: { token }, headers: {}, address: '127.0.0.1' }, data: {} as Record<string, unknown>, emit: (event: string, data: unknown) => sent.push({ event, data }), join: () => undefined, sent } as never;
+  const sent: { event: string; data: unknown }[] = [], rooms = new Set<string>();
+  return { handshake: { auth: { token }, headers: {}, address: '127.0.0.1' }, data: {} as Record<string, unknown>, emit: (event: string, data: unknown) => sent.push({ event, data }), join: (r: string) => rooms.add(r), leave: (r: string) => rooms.delete(r), rooms, sent } as never;
 }
 // Sign in through the gateway; returns a connected socket for that user.
 export function signIn(api: ReturnType<typeof makeApi>, username: string, password: string) {

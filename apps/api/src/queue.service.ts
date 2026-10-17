@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DbService } from './db.service';
+import { VisitsService } from './visits.service';
 
 // Mirrors QueueEvent in @hospital/contracts and apps/web/lib/queue.ts. `at` is minutes since midnight.
 export type QueueAction = 'open' | 'close' | 'call' | 'recall' | 'start' | 'hold' | 'return' | 'done' | 'transfer' | 'lock' | 'unlock' | 'pause' | 'resume' | 'config' | 'report' | 'resolve';
@@ -15,8 +16,10 @@ type Rules = { mode: Mode; cap: number; stallMin: number; slowFactor: number; im
 // hours: OPD service hours (whole hours) the simulated day is built on · demoOffset: minutes every screen adds to the real clock (testing).
 // layout: departments added on the OPD clinic floors and departments / rooms / counters switched off (ids from the web app).
 export type Layout = { off?: string[]; depts?: { name: string; level: number }[] };
-export type QueueSettings = { system: Rules; groups: Record<string, Partial<Rules>>; stations: Record<string, { cap?: number }>; hours?: { opdOpen: number; opdClose: number }; demoOffset?: number; layout?: Layout; updatedAt?: string; updatedBy?: string };
-export type SettingsCommand = { patch: { system?: Partial<Rules>; groups?: Record<string, Record<string, unknown> | null>; stations?: Record<string, { cap?: number | null } | null>; hours?: { opdOpen: number; opdClose: number } | null; demoOffset?: number | null; layout?: Layout | null }; at: number; scope: string; summary: string; by?: string };
+// dataMode: 'demo' (default) — the simulated day; 'live' — only real patients taken in as visits (no simulation).
+export type DataMode = 'demo' | 'live';
+export type QueueSettings = { system: Rules; groups: Record<string, Partial<Rules>>; stations: Record<string, { cap?: number }>; hours?: { opdOpen: number; opdClose: number }; demoOffset?: number; layout?: Layout; dataMode?: DataMode; updatedAt?: string; updatedBy?: string };
+export type SettingsCommand = { patch: { system?: Partial<Rules>; groups?: Record<string, Record<string, unknown> | null>; stations?: Record<string, { cap?: number | null } | null>; hours?: { opdOpen: number; opdClose: number } | null; demoOffset?: number | null; layout?: Layout | null; dataMode?: DataMode | null }; at: number; scope: string; summary: string; by?: string };
 const RULE_CHECK: Record<keyof Rules, (v: unknown) => boolean> = {
   mode: (v) => v === 'off' || v === 'suggest' || v === 'auto',
   cap: (v) => Number.isInteger(v) && (v as number) >= 0 && (v as number) <= 200,
@@ -35,7 +38,8 @@ export class QueueService {
   private seq = 0;
   private settings: QueueSettings;
 
-  constructor(private readonly store: DbService) {
+  // visits: optional so the queue can be built on its own (tests); the app always passes it.
+  constructor(private readonly store: DbService, private readonly visits?: VisitsService) {
     this.settings = store.getKv<QueueSettings>('queue.settings') ?? DEFAULT_SETTINGS;
     this.load();
   }
@@ -62,6 +66,12 @@ export class QueueService {
     const needsPatient = !STATION_ONLY.includes(cmd.action);
     if (needsPatient && (typeof cmd.patientId !== 'string' || !Number.isInteger(cmd.step))) return { ok: false, reason: 'ไม่ได้ระบุผู้ป่วย' };
     if (cmd.action === 'transfer' && typeof cmd.target !== 'string') return { ok: false, reason: 'ไม่ได้ระบุปลายทาง' };
+    // A real patient (visit id): must be in today's queue, at a step they have been sent to.
+    if (needsPatient && this.visits && /^v-/.test(cmd.patientId!)) {
+      const v = this.visits.get(cmd.patientId);
+      if (!v || v.status !== 'active') return { ok: false, reason: 'ไม่พบผู้ป่วยในคิววันนี้' };
+      if (cmd.step! < 0 || cmd.step! >= v.steps.length) return { ok: false, reason: 'ไม่พบขั้นตอนนี้ของผู้ป่วย' };
+    }
     if (cmd.position !== undefined && cmd.position !== 'keep' && cmd.position !== 'end') return { ok: false, reason: 'ตำแหน่งคิวไม่ถูกต้อง' };
     if (cmd.by !== undefined && (typeof cmd.by !== 'string' || cmd.by.length > 60)) return { ok: false, reason: 'ชื่อผู้ปฏิบัติงานไม่ถูกต้อง' };
     if (cmd.key !== undefined && (typeof cmd.key !== 'string' || cmd.key.length > 400)) return { ok: false, reason: 'คำสั่งไม่ถูกต้อง' };
@@ -103,6 +113,7 @@ export class QueueService {
     if (p.hours) { const { opdOpen, opdClose } = p.hours;
       if (!Number.isInteger(opdOpen) || !Number.isInteger(opdClose) || opdOpen < 5 || opdOpen > 12 || opdClose < opdOpen + 4 || opdClose > 22) return { ok: false, reason: 'เวลาให้บริการไม่ถูกต้อง' }; }
     if (p.demoOffset !== undefined && p.demoOffset !== null && (!Number.isInteger(p.demoOffset) || Math.abs(p.demoOffset) > 24 * 60)) return { ok: false, reason: 'เวลาทดสอบไม่ถูกต้อง' };
+    if (p.dataMode !== undefined && p.dataMode !== null && p.dataMode !== 'demo' && p.dataMode !== 'live') return { ok: false, reason: 'โหมดข้อมูลไม่ถูกต้อง' };
     if (p.layout) { const { off = [], depts = [] } = p.layout, perFloor = new Map<number, number>();
       if (!Array.isArray(off) || off.length > 400 || off.some((x) => typeof x !== 'string' || !x || x.length > 80)) return { ok: false, reason: 'รายการเปิด-ปิดไม่ถูกต้อง' };
       if (!Array.isArray(depts) || depts.length > 9) return { ok: false, reason: 'เพิ่มแผนกได้ไม่เกิน 9 แผนก' };
@@ -112,7 +123,7 @@ export class QueueService {
       }
       if ([...perFloor.values()].some((n) => n > 3)) return { ok: false, reason: 'ชั้นหนึ่งเพิ่มแผนกได้ไม่เกิน 3 แผนก' };
       if (new Set(depts.map((d) => d.name.trim())).size !== depts.length) return { ok: false, reason: 'ชื่อแผนกซ้ำกัน' }; }
-    const next: QueueSettings = { system: { ...this.settings.system, ...(p.system ?? {}) }, groups: { ...this.settings.groups }, stations: { ...this.settings.stations }, hours: this.settings.hours, demoOffset: this.settings.demoOffset, layout: this.settings.layout };
+    const next: QueueSettings = { system: { ...this.settings.system, ...(p.system ?? {}) }, groups: { ...this.settings.groups }, stations: { ...this.settings.stations }, hours: this.settings.hours, demoOffset: this.settings.demoOffset, layout: this.settings.layout, dataMode: this.settings.dataMode };
     // New service hours rebuild the simulated day, so today's queue actions no longer point at the same patients: start the log afresh.
     const hoursChanged = p.hours !== undefined && JSON.stringify(p.hours ?? null) !== JSON.stringify(this.settings.hours ?? null);
     if (p.hours !== undefined) { if (p.hours === null) delete next.hours; else next.hours = { opdOpen: p.hours.opdOpen, opdClose: p.hours.opdClose }; }
@@ -120,7 +131,9 @@ export class QueueService {
     // New departments re-share the floor's rooms and the patients between clinics: same reason to start afresh.
     const deptsChanged = p.layout !== undefined && JSON.stringify(p.layout?.depts ?? []) !== JSON.stringify(this.settings.layout?.depts ?? []);
     if (p.layout !== undefined) { if (p.layout === null) delete next.layout; else next.layout = { off: [...new Set(p.layout.off ?? [])], depts: (p.layout.depts ?? []).map((d) => ({ name: d.name.trim(), level: d.level })) }; }
-    const reset = hoursChanged || deptsChanged;
+    if (p.dataMode !== undefined) { if (p.dataMode === null || p.dataMode === 'demo') delete next.dataMode; else next.dataMode = p.dataMode; }
+    // Real patients do not depend on the simulated day: their queue log is never cleared by a settings change.
+    const reset = (hoursChanged || deptsChanged) && next.dataMode !== 'live';
     if (reset) {
       this.events = this.events.filter((e) => e.action === 'config');
       this.store.db.prepare(`DELETE FROM queue_events WHERE day = ? AND json_extract(body, '$.action') <> 'config'`).run(this.day);

@@ -5,12 +5,14 @@ import { AuthService, type Role, type User } from './auth.service';
 import { allowOrigin } from './cors';
 import { FlowService, FlowUpdate } from './flow.service';
 import { LiveFeedService } from './live-feed.service';
-import { QueueService, type QueueCommand, type SettingsCommand } from './queue.service';
+import { QueueService, type QueueCommand, type QueueEvent, type SettingsCommand } from './queue.service';
 import { TicketsService } from './tickets.service';
 import { LineService } from './line.service';
 import { AuditService } from './audit.service';
-import { fail } from './errors';
+import { AppError, fail } from './errors';
 import { FeaturesService } from './features.service';
+import { IdempotencyService } from './idempotency.service';
+import { VisitsService, type EnterInput } from './visits.service';
 
 // Who may do what. Public screens (TV boards, the patient's QR page) connect without signing in: they receive the
 // queue log, may look up a patient link ('ticket:resolve'), make a family link from a patient link, and send the
@@ -34,12 +36,20 @@ function overLimit(c: Socket, kind: keyof typeof LIMITS) {
 }
 const SIGN_IN = { ...fail('AUTH_REQUIRED', 'กรุณาเข้าสู่ระบบก่อน'), auth: true };
 const actor = (u: User) => ({ actorType: 'staff' as const, actorId: `user:${u.id}` });
+// Signed-in staff sockets share this room. Everyone else (TV boards, patient pages, anyone who opens a socket) gets the
+// queue log without staff names — screens for the public only need numbers, places and states.
+const STAFF_ROOM = 'staff';
+export const publicEvent = ({ by: _by, ...e }: QueueEvent): QueueEvent => e;
+// Service errors (AppError) become the usual { ok:false, code, reason } reply.
+function attempt<T>(fn: () => T) {
+  try { return fn(); } catch (err) { if (err instanceof AppError) return err.toJSON(); throw err; }
+}
 
 @WebSocketGateway({ namespace: '/hospital', cors: { origin: allowOrigin } })
 export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
   @WebSocketServer() server!: Server;
   private unsubscribe?: () => void;
-  constructor(private readonly flowService: FlowService, private readonly liveFeed: LiveFeedService, private readonly queue: QueueService, private readonly auth: AuthService, private readonly tickets: TicketsService, private readonly line: LineService, private readonly audit: AuditService, private readonly features: FeaturesService) {}
+  constructor(private readonly flowService: FlowService, private readonly liveFeed: LiveFeedService, private readonly queue: QueueService, private readonly auth: AuthService, private readonly tickets: TicketsService, private readonly line: LineService, private readonly audit: AuditService, private readonly features: FeaturesService, private readonly visits: VisitsService, private readonly idempotency: IdempotencyService) {}
   // Every connected dashboard receives each live snapshot ('live:update').
   afterInit() {
     this.unsubscribe = this.liveFeed.subscribe((snap) => this.server.emit('live:update', snap));
@@ -51,12 +61,29 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
     // The session token travels in the socket handshake (works over WebSocket and over the polling relay).
     const user = this.auth.resolve(client.handshake.auth?.token);
     client.data.user = user;
+    if (user) void client.join(STAFF_ROOM);
     client.emit('auth:me', user);
     client.emit('features', this.featureList());
     client.emit('flow:snapshot', this.flowService.snapshot());
     client.emit('live:snapshot', this.liveFeed.snapshot());
-    client.emit('queue:events', this.queue.list());
+    this.sendLog(client);
     client.emit('queue:settings', this.queue.getSettings());
+    client.emit('visits', this.visits.list());
+  }
+  private sendLog(client: Socket) {
+    const list = this.queue.list();
+    client.emit('queue:events', userOf(client) ? list : list.map(publicEvent));
+  }
+  // One accepted queue action to every screen: in full to staff, without names to the rest.
+  publishQueueEvent(e: QueueEvent) {
+    this.server.to(STAFF_ROOM).emit('queue:event', e);
+    this.server.except(STAFF_ROOM).emit('queue:event', publicEvent(e));
+    void this.line.onQueueEvent(e);
+  }
+  private publishLog() {
+    const list = this.queue.list();
+    this.server.to(STAFF_ROOM).emit('queue:events', list);
+    this.server.except(STAFF_ROOM).emit('queue:events', list.map(publicEvent));
   }
 
   // ---- sign-in -----------------------------------------------------------------------------------------------
@@ -67,12 +94,15 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
     const res = this.auth.login(body?.username ?? '', body?.password ?? '', from);
     if (!res.ok) return res;
     client.data.user = res.user;
+    void client.join(STAFF_ROOM);
+    this.sendLog(client); // now with the names the public stream leaves out
     return res;
   }
   @SubscribeMessage('auth:logout')
   logout(@ConnectedSocket() client: Socket) {
     this.auth.logout(client.handshake.auth?.token);
     client.data.user = null;
+    void client.leave(STAFF_ROOM);
     return { ok: true };
   }
   @SubscribeMessage('users:list')
@@ -168,7 +198,7 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
     // The audit trail names the signed-in user (not a name typed on the screen); the assistant's automatic moves stay "ระบบ".
     else cmd = { ...cmd, by: cmd.by === SYSTEM_BY ? SYSTEM_BY : me.name };
     const res = this.queue.apply(cmd);
-    if (res.ok) { this.server.emit('queue:event', res.event); void this.line.onQueueEvent(res.event); }
+    if (res.ok) this.publishQueueEvent(res.event);
     return res.ok ? { ok: true } : { ok: false, reason: res.reason };
   }
   // Settings: per-group / per-station overrides for supervisors; everything else for administrators.
@@ -176,14 +206,61 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
   queueSettings(@ConnectedSocket() client: Socket, @MessageBody() cmd: SettingsCommand) {
     const me = userOf(client), p = cmd?.patch ?? {};
     if (!me) return SIGN_IN;
-    const hospitalWide = p.system !== undefined || p.hours !== undefined || p.demoOffset !== undefined || p.layout !== undefined;
+    const hospitalWide = p.system !== undefined || p.hours !== undefined || p.demoOffset !== undefined || p.layout !== undefined || p.dataMode !== undefined;
     if (!may(me, hospitalWide ? 'admin' : 'supervisor')) return { ok: false, reason: hospitalWide ? 'เฉพาะผู้ดูแลระบบเปลี่ยนค่าของทั้งโรงพยาบาลได้' : 'เฉพาะหัวหน้างานขึ้นไปเปลี่ยนการตั้งค่าได้' };
     const res = this.queue.setSettings({ ...cmd, by: me.name });
     if (res.ok) this.audit.record({ ...actor(me), action: 'settings.update', targetType: 'settings', targetId: cmd.scope, reason: cmd.summary, meta: { reset: res.reset } });
     // New service hours reset today's log: send every screen the whole log again.
-    if (res.ok) { this.server.emit('queue:settings', res.settings); if (res.reset) this.server.emit('queue:events', this.queue.list()); else this.server.emit('queue:event', res.event); }
+    if (res.ok) { this.server.emit('queue:settings', res.settings); if (res.reset) this.publishLog(); else this.publishQueueEvent(res.event); }
     return res.ok ? { ok: true } : { ok: false, reason: res.reason };
   }
+  // ---- Real patients (live data mode) ---------------------------------------------------------------------------
+  // Registration / check-in staff take a patient into the queue; the number comes from the server, so two counters
+  // can never hand out the same one. `key` makes a retried tap return the first visit instead of a second number.
+  @SubscribeMessage('visit:enter')
+  enterVisit(@ConnectedSocket() client: Socket, @MessageBody() body: EnterInput & { key?: unknown }) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (overLimit(client, 'command')) return SLOW;
+    return attempt(() => {
+      if (this.queue.getSettings().dataMode !== 'live') throw new AppError('POLICY_REJECTED', 'ระบบอยู่ในโหมดสาธิต — ผู้ดูแลระบบต้องเปิดโหมดข้อมูลจริงก่อน');
+      const { key, ...input } = body ?? {};
+      const { result, replayed } = this.idempotency.run(`visit:enter:user:${me.id}`, key, input, () => this.visits.enter(input, undefined).visit);
+      if (!replayed) {
+        this.audit.record({ ...actor(me), action: 'visit.enter', targetType: 'visit', targetId: result.id });
+        this.server.emit('visit', result);
+      }
+      return { ok: true, visit: result };
+    });
+  }
+  @SubscribeMessage('visit:step')
+  addVisitStep(@ConnectedSocket() client: Socket, @MessageBody() body: { visitId?: unknown; kind?: unknown; at?: unknown; key?: unknown }) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (overLimit(client, 'command')) return SLOW;
+    return attempt(() => {
+      const { key, ...input } = body ?? {};
+      const { result, replayed } = this.idempotency.run(`visit:step:user:${me.id}`, key, input, () => this.visits.addStep(input.visitId, input.kind, input.at));
+      if (!replayed) this.server.emit('visit', result);
+      return { ok: true, visit: result };
+    });
+  }
+  @SubscribeMessage('visit:cancel')
+  cancelVisit(@ConnectedSocket() client: Socket, @MessageBody() body: { visitId?: unknown; reason?: unknown }) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    return attempt(() => {
+      const reason = typeof body?.reason === 'string' ? body.reason.trim().slice(0, 100) : '';
+      if (!reason) throw new AppError('VALIDATION_ERROR', 'ระบุเหตุผลที่ยกเลิก');
+      const { visit, changed } = this.visits.cancel(body?.visitId);
+      if (changed) {
+        this.audit.record({ ...actor(me), action: 'visit.cancel', targetType: 'visit', targetId: visit.id, reason });
+        this.server.emit('visit', visit);
+      }
+      return { ok: true, visit };
+    });
+  }
+
   // Call this method only from a trusted, authenticated ingestion service.
   publishTrustedUpdate(update: FlowUpdate) {
     const result = this.flowService.apply(update);

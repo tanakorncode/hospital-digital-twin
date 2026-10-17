@@ -36,4 +36,39 @@ export const MIGRATIONS: Migration[] = [
       CREATE INDEX idempotency_keys_created ON idempotency_keys (created_at);
     `,
   },
+  {
+    version: 2,
+    name: 'visits and queue numbers',
+    sql: `
+      -- A real patient's visit today, taken into the queue by staff (registration / check-in) or by the HIS.
+      -- No name, no HN: identity lives with the patient record (Phase 2 account linking), never on queue screens.
+      -- steps_json: [{kind, at}] in order, append-only (queue actions refer to steps by position).
+      CREATE TABLE visits (
+        day TEXT NOT NULL,
+        id TEXT NOT NULL,
+        queue TEXT NOT NULL,
+        flow TEXT NOT NULL CHECK (flow IN ('opd','er')),
+        clinic_key TEXT,
+        dept TEXT NOT NULL,
+        priority TEXT,
+        triage INTEGER CHECK (triage BETWEEN 1 AND 5),
+        arrival INTEGER NOT NULL,
+        steps_json TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','cancelled')),
+        source_type TEXT,
+        source_id TEXT,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (day, id),
+        UNIQUE (day, queue));
+      -- One visit per source record (an HIS visit number, a booking): a repeated check-in finds the first one.
+      CREATE UNIQUE INDEX visits_source ON visits (source_type, source_id) WHERE source_type IS NOT NULL;
+
+      -- Running numbers per day and prefix (A001, A002 … ER001), taken inside the same transaction as the visit.
+      CREATE TABLE queue_counters (
+        day TEXT NOT NULL,
+        prefix TEXT NOT NULL,
+        last_no INTEGER NOT NULL,
+        PRIMARY KEY (day, prefix));
+    `,
+  },
 ];

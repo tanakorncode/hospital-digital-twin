@@ -13,5 +13,6 @@ import { LineService } from './line.service';
 import { LiveFeedService } from './live-feed.service';
 import { QueueService } from './queue.service';
 import { TicketsService } from './tickets.service';
-@Module({ controllers: [HealthController, IngestController, LineController], providers: [DbService, AuditService, IdempotencyService, FeaturesService, AuthService, FlowGateway, FlowService, LiveFeedService, QueueService, TicketsService, LineService] })
+import { VisitsService } from './visits.service';
+@Module({ controllers: [HealthController, IngestController, LineController], providers: [DbService, AuditService, IdempotencyService, FeaturesService, AuthService, FlowGateway, FlowService, LiveFeedService, QueueService, TicketsService, LineService, VisitsService] })
 export class AppModule {}
