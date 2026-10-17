@@ -33,23 +33,26 @@ function EnterVisitDialog({visits,minute,patients,QrButton,onClose}:{visits:Visi
  const [clinicKey,setClinicKey] = useState(clinics[0]?.key ?? '');
  const [priority,setPriority] = useState<VisitInput['priority']>();
  const [triage,setTriage] = useState<number|undefined>();
+ const [hn,setHn] = useState('');
+ const [idChecked,setIdChecked] = useState(false);
  // The arrival minute is fixed when the form is opened, so a retry sends exactly the same request.
  const [at] = useState(()=>Math.floor(minute));
  const [busy,setBusy] = useState(false);
  const [error,setError] = useState('');
  const [made,setMade] = useState<{id:string; queue:string}|null>(null);
  const c = clinics.find(x=>x.key===clinicKey);
- const input:VisitInput = flow==='opd' ? {flow,clinicKey,dept:c?.dept,prefix:c?.letter,priority,at} : {flow,priority,triage,at};
+ const withHn = hn.trim() ? {hn:hn.trim()} : {};
+ const input:VisitInput = flow==='opd' ? {flow,clinicKey,dept:c?.dept,prefix:c?.letter,priority,at,...withHn} : {flow,priority,triage,at,...withHn};
  const {key,renew} = useActionKey(input);
  useEffect(()=>{ const k = (e:KeyboardEvent)=>{ if (e.key==='Escape') onClose(); }; window.addEventListener('keydown',k); return ()=>window.removeEventListener('keydown',k); },[onClose]);
  const submit = async () => {
-  if (busy || !key || (flow==='opd' && !c)) return;
+  if (busy || !key || (flow==='opd' && !c) || (!!hn.trim() && !idChecked)) return;
   setBusy(true); setError('');
   const r = await visits.enterVisit(input,key);
   setBusy(false);
   if (r.ok && r.visit) setMade({id:r.visit.id,queue:r.visit.queue}); else setError(r.reason ?? 'รับเข้าคิวไม่สำเร็จ');
  };
- const another = () => { setMade(null); setPriority(undefined); setTriage(undefined); renew(); };
+ const another = () => { setMade(null); setPriority(undefined); setTriage(undefined); setHn(''); setIdChecked(false); renew(); };
  // The QR dialog works from a patient; the new one is on its way from the server — a stand-in is enough for the link.
  const p = made ? patients.find(x=>x.id===made.id) ?? ({id:made.id,queue:made.queue} as Patient) : undefined;
  return <div className="modalBack" onClick={onClose}>
@@ -69,12 +72,15 @@ function EnterVisitDialog({visits,minute,patients,QrButton,onClose}:{visits:Visi
       <b>{x.letter}</b><span>{x.dept}</span><small>ชั้น {x.level}</small></button>)}</div></div>
      : <div className="visitRow"><span>ระดับคัดแยก <small className="muted">(ถ้าทราบ)</small></span><div className="segBtns">
       {triageLevels.map(t=><button key={t.level} className={triage===t.level?'on':''} aria-pressed={triage===t.level} onClick={()=>setTriage(triage===t.level?undefined:t.level)}>{t.level} · {t.name}</button>)}</div></div>}
+    <div className="visitRow"><span>HN <small className="muted">(ไม่บังคับ · ผู้ป่วยที่เชื่อม LINE จะเห็นคิวในมือถือและได้แจ้งเตือน)</small></span>
+     <span className="visitHn"><input value={hn} maxLength={20} placeholder="เช่น 65-123456" onChange={e=>{ setHn(e.target.value); setIdChecked(false); }}/>
+      {hn.trim() && <label className="lineCheck"><input type="checkbox" checked={idChecked} onChange={e=>setIdChecked(e.target.checked)}/> ตรวจบัตรประชาชนแล้ว</label>}</span></div>
     <div className="visitRow"><span>คิวพิเศษ <small className="muted">(ถ้ามี)</small></span><div className="segBtns">
      {priorityKeys.map(k=><button key={k} className={priority===k?'on':''} aria-pressed={priority===k} onClick={()=>setPriority(priority===k?undefined:k)}>
       <PriorityTag p={{key:k,label:priorityText(k)}}/></button>)}</div></div>
     {error && <p className="loginError" role="alert">{error}</p>}
     <footer><button className="btn ghost" onClick={onClose}>ยกเลิก</button>
-     <button className="btn" disabled={busy || (flow==='opd' && !c)} onClick={()=>void submit()}>{busy?'กำลังออกเลขคิว…':'ออกเลขคิว'}</button></footer>
+     <button className="btn" disabled={busy || (flow==='opd' && !c) || (!!hn.trim() && !idChecked)} onClick={()=>void submit()}>{busy?'กำลังออกเลขคิว…':'ออกเลขคิว'}</button></footer>
    </>}
   </div>
  </div>;

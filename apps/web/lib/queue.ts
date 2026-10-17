@@ -406,7 +406,8 @@ export type QueueSync = {events:QueueEvent[]; online:boolean; send:(cmd:QueueCom
 // What the API has switched on: LINE notifications (needs the hospital's OA settings) and the Phase 2 switches.
 export type Phase2Flag = 'accountLinking'|'generalBooking'|'appointments'|'notifications'|'wayfinding'|'staffOverrides';
 export type Features = {line:boolean; phase2:Partial<Record<Phase2Flag,boolean>>};
-export type VisitInput = {flow:'opd'|'er'; clinicKey?:string; dept?:string; prefix?:string; priority?:Priority['key']; triage?:number; at:number};
+// hn: optional, after the ID card was checked — links the visit to the patient's record (their LINE sees it). Never shown.
+export type VisitInput = {flow:'opd'|'er'; clinicKey?:string; dept?:string; prefix?:string; priority?:Priority['key']; triage?:number; at:number; hn?:string};
 export type VisitRes = Res & {code?:string; visit?:LiveVisit};
 // One key per intended action, kept by the form until it succeeds: tapping again after "no reply" returns the
 // first result instead of a second patient / step.

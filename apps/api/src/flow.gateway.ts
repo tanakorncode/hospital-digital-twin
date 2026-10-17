@@ -228,17 +228,26 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
   // Registration / check-in staff take a patient into the queue; the number comes from the server, so two counters
   // can never hand out the same one. `key` makes a retried tap return the first visit instead of a second number.
   @SubscribeMessage('visit:enter')
-  enterVisit(@ConnectedSocket() client: Socket, @MessageBody() body: EnterInput & { key?: unknown }) {
+  enterVisit(@ConnectedSocket() client: Socket, @MessageBody() body: EnterInput & { key?: unknown; hn?: unknown }) {
     const me = userOf(client);
     if (!me) return SIGN_IN;
     if (overLimit(client, 'command')) return SLOW;
     return attempt(() => {
       if (this.queue.getSettings().dataMode !== 'live') throw new AppError('POLICY_REJECTED', 'ระบบอยู่ในโหมดสาธิต — ผู้ดูแลระบบต้องเปิดโหมดข้อมูลจริงก่อน');
-      const { key, ...input } = body ?? {};
-      const { result, replayed } = this.idempotency.run(`visit:enter:user:${me.id}`, key, input, () => this.visits.enter(input, undefined).visit);
+      // hn (optional): staff have checked the ID card — the visit then belongs to that patient, so a linked LINE account
+      // sees it in "คิวของฉัน" and hears when it is called. It is never shown on any screen.
+      const { key, hn, ...input } = (body ?? {}) as EnterInput & { key?: unknown; hn?: unknown };
+      const withHn = typeof hn === 'string' && hn.trim() !== '';
+      const { result, replayed } = this.idempotency.run(`visit:enter:user:${me.id}`, key, { ...input, hn: withHn ? hn : undefined }, () => {
+        const profileId = withHn ? this.booking.profileForHN(hn) : undefined;
+        const v = this.visits.enter(input, undefined, { profileId }).visit;
+        if (profileId) this.notify.checkedIn(v, profileId, v.flow === 'er' ? 'ห้องฉุกเฉิน' : `พื้นที่รอ ${v.dept}`);
+        return v;
+      });
       if (!replayed) {
-        this.audit.record({ ...actor(me), action: 'visit.enter', targetType: 'visit', targetId: result.id });
+        this.audit.record({ ...actor(me), action: 'visit.enter', targetType: 'visit', targetId: result.id, meta: { withPatientRecord: withHn } });
         this.server.emit('visit', result);
+        this.notify.kick();
       }
       return { ok: true, visit: result };
     });

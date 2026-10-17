@@ -97,3 +97,18 @@ test('my queue: today\'s number with its live link, and today\'s bookings still 
   assert.ok(api.tickets.check(after.visits[0].link).ok, 'a working link to the live queue page');
   assert.equal(after.bookings.length, 0);
 });
+
+test('a walk-in taken in with the HN (ID card checked) shows in the patient\'s LINE and gets queue messages', async () => {
+  const { api, admin, ctl, p1 } = await setup();
+  api.gateway.setFeatures(admin, { patch: { notifications: true } });
+  api.gateway.queueSettings(admin, { patch: { dataMode: 'live' }, at: 400, scope: 'system', summary: 'live' });
+  assert.equal((api.gateway.enterVisit(admin, { flow: 'opd', clinicKey: MED, dept: 'อายุรกรรมทั่วไป', prefix: 'A', at: 500, hn: 'bad hn!', key: key() }) as { code?: string }).code, 'VALIDATION_ERROR');
+  const v = (api.gateway.enterVisit(admin, { flow: 'opd', clinicKey: MED, dept: 'อายุรกรรมทั่วไป', prefix: 'A', at: 500, hn: '65-1', key: key() }) as { visit: Record<string, unknown> }).visit;
+  assert.ok(!JSON.stringify(v).includes('65-1'), 'the HN never travels with the visit');
+  assert.deepEqual(ctl.queue('1.1.1.1', p1).visits.map((x) => x.queue), [v.queue]);
+  api.gateway.queueCommand(admin, { at: 510, station: 'screen:opd-2-0', action: 'call', patientId: v.id as string, step: 0 });
+  const jobs = (api.db.db.prepare('SELECT template FROM notification_jobs').all() as { template: string }[]).map((j) => j.template);
+  assert.deepEqual(jobs, ['CHECKIN_DONE', 'QUEUE_CALL']);
+  const anon = (api.gateway.enterVisit(admin, { flow: 'opd', clinicKey: MED, dept: 'อายุรกรรมทั่วไป', prefix: 'A', at: 501, key: key() }) as { visit: { id: string } }).visit;
+  assert.equal(api.visits.profileOf(anon.id), undefined, 'without an HN the walk-in stays anonymous');
+});

@@ -2173,3 +2173,5 @@ kbd{margin-left:6px;padding:1px 6px;border-radius:5px;background:#ffffff33;borde
  @page{size:A4 portrait;margin:12mm}
 }
 a.liffChoice{text-decoration:none;padding:10px 16px}
+.visitHn{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.visitHn input{padding:9px 10px;border:1px solid #d5e0ec;border-radius:9px;font:inherit;font-size:15px;max-width:220px}
