@@ -330,7 +330,18 @@ check-in (Kiosk สแกน / เจ้าหน้าที่ / LIFF + ตำ
 
 ข้อจำกัด: "คิวของฉัน" เห็นเฉพาะคิวที่มาจากการจอง/นัด (มี patient profile) — คิว walk-in ที่ไม่ได้ผูก HN ใช้ QR บนบัตรคิวเหมือนเดิม · แผนที่ใน LINE ยังเป็นรายการแผนก (QR ป้ายนำทางคือขั้น 2.8) และใช้ผังแผนกตั้งต้น (ยังไม่รวมแผนกที่เพิ่มในตั้งค่า)
 
-### ⏭ ถัดไป: ขั้น 2.7 Notification worker + LINE push ของการจอง/นัด
+### ✅ ขั้น 2.7 Notifications — เสร็จ (2026-10-17)
+| งาน | ไฟล์ | หมายเหตุ |
+|---|---|---|
+| `notification_jobs`, `notification_logs` (migration 7) | `apps/api/src/migrations.ts` | dedupe key unique · target = PROFILE (หา LINE ที่เชื่อมตอนส่ง) หรือ LINE_USER (การสมัครจากบัตรคิว) |
+| Outbox | `apps/api/src/notification.service.ts` + จุดเรียกใน `flow.gateway.ts`, `patient.controller.ts` | **เขียนงานใน transaction เดียวกับการเปลี่ยนแปลง** (`notify.tx`) แทนตาราง `domain_events` แยก · ส่งหลัง commit |
+| Worker | `notification.service.ts` | claim แบบมีเงื่อนไข (กันส่งซ้ำ) · `X-Line-Retry-Key` ต่อ job+ผู้รับ · network/429/5xx ลองใหม่ backoff+jitter สูงสุด 5 ครั้ง · 4xx = FAILED · ไม่มี token = SKIPPED · ไม่มี LINE ที่เชื่อม = SKIPPED · งานค้าง PROCESSING ตอนรีสตาร์ต → RETRY · ส่งไม่สำเร็จไม่ย้อนการจอง/นัด |
+| ข้อความ | `render()` | ยืนยัน/ยกเลิกการจอง · นัดใหม่ · **เตือนนัด 18:00 วันก่อน** (ถูกแทนเมื่อเลื่อน, ถูกลบเมื่อยกเลิก/เช็กอิน/ไม่มาตามนัด) · เลื่อนนัด · ไม่อนุมัติเลื่อน · นัดถูกยกเลิก · เช็กอินแล้ว · เรียก/เรียกซ้ำ/ย้าย/รับเรื่อง ของผู้ป่วยที่เชื่อม LINE · **ไม่มีชื่อ, HN, ชื่อคลินิก, ชื่อแพทย์** · ผู้ป่วยเปลี่ยนนัดเองจะไม่ได้ข้อความ "นัดเปลี่ยน" |
+| ย้ายการแจ้งเตือนคิวเดิม | `line.service.ts` | การสมัครรับแจ้งเตือนจากบัตรคิว (รหัส 6 หลัก) ใช้ worker เดียวกัน · ไม่ส่งซ้ำถ้าเป็นบัญชีที่เชื่อมแล้ว · reply ของ webhook ยังส่งตรง (reply token มีอายุสั้น) |
+| UI | `components/pages/Notifications.tsx` | ตั้งค่า → "การแจ้งเตือน": สวิตช์, เตือนถ้ายังไม่ตั้ง LINE OA, ยอด 7 วัน, รายการ (ไม่แสดงผู้รับ), กรองสถานะ, ส่งใหม่ |
+| Tests | `apps/api/test/notify.test.ts` | +10 ข้อ → **API 108 + Web 22 = 130/130** · ทดสอบ UI ในเบราว์เซอร์ |
+
+### ⏭ ถัดไป: ขั้น 2.8 Wayfinding QR (จุดหมายสาธารณะ + ป้าย QR + หน้า /wayfinding)
 
 ---
 

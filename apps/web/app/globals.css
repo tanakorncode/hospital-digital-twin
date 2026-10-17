@@ -1473,6 +1473,7 @@ kbd{margin-left:6px;padding:1px 6px;border-radius:5px;background:#ffffff33;borde
 .setIco.i-test{background:linear-gradient(135deg,#fcd34d,#ea580c);--sh:#ea580c40}
 .setIco.i-booking{background:linear-gradient(135deg,#f9a8d4,#be185d);--sh:#be185d40}
 .setIco.i-appts{background:linear-gradient(135deg,#93c5fd,#1d4ed8);--sh:#1d4ed840}
+.setIco.i-notify{background:linear-gradient(135deg,#86efac,#15803d);--sh:#15803d40}
 .setIco.i-data{background:linear-gradient(135deg,#6ee7b7,#047857);--sh:#04785740}
 .setPane{position:relative;display:flex;flex-direction:column;gap:12px;min-width:0}
 .setToast{margin:0;padding:10px 14px;border-radius:12px;background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46;font-size:13.5px;font-weight:600}
@@ -2125,3 +2126,11 @@ kbd{margin-left:6px;padding:1px 6px;border-radius:5px;background:#ffffff33;borde
 .liffDir li:first-child{border-top:0}
 .liffDir small{color:#3d5168;white-space:nowrap}
 .liffNote.center{display:flex;align-items:center;justify-content:center;gap:6px;text-align:center}
+
+/* ---- Settings → การแจ้งเตือน ---- */
+.notifyCounts{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.notifyCounts span{display:flex;align-items:baseline;gap:6px;padding:8px 12px;border-radius:12px;background:#f5f7fa;font-size:12.5px;color:#4d6074}
+.notifyCounts b{font-size:20px;color:#0f2340}
+.notifyCounts .nc-FAILED b{color:#be123c}.notifyCounts .nc-RETRY b{color:#b45309}.notifyCounts .nc-SENT b{color:#047857}
+.notifyState{display:inline-block;padding:1px 8px;border-radius:6px;font-size:11.5px;font-weight:700;background:#eef2f6;color:#4d6074}
+.notifyState.s-SENT{background:#dcfce7;color:#166534}.notifyState.s-FAILED{background:#ffe4e6;color:#9f1239}.notifyState.s-RETRY{background:#fef3c7;color:#92400e}

@@ -80,3 +80,12 @@ hospital record once, at the counter.
    Staff can look up a patient's link status and end a link with a reason.
 - Testing without LINE: `PATIENT_DEV_LOGIN=on` (and no `LINE_LIFF_ID`) shows a test sign-in on `/liff` as a made-up LINE
   user. It is refused when `NODE_ENV=production` (the Docker image) — never use it with real patients.
+
+## Messages to patients (optional)
+Settings → **การแจ้งเตือน** → switch on. Patients with a linked LINE account get: booking confirmed / cancelled, a new
+appointment, a reminder at 18:00 the day before, an appointment moved / cancelled, a move request not approved, check-in
+done, and being called / moved / helped in the queue. Messages carry dates, times, codes and places only — no name, HN,
+clinic or doctor. They are sent by a worker inside the API from a durable queue: retried on network errors, 429 and 5xx
+(5 attempts, backoff), with LINE's retry key so a retry is never delivered twice. Failed ones are listed on the same
+page with **ส่งใหม่**. Needs `LINE_CHANNEL_ACCESS_TOKEN` (see *LINE Official Account* above); without it messages are
+recorded as skipped.
