@@ -11,9 +11,12 @@ type Control = {events:QueueEvent[]; send:(c:QueueCommand)=>Promise<{ok:boolean;
 const adviceIcon:Record<AdviceKind,typeof Sparkles> = {reassign:ArrowRightLeft,break:Coffee,notify:MessageCircle,plan:CalendarClock};
 const loadPref = (k:string, d:string) => { try { return localStorage.getItem(k) ?? d; } catch { return d; } };
 
-export default function CommandPage({base,patients,minute,queue,assist,timeNote}:{base:Patient[];patients:Patient[];minute:number;queue:Control;assist:AssistView;timeNote:string}) {
+// liveData: `base` is the simulated usual day (no real history yet); it is scaled to today's real arrivals and said so.
+export default function CommandPage({base,patients,minute,queue,assist,timeNote,liveData=false}:{base:Patient[];patients:Patient[];minute:number;queue:Control;assist:AssistView;timeNote:string;liveData?:boolean}) {
  const m = Math.floor(minute);
- const fc = useMemo(()=>forecast(base,patients,m),[base,patients,m]);
+ const scale = useMemo(()=>{ if (!liveData) return 1; const came = (ps:Patient[]) => ps.filter(p=>p.flow!=='ipd' && p.arrival<=m).length;
+  return (came(patients)+3)/(came(base)+3); },[liveData,base,patients,m]);
+ const fc = useMemo(()=>forecast(base,patients,m,undefined,undefined,undefined,undefined,undefined,undefined,scale),[base,patients,m,scale]);
  const advice = useMemo(()=>adviseStaffing(base,patients,m,fc),[base,patients,m,fc]);
  const found = useMemo(()=>anomalies(fc,assist,queue.events),[fc,assist,queue.events]);
  const [ack,setAck] = useState<Set<string>>(new Set());
@@ -36,7 +39,8 @@ export default function CommandPage({base,patients,minute,queue,assist,timeNote}
     <div className="cmdHead"><h3><Activity size={16}/> คนรอทั้งโรงพยาบาล · ย้อนหลัง 2 ชม. และคาดการณ์ 3 ชม.</h3>
      <span className="cmdLegend"><i className="lgActual"/>จริง<i className="lgFc"/>คาดการณ์<i className="lgBand"/>ช่วงที่น่าจะเป็น<i className="lgPlan"/>ปกติของวันนี้</span></div>
     <FcChart points={fc.total} now={m} height={260}/>
-    <p className="cmdNote">คาดการณ์จากรูปแบบปกติของวัน ปรับตามสถานการณ์จริงตอนนี้ · ยิ่งไกลยิ่งไม่แน่นอน (ช่วงกว้างขึ้น)</p>
+    <p className="cmdNote">คาดการณ์จากรูปแบบปกติของวัน ปรับตามสถานการณ์จริงตอนนี้ · ยิ่งไกลยิ่งไม่แน่นอน (ช่วงกว้างขึ้น)
+     {liveData && <><br/>ผู้ป่วยจริง: เส้น "ปกติของวันนี้" ยังมาจากแบบจำลอง ย่อ/ขยายตามจำนวนผู้ป่วยที่มาจริงวันนี้ (×{scale.toFixed(2)}) · จะแทนด้วยประวัติจริงเมื่อเก็บข้อมูลได้หลายสัปดาห์</>}</p>
    </section>
 
    <section className="cmdCard">

@@ -27,12 +27,14 @@ export type FcPoint = {t:number; plan:number; actual?:number; fc?:number; lo?:nu
 export type ServiceFc = {key:string; name:string; points:FcPoint[]; now:number; planNow:number; ratio:number; peak:number; peakAt:number; servers:number};
 // Nowcast: the usual day's plan for each service, scaled by how far today is running ahead of or behind it right now.
 // The adjustment fades over ~90 minutes and the band widens with distance — it is an estimate, shown as one.
-export function forecast(base:Patient[], live:Patient[], minute:number, horizon=180, step=15, back=120, keyOf:(s:PatientState)=>string|undefined=serviceKeyOf, nameOf:(k:string)=>string=serviceName, serversOf:(k:string,m:number)=>number=(k,mm)=>serviceStations(k,mm).length) {
+// planScale: the usual day multiplied to today's size (live data mode: the usual day is the simulated pattern, scaled to
+// how many real patients have arrived so far).
+export function forecast(base:Patient[], live:Patient[], minute:number, horizon=180, step=15, back=120, keyOf:(s:PatientState)=>string|undefined=serviceKeyOf, nameOf:(k:string)=>string=serviceName, serversOf:(k:string,m:number)=>number=(k,mm)=>serviceStations(k,mm).length, planScale=1) {
  const m = Math.floor(minute), start = Math.max(0,Math.floor((m-back)/step)*step), times:number[] = [];
  for (let t=start; t<=m+horizon; t+=step) times.push(Math.min(t,24*60-1));
  if (!times.includes(m)) times.push(m);
  times.sort((a,b)=>a-b);
- const plan = new Map(times.map(t=>[t,countWaiting(base,t,keyOf)])), actual = new Map(times.filter(t=>t<=m).map(t=>[t,countWaiting(live,t,keyOf)]));
+ const plan = new Map(times.map(t=>{ const c = countWaiting(base,t,keyOf); if (planScale!==1) c.forEach((v,k)=>c.set(k,v*planScale)); return [t,c] as const; })), actual = new Map(times.filter(t=>t<=m).map(t=>[t,countWaiting(live,t,keyOf)]));
  const keys = new Set<string>(); [...plan.values(),...actual.values()].forEach(c=>c.forEach((_,k)=>keys.add(k)));
  const services:ServiceFc[] = [...keys].map(key=>{
   const now = actual.get(m)?.get(key) ?? 0, planNow = plan.get(m)?.get(key) ?? 0, ratio = Math.max(0.4,Math.min(3,(now+2)/(planNow+2)));

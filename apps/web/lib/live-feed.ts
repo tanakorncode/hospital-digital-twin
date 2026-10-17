@@ -24,7 +24,7 @@ export function useLiveFeed() {
     const api = apiSocket(), socket = io(`${api.url}/hospital`, { ...api.opts, reconnectionDelay: 3000 });
     const onData = (s: LiveSnapshot) => {
       const at = new Date(s.at);
-      setLiveData({ hour: at.getHours() + at.getMinutes() / 60, floors: s.floors, servicePoints: s.servicePoints, duty: s.duty });
+      setLiveData({ hour: at.getHours() + at.getMinutes() / 60, floors: s.floors, servicePoints: s.servicePoints, duty: s.duty, source: s.source });
       setSnapshot(s);
       setStatus('live');
     };

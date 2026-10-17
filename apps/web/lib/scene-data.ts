@@ -166,13 +166,20 @@ export function crowdFactor(kind:BuildingKind, hour:number) {
 const kindOf = (id:string):BuildingKind => buildings.find(b=>b.id===id)?.kind ?? 'opd';
 // Live values from the realtime feed (see lib/live-feed.ts) replace the demo profile for the hour they
 // were measured in; every other hour keeps using the profile.
-export type LiveData = {hour:number; floors:Record<string,number>; servicePoints:Record<string,{queue:number;waitMinutes:number;status:DensityLevel}>; duty?:Record<string,LiveDuty>};
+export type LiveData = {hour:number; floors:Record<string,number>; servicePoints:Record<string,{queue:number;waitMinutes:number;status:DensityLevel}>; duty?:Record<string,LiveDuty>; source?:'demo'|'his-adapter'};
 let live:LiveData|null = null;
 export const setLiveData = (d:LiveData|null) => { live = d; };
-const liveAt = (hour:number) => live && Math.floor(clampHour(hour))===Math.floor(clampHour(live.hour)) ? live : null;
+// Live data mode (real patients): counts come from the patients actually in the hospital — `real` — and only a feed
+// from the HIS may override the current hour; the demo feed and the demo daily profile are not used at all.
+export type RealCounts = {floor:(id:string, level:number, hour:number)=>number; waiting:(id:string, hour:number)=>{n:number; avgWait:number}; rooms:(id:string)=>[number,number]};
+let real:RealCounts|null = null;
+export const setRealCounts = (r:RealCounts|null) => { real = r; };
+export const isRealMode = () => !!real;
+const liveAt = (hour:number) => live && (!real || live.source==='his-adapter') && Math.floor(clampHour(hour))===Math.floor(clampHour(live.hour)) ? live : null;
 export function floorCountAt(id:string, level:number, hour:number=REF_HOUR) {
   const measured = liveAt(hour)?.floors[`${id}:${level}`];
   if (measured!==undefined) return measured;
+  if (real) return real.floor(id,level,hour);
   const f = buildingStats[id]?.floors.find(x=>x.level===level);
   return f ? Math.round(f.count*crowdFactor(kindOf(id),hour)) : 0;
 }
@@ -183,7 +190,10 @@ export function buildingDensityAt(id:string, hour:number=REF_HOUR) {
   return f.length ? Math.round(f.reduce((n,x)=>n+floorCountAt(id,x.level,hour),0)/f.length) : 0;
 }
 export function buildingStatsAt(id:string, hour:number):BuildingStats|undefined {
-  const s = buildingStats[id], k = crowdFactor(kindOf(id),hour);
+  const s = buildingStats[id];
+  if (s && real) { const w = real.waiting(id,hour);
+    return {...s,waiting:w.n,avgWait:w.avgWait,rooms:real.rooms(id),floors:s.floors.map(f=>({...f,count:floorCountAt(id,f.level,hour)}))}; }
+  const k = crowdFactor(kindOf(id),hour);
   return s && {...s,waiting:Math.round(s.waiting*k),avgWait:Math.round(s.avgWait*(0.4+0.6*k)),
     rooms:[Math.min(s.rooms[1],Math.round(s.rooms[0]*Math.min(1.1,k))),s.rooms[1]],
     floors:s.floors.map(f=>({...f,count:floorCountAt(id,f.level,hour)}))};
@@ -200,7 +210,8 @@ export function servicePointAt(sp:ServicePoint, hour:number):ServicePoint {
 }
 // Share of the figures generated for a place that should be visible at this hour (1 = its busiest hour).
 export const floorPresence = (id:string, level:number, hour:number) => { const peak = peakFloorCount(id,level); return peak ? floorCountAt(id,level,hour)/peak : 0; };
-export const kindPresence = (kind:BuildingKind, hour:number) => crowdFactor(kind,hour)/Math.max(...HOURS.map(h=>crowdFactor(kind,h)));
+// No generic crowd in live data mode: only real patients (drawn separately) and staff on duty.
+export const kindPresence = (kind:BuildingKind, hour:number) => real ? 0 : crowdFactor(kind,hour)/Math.max(...HOURS.map(h=>crowdFactor(kind,h)));
 
 // Timeline scope: whole campus, one building, or one floor.
 export type Scope = {building?:string; level?:number};

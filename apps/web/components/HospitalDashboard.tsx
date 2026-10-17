@@ -2,11 +2,12 @@
 import dynamic from 'next/dynamic';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { Bell, MapPin, Tags, Route as RouteIcon, RotateCcw, FastForward, Building2, ChartColumn, ClipboardList, Clock, Droplet, House, Layers, ListOrdered, LocateFixed, Minus, Pill, Plus, Radiation, Search, Settings, Stethoscope, Thermometer, Users, UsersRound, Wallet, Hospital, LayoutGrid, Play, Pause, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, X, Ticket, UserRound, Accessibility, type LucideIcon, BrainCircuit } from 'lucide-react';
-import { findDepts, findDoctors, isOff, type DeptPlace, kiosks, kioskStatusLabel, type Kiosk, DENSITY_HIGH, DENSITY_LOW, doctorName, dutyLabel, findRoom, floorDutyAt, roomDutyAt, HOURS, HOUR_END, HOUR_START, REF_HOUR, buildingDensityAt, buildingStatsAt, buildings, buildingStats, clampHour, crowdFactor, demoFlows, densityColor, densityLevel, floorDepartments, fmtHour, hourlySeries, parkingLots, peakWindow, personTypes, roads, scopeAt, servicePointAt, servicePoints, type PersonType, type Scope, type ServicePoint } from '../lib/scene-data';
+import { findDepts, findDoctors, isOff, type DeptPlace, kiosks, kioskStatusLabel, type Kiosk, DENSITY_HIGH, DENSITY_LOW, doctorName, dutyLabel, findRoom, floorDutyAt, roomDutyAt, HOURS, HOUR_END, HOUR_START, REF_HOUR, buildingDensityAt, buildingStatsAt, buildings, buildingStats, clampHour, crowdFactor, demoFlows, densityColor, densityLevel, floorDepartments, fmtHour, isRealMode, setRealCounts, hourlySeries, parkingLots, peakWindow, personTypes, roads, scopeAt, servicePointAt, servicePoints, type PersonType, type Scope, type ServicePoint } from '../lib/scene-data';
 import { useLiveFeed, type LiveStatus } from '../lib/live-feed';
+import { realCounts } from '../lib/live-counts';
 import { SYSTEM_BY, allStations, canDo, openStations, useTicket, applyQueueEvents, basePatients as startingPatients, isLive, queueAssist, rulesFor, suggestionText, useQueueEvents, worldKey } from '../lib/queue';
 import { demoOffset } from '../lib/use-demo-clock';
-import { LONG_WAIT, alertsAt, bottlenecksAt, etaOf, fmtDur, fmtMin, knownUntil, placeText, patientToken, kioskAt, maskHN, patientAt, searchPatients, statusColor as patientColor, statusText, stepText, type Patient, type StepKind } from '../lib/patients';
+import { LONG_WAIT, alertsAt, bottlenecksAt, etaOf, fmtDur, fmtMin, generatePatients, knownUntil, placeText, patientToken, kioskAt, maskHN, patientAt, searchPatients, statusColor as patientColor, statusText, stepText, type Patient, type StepKind } from '../lib/patients';
 import { LoginScreen, UserChip } from './LoginScreen';
 import type { LabelKind, PickedPerson, SceneApi, SceneMode, SceneView } from './HospitalScene';
 import QRCode from 'qrcode';
@@ -59,7 +60,7 @@ function Timeline({scope,title,hour,nowHour,onHour,playing,onTogglePlay,onNow,fo
  const pick = (clientX:number) => { const r = chart.current?.getBoundingClientRect(); if (r) onHour(clampHour(HOUR_START+(clientX-r.left)/r.width*span)); };
  const cur = series[Math.floor(clampHour(hour))-HOUR_START];
  // One compact row: summary | chart | controls.
- return <div className="timeline" title={liveNow?'ชั่วโมงปัจจุบันเป็นค่าสด · ชั่วโมงอื่นเป็นค่าจำลอง':'ข้อมูลจำลอง'}>
+ return <div className="timeline" title={isRealMode()?'ผู้ป่วยจริง · ชั่วโมงที่ยังไม่ถึงยังไม่มีข้อมูล':liveNow?'ชั่วโมงปัจจุบันเป็นค่าสด · ชั่วโมงอื่นเป็นค่าจำลอง':'ข้อมูลจำลอง'}>
   <div className="tlInfo">
    <strong><span>ความหนาแน่นรายชั่วโมง · {title}</span>{liveNow ? <em className="liveBadge"><i/>สด</em> : !following && <em className="tlHistory">ช่วงเวลาอื่น</em>}</strong>
    <small><b>{fmtHour(hour)} · {cur?.total.toLocaleString()} คน</b> · <span className="tlPeak">พีค {fmtHour(peak.from)}–{fmtHour(peak.to)}</span></small>
@@ -169,7 +170,7 @@ function BuildingDrawer({thumbs,hour,alerts,present,current,onPick,onClose}:{thu
 function LiveStatusBadge({status,at,source}:{status:LiveStatus;at?:string;source?:string}) {
  const time = at ? new Date(at).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '';
  const [dot,title,detail] = status==='live'
-  ? ['greenDot','เชื่อมต่อแบบเรียลไทม์',`อัปเดต ${time} · ${source==='his-adapter'?'HIS':'ตัวจำลอง (DEMO)'}`]
+  ? ['greenDot','เชื่อมต่อแบบเรียลไทม์',`อัปเดต ${time} · ${source==='his-adapter'?'HIS':isRealMode()?'ผู้ป่วยจริงในระบบ':'ตัวจำลอง (DEMO)'}`]
   : status==='connecting' ? ['amberDot','กำลังเชื่อมต่อ…','ระหว่างนี้ใช้ข้อมูลจำลองตามช่วงเวลา']
   : ['redDot','ออฟไลน์','เชื่อมต่อ API ไม่ได้ · ใช้ข้อมูลจำลองตามช่วงเวลา'];
  return <div className="systemStatus" role="status"><strong><span className={dot}/>{title}</strong><small>{detail}</small></div>;
@@ -236,6 +237,13 @@ export default function HospitalDashboard() {
  const urlClock = useRef(false); // ?hour / ?demoStart in the link wins over the test time in Settings
  useEffect(()=>{ if (!urlClock.current) setClockOffset(queueSync.settings.demoOffset ?? 0); },[queueSync.settings.demoOffset]);
  const clock = useClock(clockOffset);
+ // Live data mode: every count on the map, the timeline and the building panels comes from the real patients
+ // (scene-data reads it while rendering below); the demo profile and demo feed are not used.
+ const nowMinute = Math.floor(((Date.now()/60000 - new Date().getTimezoneOffset() + clockOffset) % 1440 + 1440) % 1440);
+ useMemo(()=>{ setRealCounts(liveData ? realCounts(patients,nowMinute,queueSync.events) : null); },[liveData,patients,nowMinute,queueSync.events]);
+ // The simulated usual day, as the command centre's "usual" line in live data mode (made only when needed).
+ const usualDay = useMemo(()=>liveData && activeNav==='ศูนย์อัจฉริยะ' ? generatePatients('demo-day') : [],[liveData,activeNav,world]); // eslint-disable-line react-hooks/exhaustive-deps
+ useEffect(()=>()=>setRealCounts(null),[]);
  const spec = buildings.find(b=>b.id===selected);
  const stats = spec ? buildingStatsAt(spec.id,hour) : undefined;
  const panelBuilding = spec ?? buildings[0];
@@ -474,7 +482,7 @@ export default function HospitalDashboard() {
    {activeNav==='ติดตามคิว' && <QueuePage patients={patients} minute={minute} timeNote={timeNote} onOpenPatient={openOnMap}
     queue={{...queueSync,canAct:following,onNow:()=>{ setPlaying(false); setFollowing(true); }}} assist={assist}
     onOpenSettings={g=>{ setSettingsFocus(g); setActiveNav('ตั้งค่า'); }} onOpenPlace={openPlaceOnMap}/>}
-   {activeNav==='ศูนย์อัจฉริยะ' && <CommandPage base={basePatients} patients={patients} minute={minute} queue={{events:queueSync.events,send:queueSync.send,canAct:following}} assist={assist} timeNote={timeNote}/>}
+   {activeNav==='ศูนย์อัจฉริยะ' && <CommandPage base={liveData ? usualDay : basePatients} liveData={liveData} patients={patients} minute={minute} queue={{events:queueSync.events,send:queueSync.send,canAct:following}} assist={assist} timeNote={timeNote}/>}
    {activeNav==='สถิติและรายงาน' && <StatsPage patients={patients} minute={minute} timeNote={timeNote}/>}
    {activeNav==='การแจ้งเตือน' && <AlertsPage alerts={opsAlerts} rules={rules} onRules={saveRules} acks={acks} onAck={ackAlert} minute={minute} timeNote={timeNote} onOpenPatient={openOnMap}/>}
    {activeNav==='ผังโรงพยาบาล' && <CapacityPage patients={patients} minute={minute} timeNote={timeNote} onOpenPatient={openOnMap}/>}
@@ -587,7 +595,7 @@ export default function HospitalDashboard() {
      </div>
      <div className="heatbar"/>
      <div className="heatLabels"><span>น้อย<small>&lt; {DENSITY_LOW}</small></span><span>ปานกลาง<small>{DENSITY_LOW}–{DENSITY_HIGH}</small></span><span>มาก<small>&gt; {DENSITY_HIGH}</small></span></div>
-     <p className="note">จำนวนคนต่อชั้นหรือต่อโซนแผนก · มุมมองภาพรวมใช้ค่าเฉลี่ยต่อชั้นของแต่ละอาคาร (ข้อมูลจำลอง)</p>
+     <p className="note">จำนวนคนต่อชั้นหรือต่อโซนแผนก · มุมมองภาพรวมใช้ค่าเฉลี่ยต่อชั้นของแต่ละอาคาร ({liveData?'ผู้ป่วยจริงที่อยู่ในโรงพยาบาล':'ข้อมูลจำลอง'})</p>
     </section>
     <section className="panel miniMap"><h3>แผนผังโดยรวม</h3>
      <div className="miniMapBody">

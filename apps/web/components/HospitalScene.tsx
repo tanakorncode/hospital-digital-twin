@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { screenData, type ScreenData } from '../lib/queue-screen';
 import { BedDouble, DoorOpen, FlaskConical, Plus, Settings, SquareParking, Ticket, type LucideIcon } from 'lucide-react';
 import { erResusSpots, fmtMin, labStationSpots, patientAt, statusColor as patientColor, stepText, wardBeds, type Patient, type PatientState, type StepKind } from '../lib/patients';
-import { REF_HOUR, isOff, layoutRevision, kioskY, kiosks, type KioskStatus, buildingDensityAt, doctorName, findRoom, floorDutyAt, floorRooms, type DutyStatus, buildings, buildingStats, demoFlows, densityColor, fillerBuildings, floorCountAt, floorDepartments, floorPresence, kindPresence, peakFloorCount, parkingLots, personTypes, roads, type BuildingKind, type PersonType, type BuildingSpec, type Department, type Rect } from '../lib/scene-data';
+import { REF_HOUR, isOff, layoutRevision, kioskY, kiosks, type KioskStatus, buildingDensityAt, doctorName, findRoom, floorDutyAt, floorRooms, type DutyStatus, buildings, buildingStats, demoFlows, densityColor, fillerBuildings, floorCountAt, floorDepartments, floorPresence, isRealMode, kindPresence, peakFloorCount, parkingLots, personTypes, roads, type BuildingKind, type PersonType, type BuildingSpec, type Department, type Rect } from '../lib/scene-data';
 
 export type SceneMode = '2d'|'3d';
 export type SceneView = 'campus'|'building'|'floor'|'department';
@@ -439,7 +439,9 @@ type Walk = {curve:THREE.Curve<THREE.Vector3>;offset:number;side:number;flowId:s
 // fraction: per person (or one value for all) — a person shows only while presence < fraction.
 // onPick: makes figures clickable, reporting the person's index.
 function Figures({people,hidden,walks,highlight=null,fraction=1,onDuty,onPick}:{people:Person[];hidden:PersonType[];walks?:(Walk|null)[];highlight?:string|null;fraction?:number|number[];onDuty?:Set<string>;onPick?:(i:number)=>void}) {
- const shown = (f:Person,i:number) => !hidden.includes(f.type) && f.presence<(typeof fraction==='number'?fraction:fraction[i]??1) && (!f.dutyRoom || !!onDuty?.has(f.dutyRoom));
+ // Live data mode: no simulated crowd — only staff on duty stay (real patients are drawn as patients).
+ const shown = (f:Person,i:number) => !hidden.includes(f.type) && (isRealMode() ? f.type==='staff' && !!f.dutyRoom && !!onDuty?.has(f.dutyRoom)
+  : f.presence<(typeof fraction==='number'?fraction:fraction[i]??1) && (!f.dutyRoom || !!onDuty?.has(f.dutyRoom)));
  const mesh = useRef<PartMeshes>({});
  const tangent = useMemo(()=>new THREE.Vector3(),[]);
  // three.js caches an InstancedMesh's bounding sphere on its first raycast and rejects clicks outside it,
