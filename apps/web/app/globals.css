@@ -1830,3 +1830,59 @@ kbd{margin-left:6px;padding:1px 6px;border-radius:5px;background:#ffffff33;borde
 .prioChip{display:inline-flex;align-items:center;gap:4px;padding:2px 8px 2px 6px;border-radius:999px;font-size:12px;font-weight:700;font-style:normal;white-space:nowrap;vertical-align:middle;line-height:1.3}
 .prioChip svg{flex:0 0 auto}
 .prioChip.iconOnly{padding:3px;gap:0}
+
+/* ---- Sign-in & user ---- */
+.loginWrap{position:fixed;inset:0;z-index:100;display:grid;place-items:center;padding:16px;background:radial-gradient(800px 500px at 20% 10%,#dbe8ff,transparent 60%),radial-gradient(700px 500px at 90% 90%,#ece4ff,transparent 60%),#eef3f9cc;backdrop-filter:blur(6px)}
+.loginCard{width:min(420px,100%);display:flex;flex-direction:column;gap:14px;padding:30px 30px 24px;border-radius:24px;background:#fff;box-shadow:0 24px 60px #0b1d3326,0 2px 6px #0b1d3314}
+.loginBrand{display:flex;align-items:center;gap:12px}
+.loginBrand>span{display:grid;place-items:center;width:52px;height:52px;border-radius:16px;background:linear-gradient(135deg,#3b8bff,#1462e6);color:#fff;box-shadow:0 10px 22px #1677ff40}
+.loginBrand b{display:block;font-size:17px;color:#0f2340}.loginBrand small{display:block;font-size:13px;color:#60738a}
+.loginCard h1{margin:6px 0 0;font-size:24px;color:#0f2340}
+.loginSub{margin:-6px 0 4px;font-size:13.5px;color:#5b6f86;line-height:1.5}
+.loginField{display:flex;flex-direction:column;gap:6px}
+.loginField>span{font-size:13px;font-weight:700;color:#3d5168}
+.loginField input{width:100%;padding:12px 14px;border:1.5px solid #d9e2ea;border-radius:12px;font:inherit;font-size:16px;color:#0f2340;background:#fff}
+.loginField input:focus{outline:none;border-color:#1677ff;box-shadow:0 0 0 3px #1677ff22}
+.loginPass{position:relative;display:block}
+.loginPass input{padding-right:46px}
+.loginPass button{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:36px;height:36px;display:grid;place-items:center;border:0;border-radius:10px;background:transparent;color:#60738a;cursor:pointer}
+.loginError{margin:0;padding:10px 12px;border-radius:12px;background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;font-size:13.5px;font-weight:600}
+.loginBtn{margin-top:4px;padding:13px;border:0;border-radius:12px;background:#1677ff;color:#fff;font:inherit;font-size:16px;font-weight:700;cursor:pointer}
+.loginBtn:disabled{opacity:.5;cursor:default}
+.loginNote{display:flex;align-items:center;gap:6px;margin:2px 0 0;font-size:12.5px;color:#60738a}
+.loginNote svg{color:#0e9f6e;flex:0 0 auto}
+.userChip{position:relative;flex-shrink:0}
+.userBtn{display:flex;align-items:center;gap:8px;padding:5px 12px 5px 5px;border:1px solid #dbe3eb;border-radius:999px;background:#fff;cursor:pointer;font:inherit}
+.userAva{display:grid;place-items:center;width:32px;height:32px;border-radius:50%;color:#fff;background:#60738a}
+.userAva.r-admin{background:linear-gradient(135deg,#a78bfa,#6d28d9)}.userAva.r-supervisor{background:linear-gradient(135deg,#38bdf8,#2563eb)}.userAva.r-staff{background:linear-gradient(135deg,#34d399,#0e9f6e)}
+.userTxt{display:flex;flex-direction:column;text-align:left;line-height:1.2}
+.userTxt b{font-size:13px;color:#0f2340;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.userTxt small{font-size:11.5px;color:#60738a}
+.userMenu{position:absolute;right:0;top:calc(100% + 6px);z-index:30;min-width:220px;padding:8px;border-radius:14px;background:#fff;box-shadow:0 16px 36px #0b1d3330;border:1px solid #e3e9f0}
+.userMenu>div{padding:6px 8px 10px;border-bottom:1px solid #eef2f6;margin-bottom:6px}
+.userMenu>div b{display:block;font-size:14px;color:#0f2340}.userMenu>div small{font-size:12px;color:#60738a}
+.userMenu button{width:100%;display:flex;align-items:center;gap:8px;padding:9px 10px;border:0;border-radius:10px;background:transparent;color:#b91c1c;font:inherit;font-size:14px;font-weight:600;cursor:pointer}
+.userMenu button:hover{background:#fef2f2}
+
+/* Settings · users */
+.setIco.i-users{background:linear-gradient(135deg,#fda4af,#e11d48);--sh:#e11d4840}
+.settingsPage.v2 .pageHead .setBy b{color:#0f2340}
+.roleKey{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.roleKey>div{display:grid;grid-template-columns:auto 1fr;column-gap:10px;align-items:center;padding:10px 12px;border-radius:14px;background:#f8fafc;border:1px solid #eef2f6}
+.roleKey .userAva{grid-row:span 2;width:30px;height:30px}
+.roleKey b{font-size:14px;color:#0f2340}.roleKey small{font-size:12px;color:#60738a;line-height:1.4}
+.usersHead{display:flex;align-items:center;justify-content:space-between}
+.usersHead .btn{display:inline-flex;align-items:center;gap:6px}
+.userEdit{display:flex;flex-direction:column;gap:12px;padding:16px;border-radius:18px;border:1.5px solid #fda4af;background:linear-gradient(180deg,#fff1f2,#fff)}
+.userEditGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.userEdit .floorPick button{min-width:0;flex:1;align-items:flex-start;text-align:left}
+.userEdit .floorPick button.on{border-color:#e11d48;background:#fff1f2;box-shadow:0 0 0 3px #e11d4818}
+.usersList{display:flex;flex-direction:column;gap:8px}
+.userRow{display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:14px;background:#fff;border:1px solid #e8edf4}
+.userRow.off{background:#f8fafc}.userRow.off .userInfo b{color:#94a3b8}
+.userInfo{flex:1;min-width:0;display:flex;flex-direction:column}
+.userInfo b{display:flex;align-items:center;gap:6px;font-size:14.5px;color:#0f2340}
+.userInfo small{font-size:12.5px;color:#60738a}
+.tagOff{font-style:normal;font-size:11px;font-weight:700;padding:1px 7px;border-radius:999px;background:#e2e8f0;color:#475569}
+.userRow .btn.sm{display:inline-flex;align-items:center;gap:5px}
+@media(max-width:720px){.roleKey{grid-template-columns:1fr}}

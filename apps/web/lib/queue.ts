@@ -363,18 +363,35 @@ const loadLocal = ():QueueEvent[] => { try { return JSON.parse(localStorage.getI
 const saveLocal = (ev:QueueEvent[]) => { try { localStorage.setItem(storeKey(),JSON.stringify(ev)); } catch { /* ignore */ } };
 const settingsKey = 'hdt.queueSettings';
 const loadSettings = ():QueueSettings => { try { const v = JSON.parse(localStorage.getItem(settingsKey) ?? 'null'); return v ? mergeSettings(DEFAULT_SETTINGS,v) : DEFAULT_SETTINGS; } catch { return DEFAULT_SETTINGS; } };
-export type QueueSync = {events:QueueEvent[]; online:boolean; send:(cmd:QueueCommand)=>Promise<{ok:boolean;reason?:string}>;
-  settings:QueueSettings; saveSettings:(patch:SettingsPatch, audit:{at:number; scope:string; summary:string; by?:string})=>Promise<{ok:boolean;reason?:string}>};
+// ---- Staff accounts (the API checks every action; the screens only hide what a role cannot do) ----
+export type Role = 'admin'|'supervisor'|'staff';
+export type AuthUser = {id:number; username:string; name:string; role:Role; active:boolean; lastLogin?:string};
+export const roleText:Record<Role,string> = {admin:'ผู้ดูแลระบบ',supervisor:'หัวหน้างาน',staff:'เจ้าหน้าที่'};
+const roleRank:Record<Role,number> = {staff:1,supervisor:2,admin:3};
+export const canDo = (u:AuthUser|null|undefined, role:Role) => !!u && roleRank[u.role]>=roleRank[role];
+export type UserInput = {id?:number; username?:string; name?:string; role?:Role; active?:boolean; password?:string};
+type Res = {ok:boolean; reason?:string; auth?:boolean};
+const sessionKey = 'hdt.session';
+const loadToken = () => { try { return localStorage.getItem(sessionKey) ?? ''; } catch { return ''; } };
+export type QueueSync = {events:QueueEvent[]; online:boolean; send:(cmd:QueueCommand)=>Promise<Res>;
+  settings:QueueSettings; saveSettings:(patch:SettingsPatch, audit:{at:number; scope:string; summary:string; by?:string})=>Promise<Res>;
+  // authReady: the API has said who this session is (null = not signed in). Offline there is no sign-in.
+  user:AuthUser|null; authReady:boolean; login:(username:string, password:string)=>Promise<Res>; logout:()=>void;
+  listUsers:()=>Promise<{ok:boolean; reason?:string; users?:AuthUser[]}>; saveUser:(u:UserInput)=>Promise<{ok:boolean; reason?:string; users?:AuthUser[]}>};
 export function useQueueEvents():QueueSync {
   const [events,setEvents] = useState<QueueEvent[]>([]);
   const [online,setOnline] = useState(false);
   const [settings,setSettings] = useState<QueueSettings>(DEFAULT_SETTINGS);
+  const [user,setUser] = useState<AuthUser|null>(null);
+  const [authReady,setAuthReady] = useState(false);
   const socket = useRef<Socket|null>(null);
   useEffect(()=>{
     setEvents(loadLocal()); setSettings(loadSettings());
-    const api = apiSocket(), s = io(`${api.url}/hospital`,{...api.opts,reconnectionDelay:3000});
+    // The session token rides in the handshake (read again on every reconnect).
+    const api = apiSocket(), s = io(`${api.url}/hospital`,{...api.opts,reconnectionDelay:3000,auth:cb=>cb({token:loadToken()})});
     socket.current = s;
     s.on('connect',()=>setOnline(true));
+    s.on('auth:me',(u:AuthUser|null)=>{ setUser(u); setAuthReady(true); if (!u) { try { localStorage.removeItem(sessionKey); } catch { /* ignore */ } } });
     s.on('disconnect',()=>setOnline(false));
     s.on('connect_error',()=>setOnline(false));
     s.on('queue:events',(list:QueueEvent[])=>{ setEvents(list); saveLocal(list); });
@@ -386,25 +403,36 @@ export function useQueueEvents():QueueSync {
     const e = {...cmd,id:`local-${Date.now()}-${Math.random().toString(36).slice(2,7)}`};
     setEvents(prev=>{ if (cmd.key && prev.some(x=>x.key===cmd.key)) return prev; const next = [...prev,e]; saveLocal(next); return next; });
   };
+  const request = useCallback(<T extends Res>(event:string, body:unknown) => new Promise<T>(resolve=>{
+    const s = socket.current;
+    if (!s?.connected) { resolve({ok:false,reason:'เชื่อมต่อระบบไม่ได้'} as T); return; }
+    s.timeout(5000).emit(event,body,(err:unknown,res?:T)=>{ const r = err ? {ok:false,reason:'API ไม่ตอบกลับ'} as T : res ?? {ok:true} as T;
+      if (r.auth) setUser(null); // session expired / signed out elsewhere
+      resolve(r); });
+  }),[]);
+  const login = useCallback(async (username:string, password:string)=>{
+    const r = await request<Res & {token?:string; user?:AuthUser}>('auth:login',{username,password});
+    if (r.ok && r.token && r.user) { try { localStorage.setItem(sessionKey,r.token); } catch { /* ignore */ } setUser(r.user); }
+    return r;
+  },[request]);
+  const logout = useCallback(()=>{ void request('auth:logout',{}); try { localStorage.removeItem(sessionKey); } catch { /* ignore */ } setUser(null); },[request]);
+  const listUsers = useCallback(()=>request<Res & {users?:AuthUser[]}>('users:list',{}),[request]);
+  const saveUser = useCallback((u:UserInput)=>request<Res & {users?:AuthUser[]}>('users:save',u),[request]);
   const send = useCallback(async (cmd:QueueCommand)=>{
     const s = socket.current;
-    if (s?.connected) return await new Promise<{ok:boolean;reason?:string}>(resolve=>{
-      s.timeout(4000).emit('queue:command',cmd,(err:unknown,res?:{ok:boolean;reason?:string})=>resolve(err?{ok:false,reason:'API ไม่ตอบกลับ'}:res ?? {ok:true}));
-    });
+    if (s?.connected) return await request<Res>('queue:command',cmd);
     // Offline: keep it in this browser only.
     addLocal(cmd);
     return {ok:true};
-  },[]);
+  },[request]);
   const saveSettings = useCallback(async (patch:SettingsPatch, audit:{at:number; scope:string; summary:string; by?:string})=>{
     const s = socket.current;
-    if (s?.connected) return await new Promise<{ok:boolean;reason?:string}>(resolve=>{
-      s.timeout(4000).emit('queue:settings:set',{patch,...audit},(err:unknown,res?:{ok:boolean;reason?:string})=>resolve(err?{ok:false,reason:'API ไม่ตอบกลับ'}:res ?? {ok:true}));
-    });
+    if (s?.connected) return await request<Res>('queue:settings:set',{patch,...audit});
     setSettings(prev=>{ const m = mergeSettings(prev,patch); try { localStorage.setItem(settingsKey,JSON.stringify(m)); } catch { /* ignore */ } return m; });
     addLocal({at:audit.at,station:audit.scope,action:'config',reason:audit.summary,by:audit.by});
     return {ok:true};
-  },[]);
-  return {events,online,send,settings,saveSettings};
+  },[request]);
+  return {events,online,send,settings,saveSettings,user,authReady,login,logout,listUsers,saveUser};
 }
 
 // Thai announcement, read character by character so queue numbers are unambiguous.

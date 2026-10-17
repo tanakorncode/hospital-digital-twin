@@ -1,9 +1,9 @@
 'use client';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Building2, Clock, FlaskConical, History, Layers, Minus, Plus, RotateCcw, Search, Sparkles, Trash2, X, type LucideIcon } from 'lucide-react';
+import { Building2, Clock, FlaskConical, History, KeyRound, Layers, Minus, Plus, RotateCcw, Search, Sparkles, Trash2, UserCog, X, type LucideIcon } from 'lucide-react';
 import { fmtMin, opdClinics, screeningCounters, screeningStationId, type Clinic } from '../../lib/patients';
 import { CLINIC_FLOORS, DEFAULT_HOURS, buildingStats, builtInDeptCount, buildings, roomsPerFloor, type CustomDept } from '../../lib/scene-data';
-import { DEFAULT_RULES, counterServices, everyStation, modeText, queueGroups, rulesFor, scopeName, type AssistMode, type QueueEvent, type QueueGroup, type QueueRules, type QueueSettings, type SettingsPatch } from '../../lib/queue';
+import { DEFAULT_RULES, canDo, roleText, type AuthUser, type QueueSync, type Role, type UserInput, counterServices, everyStation, modeText, queueGroups, rulesFor, scopeName, type AssistMode, type QueueEvent, type QueueGroup, type QueueRules, type QueueSettings, type SettingsPatch } from '../../lib/queue';
 
 // Settings, one topic at a time (left menu). Rules read as sentences with − / + steppers; several changes are saved
 // together from a bar at the bottom. Hospital defaults, per-department overrides and the test clock are separate
@@ -21,7 +21,7 @@ const modes:{id:AssistMode; hint:string}[] = [{id:'off',hint:'แสดงสถ
 const valText = (k:keyof QueueRules, v:unknown) => k==='mode' ? modeText[v as AssistMode] : k==='cap' && v===0 ? 'ไม่จำกัด' : String(v);
 const ruleName:Record<keyof QueueRules,string> = {mode:'ระดับตัวช่วย',stallMin:'เกณฑ์ไม่ตอบรับ',slowFactor:'เกณฑ์ช้ากว่าปกติ',cap:'เพดานคิว',imbalance:'เกณฑ์เกลี่ยคิว'};
 const loadPref = (k:string, d:string) => { try { return localStorage.getItem(k) ?? d; } catch { return d; } };
-type Pane = 'hours'|'units'|'assist'|'groups'|'history'|'test';
+type Pane = 'hours'|'units'|'assist'|'groups'|'history'|'test'|'users';
 const panes:{id:Pane; icon:LucideIcon; title:string; sub:string}[] = [
  {id:'hours',icon:Clock,title:'เวลาให้บริการ',sub:'เวลาเปิด–ปิด OPD'},
  {id:'units',icon:Building2,title:'แผนกและจุดบริการ',sub:'เพิ่มแผนก · เปิด–ปิดห้อง/ช่อง'},
@@ -29,10 +29,16 @@ const panes:{id:Pane; icon:LucideIcon; title:string; sub:string}[] = [
  {id:'groups',icon:Layers,title:'ปรับรายแผนก',sub:'แผนกที่ต่างจากค่าทั้งโรงพยาบาล'},
  {id:'history',icon:History,title:'ประวัติการเปลี่ยน',sub:'ใครเปลี่ยนอะไร เมื่อไร'},
  {id:'test',icon:FlaskConical,title:'โหมดทดสอบ',sub:'เวลาจำลองสำหรับทดสอบ/สาธิต'},
+ {id:'users',icon:UserCog,title:'ผู้ใช้งาน',sub:'บัญชีเจ้าหน้าที่และสิทธิ์'},
 ];
+// What each role may open (the API enforces the same). Offline / not connected: everything except accounts.
+const panesFor = (u:AuthUser|null):Pane[] => !u ? ['hours','units','assist','groups','history','test']
+ : u.role==='admin' ? ['hours','units','assist','groups','history','test','users'] : ['groups','history'];
 
-export default function SettingsPage({settings,save,events,minute,timeNote,focusGroup}:{settings:QueueSettings;save:Save;events:QueueEvent[];minute:number;timeNote:string;focusGroup?:string|null}) {
- const [pane,setPane] = useState<Pane>(focusGroup ? 'groups' : 'hours');
+export default function SettingsPage({settings,save,events,minute,timeNote,focusGroup,user=null,listUsers,saveUser}:{settings:QueueSettings;save:Save;events:QueueEvent[];minute:number;timeNote:string;focusGroup?:string|null;
+ user?:AuthUser|null;listUsers?:QueueSync['listUsers'];saveUser?:QueueSync['saveUser']}) {
+ const allowed = panesFor(user);
+ const [pane,setPane] = useState<Pane>(focusGroup || !allowed.includes('hours') ? 'groups' : 'hours');
  const [msg,setMsg] = useState<{text:string;bad?:boolean}|null>(null);
  const [by,setBy] = useState('');
  useEffect(()=>{ setBy(loadPref('hdt.operator','')); },[]);
@@ -49,9 +55,9 @@ export default function SettingsPage({settings,save,events,minute,timeNote,focus
  const badge:Partial<Record<Pane,string>> = {units:offCount?`ปิด ${offCount}`:'',groups:custom?String(custom):'',history:history.length?String(history.length):'',test:settings.demoOffset?'เปิดอยู่':''};
  return <div className="page settingsPage v2">
   <div className="pageHead"><h2>ตั้งค่า</h2><span className="pageTime">{timeNote}</span>
-   <label className="setBy">บันทึกในชื่อ <input value={by} maxLength={40} placeholder="ชื่อ / รหัส" onChange={e=>{ setBy(e.target.value); try { localStorage.setItem('hdt.operator',e.target.value); } catch { /* ignore */ } }}/></label></div>
+   {user ? <span className="setBy">บันทึกในชื่อ <b>{user.name}</b> · {roleText[user.role]}</span> : <label className="setBy">บันทึกในชื่อ <input value={by} maxLength={40} placeholder="ชื่อ / รหัส" onChange={e=>{ setBy(e.target.value); try { localStorage.setItem('hdt.operator',e.target.value); } catch { /* ignore */ } }}/></label>}</div>
   <div className="setLayout">
-   <nav className="setNav" aria-label="หมวดการตั้งค่า">{panes.map(p=>{ const I = p.icon;
+   <nav className="setNav" aria-label="หมวดการตั้งค่า">{panes.filter(p=>allowed.includes(p.id)).map(p=>{ const I = p.icon;
     return <button key={p.id} className={(pane===p.id?'on':'')} onClick={()=>setPane(p.id)} aria-current={pane===p.id}>
      <span className={'setIco i-'+p.id}><I size={18}/></span><span className="setNavText"><b>{p.title}</b><small>{p.sub}</small></span>{badge[p.id] && <em className={p.id==='test'?'warn':''}>{badge[p.id]}</em>}</button>; })}</nav>
    <div className="setPane">
@@ -62,6 +68,7 @@ export default function SettingsPage({settings,save,events,minute,timeNote,focus
     {pane==='groups' && <GroupsPane settings={settings} commit={commit} focus={focusGroup ?? null}/>}
     {pane==='history' && <HistoryPane history={history}/>}
     {pane==='test' && <TestPane settings={settings} commit={commit}/>}
+    {pane==='users' && user && listUsers && saveUser && <UsersPane me={user} listUsers={listUsers} saveUser={saveUser}/>}
    </div>
   </div>
  </div>;
@@ -362,4 +369,45 @@ function AddDept({depts,clinics,onAdd,onCancel}:{depts:CustomDept[];clinics:Clin
    <div className="shareBar">{after.map((d,i)=><span key={i} className={i===after.length-1?'new':share[i]<before[i]?'less':''} style={{flex:share[i]}}><b>{d}</b><small>{i<before.length && before[i]!==share[i] ? `${before[i]} → ${share[i]} ห้อง` : `${share[i]} ห้อง`}</small></span>)}</div></div>}
   <div className="addActions"><button className="btn ghost" onClick={onCancel}>ยกเลิก</button><button className="btn" disabled={!ok} onClick={()=>onAdd({name:n,level})}>เพิ่ม</button></div>
  </div>;
+}
+
+// ---- Staff accounts (administrators only) -------------------------------------------------------------------
+const roleHint:Record<Role,string> = {admin:'ทุกอย่าง รวมการตั้งค่าทั้งโรงพยาบาลและบัญชีผู้ใช้',supervisor:'งานคิว + ปรับการตั้งค่ารายแผนก/รายห้อง',staff:'งานคิวที่จุดบริการ (เรียก พัก ย้าย ปิดงาน)'};
+const ROLE_LIST:Role[] = ['staff','supervisor','admin'];
+function UsersPane({me,listUsers,saveUser}:{me:AuthUser;listUsers:QueueSync['listUsers'];saveUser:QueueSync['saveUser']}) {
+ const [users,setUsers] = useState<AuthUser[]>([]);
+ const [msg,setMsg] = useState<{text:string;bad?:boolean}|null>(null);
+ const [edit,setEdit] = useState<(UserInput & {isNew?:boolean})|null>(null);
+ useEffect(()=>{ void listUsers().then(r=>{ if (r.ok && r.users) setUsers(r.users); else setMsg({text:r.reason ?? 'โหลดรายชื่อไม่สำเร็จ',bad:true}); }); },[listUsers]);
+ const submit = async () => {
+  if (!edit) return;
+  const body:UserInput = edit.isNew ? {username:edit.username,name:edit.name,role:edit.role,password:edit.password} : {id:edit.id,name:edit.name,role:edit.role,active:edit.active,...(edit.password?{password:edit.password}:{})};
+  const r = await saveUser(body);
+  if (r.ok && r.users) { setUsers(r.users); setEdit(null); setMsg({text:edit.isNew?`สร้างบัญชี ${edit.username} แล้ว`:edit.password?'บันทึกแล้ว · รหัสผ่านใหม่มีผล ผู้ใช้ต้องเข้าสู่ระบบใหม่':'บันทึกแล้ว'}); }
+  else setMsg({text:r.reason ?? 'บันทึกไม่สำเร็จ',bad:true});
+ };
+ const toggleActive = async (u:AuthUser) => { const r = await saveUser({id:u.id,active:!u.active}); if (r.ok && r.users) setUsers(r.users); else setMsg({text:r.reason ?? 'บันทึกไม่สำเร็จ',bad:true}); };
+ const fmt = (iso?:string) => iso ? new Date(iso).toLocaleString('th-TH',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : 'ยังไม่เคยเข้าใช้';
+ return <section className="setCard usersPane">
+  <PaneHead icon="users" title="ผู้ใช้งานและสิทธิ์" scope="บัญชีเจ้าหน้าที่ทั้งหมด">ทุกการเรียกคิว ย้ายคิว และเปลี่ยนการตั้งค่า บันทึกในชื่อบัญชีที่เข้าสู่ระบบ · จอทีวีและหน้าคิวของผู้ป่วยไม่ต้องใช้บัญชี</PaneHead>
+  {msg && <p className={'setToast'+(msg.bad?' bad':'')} role="status">{msg.text}</p>}
+  <div className="roleKey">{ROLE_LIST.map(r=><div key={r}><span className={'userAva r-'+r}><UserCog size={14}/></span><b>{roleText[r]}</b><small>{roleHint[r]}</small></div>)}</div>
+  <div className="usersHead"><h4 className="setSub">บัญชี {users.length} บัญชี</h4>
+   <button className="btn" onClick={()=>setEdit({isNew:true,role:'staff',username:'',name:'',password:''})}><Plus size={15}/> เพิ่มผู้ใช้</button></div>
+  {edit && <div className="userEdit">
+   <div className="userEditGrid">
+    {edit.isNew && <label className="addField"><span>ชื่อผู้ใช้ (ใช้เข้าสู่ระบบ)</span><input value={edit.username ?? ''} maxLength={40} placeholder="เช่น nurse.ploy" autoCapitalize="none" onChange={e=>setEdit({...edit,username:e.target.value})}/></label>}
+    <label className="addField"><span>ชื่อที่แสดง (บันทึกในประวัติ)</span><input value={edit.name ?? ''} maxLength={60} placeholder="เช่น พย.พลอย ส." onChange={e=>setEdit({...edit,name:e.target.value})}/></label>
+    <label className="addField"><span>{edit.isNew?'รหัสผ่าน':'ตั้งรหัสผ่านใหม่ (เว้นว่างถ้าไม่เปลี่ยน)'}</span><input type="password" value={edit.password ?? ''} autoComplete="new-password" placeholder="อย่างน้อย 8 ตัวอักษร" onChange={e=>setEdit({...edit,password:e.target.value})}/></label>
+   </div>
+   <div className="addField"><span>สิทธิ์</span><div className="floorPick">{ROLE_LIST.map(r=><button key={r} type="button" className={edit.role===r?'on':''} onClick={()=>setEdit({...edit,role:r})}><b>{roleText[r]}</b><small>{roleHint[r]}</small></button>)}</div></div>
+   <div className="addActions"><button className="btn ghost" onClick={()=>setEdit(null)}>ยกเลิก</button><button className="btn" onClick={()=>void submit()}>{edit.isNew?'สร้างบัญชี':'บันทึก'}</button></div>
+  </div>}
+  <div className="usersList">{users.map(u=><div key={u.id} className={'userRow'+(u.active?'':' off')}>
+   <span className={'userAva r-'+u.role}><UserCog size={15}/></span>
+   <div className="userInfo"><b>{u.name}{u.id===me.id && <em className="tagNew">คุณ</em>}{!u.active && <em className="tagOff">ระงับ</em>}</b><small>@{u.username} · {roleText[u.role]} · เข้าใช้ล่าสุด {fmt(u.lastLogin)}</small></div>
+   <button className="btn ghost sm" onClick={()=>setEdit({id:u.id,name:u.name,role:u.role,active:u.active,password:''})}><KeyRound size={14}/> แก้ไข</button>
+   {u.id!==me.id && <label className="switch small" title={u.active?'ระงับบัญชี':'เปิดใช้บัญชี'}><input type="checkbox" checked={u.active} onChange={()=>void toggleActive(u)}/><span/><small>{u.active?'ใช้งาน':'ระงับ'}</small></label>}
+  </div>)}</div>
+ </section>;
 }

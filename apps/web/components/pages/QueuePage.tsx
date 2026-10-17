@@ -6,7 +6,7 @@ import QRCode from 'qrcode';
 import { ArrowLeftRight, Camera, Coffee, Copy, Hand, Lock, LockOpen, MapPin, QrCode, Sparkles, CheckCircle2, ChevronDown, ChevronRight, ClipboardList, ExternalLink, HeartPulse, LayoutList, List, Map as MapIcon, Megaphone, Pause, PhoneCall, Pill, Play, Repeat, ScanLine, Settings2, Siren, SkipForward, Stethoscope, TestTube, UserCheck, Volume2, VolumeX, Wallet, X } from 'lucide-react';
 import { LONG_WAIT, NO_SHOW, fmtDur, fmtMin, maskHN, opdClinics, patientAt, patientToken, placeText, statusColor, statusText, stepText, triageLevels, type Patient, type PatientState, type PatientStatus, type StepKind } from '../../lib/patients';
 import { erBoard, serviceNote } from '../../lib/ops';
-import { DEFAULT_POLICY, SYSTEM_BY, actionText, openReports, groupName, moveNote, sameZone, allStations, everyStation, announce, capFor, healthText, modeText, rulesFor, scopeName, suggestionText, type AssistView, type Suggestion, groupOf, openStations, priorityOf, stationById, stationDoctor, stationQueue, stepGroup, type PriorityPolicy, type QueueCommand, type QueueEvent, type QueueSettings, type SettingsPatch, type Station } from '../../lib/queue';
+import { DEFAULT_POLICY, SYSTEM_BY, actionText, openReports, groupName, moveNote, sameZone, allStations, everyStation, announce, capFor, healthText, modeText, rulesFor, scopeName, suggestionText, type AssistView, type Suggestion, groupOf, openStations, priorityOf, stationById, stationDoctor, stationQueue, stepGroup, type PriorityPolicy, type QueueCommand, type QueueEvent, type QueueSettings, type SettingsPatch, type Station, type AuthUser } from '../../lib/queue';
 
 import { DEFAULT_HOURS, buildings, floorRooms, layoutRevision, waitingSeats, deptArea } from '../../lib/scene-data';
 import FloorPlanSvg from '../FloorPlanSvg';
@@ -15,7 +15,7 @@ const FloorScene = dynamic(()=>import('../HospitalScene').then(m=>m.FloorScene),
 
 type Tab = 'station'|'overview'|'er';
 const tabs:[Tab,string,typeof Siren][] = [['station','ช่องบริการของฉัน',PhoneCall],['overview','ภาพรวมคิว',LayoutList],['er','ห้องฉุกเฉิน',Siren]];
-export type QueueControl = {events:QueueEvent[]; online:boolean; send:(c:QueueCommand)=>Promise<{ok:boolean;reason?:string}>; canAct:boolean; onNow:()=>void; settings:QueueSettings;
+export type QueueControl = {events:QueueEvent[]; online:boolean; user?:AuthUser|null; send:(c:QueueCommand)=>Promise<{ok:boolean;reason?:string}>; canAct:boolean; onNow:()=>void; settings:QueueSettings;
  saveSettings?:(patch:SettingsPatch, audit:{at:number; scope:string; summary:string; by?:string})=>Promise<{ok:boolean;reason?:string}>};
 
 type OpenPlace = (buildingId:string, level:number, roomId?:string)=>void;
@@ -322,7 +322,7 @@ function StationConsole({patients,minute,queue,onOpen,assist,onOpenSettings}:{pa
     <label><input type="checkbox" checked={policy.enabled} onChange={e=>savePolicy({...policy,enabled:e.target.checked})}/> คิวพิเศษ แทรก 1 คิวทุก <input type="number" min={1} max={10} value={policy.every} disabled={!policy.enabled} onChange={e=>savePolicy({...policy,every:Math.max(1,Math.min(10,Number(e.target.value)||1))})}/> คิวปกติ</label>
     <div className="stAssistInfo">ตัวช่วยกระจายคิวของ{groupName(st.group)}: <b>{modeText[rules.mode]}</b> · เพดาน {cap>0?`${cap} คน`:'ไม่จำกัด'}
      <button className="linkBtn dark" onClick={()=>onOpenSettings(st.group)}>ตั้งค่ากลุ่มนี้</button></div>
-    <label className="operator">ผู้ปฏิบัติงาน <input value={operator} maxLength={40} placeholder="ชื่อ / รหัส (บันทึกในประวัติ)" onChange={e=>{ setOperator(e.target.value); savePref('hdt.operator',e.target.value); }}/></label>
+    {queue.user ? <span className="operator">ผู้ปฏิบัติงาน <b>{queue.user.name}</b> (บัญชีที่เข้าสู่ระบบ)</span> : <label className="operator">ผู้ปฏิบัติงาน <input value={operator} maxLength={40} placeholder="ชื่อ / รหัส (บันทึกในประวัติ)" onChange={e=>{ setOperator(e.target.value); savePref('hdt.operator',e.target.value); }}/></label>}
    </div>}
    {list==='wait' && <><ol className="qList">{q?.waiting.slice(0,40).map(({s,priority},i)=>{ const w = Math.round(s.stepWait);
     return <li key={s.p.id} className={(priority?'prio ':'')+(s.status==='long'?'long':'')}>

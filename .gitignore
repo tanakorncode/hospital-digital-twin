@@ -16,3 +16,6 @@ out/
 # OS / editor
 .DS_Store
 *.log
+
+# API database (SQLite) and first-run credentials
+apps/api/data/

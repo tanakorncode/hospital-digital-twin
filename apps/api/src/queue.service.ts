@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { DbService } from './db.service';
 
 // Mirrors QueueEvent in @hospital/contracts and apps/web/lib/queue.ts. `at` is minutes since midnight.
 export type QueueAction = 'open' | 'close' | 'call' | 'recall' | 'start' | 'hold' | 'return' | 'done' | 'transfer' | 'lock' | 'unlock' | 'pause' | 'resume' | 'config' | 'report' | 'resolve';
@@ -24,13 +25,31 @@ const RULE_CHECK: Record<keyof Rules, (v: unknown) => boolean> = {
   imbalance: (v) => Number.isInteger(v) && (v as number) >= 2 && (v as number) <= 50,
 };
 
-// Append-only log of queue actions for today (reset at midnight or restart). In-memory for the demo: production needs persistence
-// (and an audit trail tied to the signed-in user instead of the self-entered `by`), plus authorisation per station.
+// Append-only log of queue actions, one per day, kept in SQLite (survives restarts; past days stay as history).
+// `by` is set by the gateway from the signed-in user, so the audit trail names who really acted.
+const DEFAULT_SETTINGS: QueueSettings = { system: { mode: 'suggest', cap: 12, stallMin: 5, slowFactor: 2, imbalance: 4 }, groups: {}, stations: {} };
 @Injectable()
 export class QueueService {
   private day = today();
   private events: QueueEvent[] = [];
   private seq = 0;
+  private settings: QueueSettings;
+
+  constructor(private readonly store: DbService) {
+    this.settings = store.getKv<QueueSettings>('queue.settings') ?? DEFAULT_SETTINGS;
+    this.load();
+  }
+  private load() {
+    const rows = this.store.db.prepare('SELECT seq, body FROM queue_events WHERE day = ? ORDER BY seq').all(this.day) as { seq: number; body: string }[];
+    this.events = rows.map((r) => JSON.parse(r.body) as QueueEvent);
+    this.seq = rows.length ? rows[rows.length - 1].seq : 0;
+  }
+  private append(event: Omit<QueueEvent, 'id'>): QueueEvent {
+    const e = { ...event, id: `${this.day}-${++this.seq}` } as QueueEvent;
+    this.store.db.prepare('INSERT INTO queue_events (day, seq, id, body) VALUES (?, ?, ?, ?)').run(this.day, this.seq, e.id, JSON.stringify(e));
+    this.events.push(e);
+    return e;
+  }
 
   list() {
     this.rollover();
@@ -63,13 +82,10 @@ export class QueueService {
         return { ok: false, reason: `ผู้ป่วยกำลังถูกเรียกที่จุดอื่นอยู่` };
       if (last && last.action === 'done') return { ok: false, reason: 'ผู้ป่วยรับบริการขั้นนี้เสร็จแล้ว' };
     }
-    const event: QueueEvent = { ...cmd, id: `${this.day}-${++this.seq}` };
-    this.events.push(event);
-    return { ok: true, event };
+    return { ok: true, event: this.append(cmd) };
   }
 
-  // Settings outlive the daily log (they are configuration, not today's activity). In-memory for the demo.
-  private settings: QueueSettings = { system: { mode: 'suggest', cap: 12, stallMin: 5, slowFactor: 2, imbalance: 4 }, groups: {}, stations: {} };
+  // Settings outlive the daily log (they are configuration, not today's activity).
   getSettings() {
     return this.settings;
   }
@@ -105,7 +121,10 @@ export class QueueService {
     const deptsChanged = p.layout !== undefined && JSON.stringify(p.layout?.depts ?? []) !== JSON.stringify(this.settings.layout?.depts ?? []);
     if (p.layout !== undefined) { if (p.layout === null) delete next.layout; else next.layout = { off: [...new Set(p.layout.off ?? [])], depts: (p.layout.depts ?? []).map((d) => ({ name: d.name.trim(), level: d.level })) }; }
     const reset = hoursChanged || deptsChanged;
-    if (reset) this.events = this.events.filter((e) => e.action === 'config');
+    if (reset) {
+      this.events = this.events.filter((e) => e.action === 'config');
+      this.store.db.prepare(`DELETE FROM queue_events WHERE day = ? AND json_extract(body, '$.action') <> 'config'`).run(this.day);
+    }
     for (const [g, v] of Object.entries(p.groups ?? {})) {
       if (v === null) { delete next.groups[g]; continue; }
       const merged: Record<string, unknown> = { ...(next.groups[g] ?? {}) };
@@ -115,14 +134,15 @@ export class QueueService {
     for (const [id, v] of Object.entries(p.stations ?? {})) { if (v === null || v.cap === null || v.cap === undefined) delete next.stations[id]; else next.stations[id] = { cap: v.cap }; }
     next.updatedAt = new Date().toISOString(); next.updatedBy = cmd.by;
     this.settings = next;
-    const event: QueueEvent = { id: `${this.day}-${++this.seq}`, at: cmd.at, station: cmd.scope, action: 'config', reason: cmd.summary, by: cmd.by };
-    this.events.push(event);
+    this.store.setKv('queue.settings', next);
+    const event = this.append({ at: cmd.at, station: cmd.scope, action: 'config', reason: cmd.summary, by: cmd.by });
     return { ok: true, settings: next, event, reset };
   }
 
   private rollover() {
     const d = today();
-    if (d !== this.day) { this.day = d; this.events = []; this.seq = 0; }
+    if (d !== this.day) { this.day = d; this.load(); }
   }
 }
-const today = () => new Date().toISOString().slice(0, 10);
+// The hospital's local calendar day (server time zone, e.g. Asia/Bangkok), not UTC.
+const today = () => new Date().toLocaleDateString('sv-SE');

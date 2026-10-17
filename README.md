@@ -17,9 +17,17 @@ Open http://localhost:3000.
 
 ## Run the API
 ```bash
+cp apps/api/.env.example apps/api/.env   # set ADMIN_PASSWORD (first start only)
 pnpm --filter api start:dev
 ```
 WebSocket namespace: `/hospital`, events: `flow:update`, `live:snapshot` (on connect) and `live:update`.
+
+### Data and sign-in
+- **Storage:** SQLite via Node's built-in `node:sqlite` (Node 22.13+), file `apps/api/data/hospital.db` (git-ignored, override with `DB_PATH`). Queue events are kept per day, settings and users survive restarts.
+- **First start:** when the user table is empty the API creates an administrator from `ADMIN_USERNAME` / `ADMIN_PASSWORD`. Without a password it generates one into `apps/api/data/initial-admin.txt` — change it after signing in.
+- **Roles:** `staff` (station actions), `supervisor` (+ per-department settings), `admin` (+ hospital-wide settings, service hours, layout, test clock, user accounts). The API checks every action; the audit trail records the signed-in user's name.
+- **Public screens:** `/tv` and the patient page `/q/<token>` need no sign-in (read-only, plus the patient's help request).
+- Sessions last `SESSION_HOURS` (default 12); 5 failed sign-ins in 5 minutes lock that username/address for 5 minutes.
 
 ## Realtime feed
 The API pushes a `LiveSnapshot` (see `packages/contracts`) every few seconds: aggregate people per floor
@@ -46,6 +54,6 @@ The API pushes a `LiveSnapshot` (see `packages/contracts`) every few seconds: ag
 1. Replace demo campus coordinates with authorized CAD/BIM/architectural plans.
 2. Establish canonical service-point IDs and queue-state mapping with the HIS owner.
 3. Add authenticated ingestion adapter, idempotency, timestamp validation, dead-letter handling, and audit logging.
-4. Persist event history and current aggregate state in PostgreSQL.
-5. Add RBAC, TLS, rate limits, observability, retention rules, and security review.
+4. Persist event history and current aggregate state (SQLite now; move to PostgreSQL for multi-server deployments).
+5. Add TLS, SSO with the hospital directory, per-station authorisation, observability, retention rules, and security review (basic RBAC and sign-in are in place).
 6. Validate counts and wait-time metrics with operations staff before pilot.

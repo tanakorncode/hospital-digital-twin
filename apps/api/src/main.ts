@@ -1,4 +1,7 @@
 import 'reflect-metadata';
+import { join } from 'node:path';
+// apps/api/.env (git-ignored): ADMIN_USERNAME, ADMIN_PASSWORD, DB_PATH, SESSION_HOURS, WEB_ORIGIN, PORT.
+try { process.loadEnvFile(join(__dirname, '..', '.env')); } catch { /* no .env: defaults */ }
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { allowOrigin } from './cors';

@@ -4,9 +4,10 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { Bell, MapPin, Tags, Route as RouteIcon, RotateCcw, FastForward, Building2, ChartColumn, ClipboardList, Clock, Droplet, House, Layers, ListOrdered, LocateFixed, Minus, Pill, Plus, Radiation, Search, Settings, Stethoscope, Thermometer, Users, UsersRound, Wallet, Hospital, LayoutGrid, Play, Pause, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, X, Ticket, UserRound, Accessibility, type LucideIcon, BrainCircuit } from 'lucide-react';
 import { findDepts, findDoctors, isOff, type DeptPlace, kiosks, kioskStatusLabel, type Kiosk, DENSITY_HIGH, DENSITY_LOW, doctorName, dutyLabel, findRoom, floorDutyAt, roomDutyAt, HOURS, HOUR_END, HOUR_START, REF_HOUR, buildingDensityAt, buildingStatsAt, buildings, buildingStats, clampHour, crowdFactor, demoFlows, densityColor, densityLevel, floorDepartments, fmtHour, hourlySeries, parkingLots, peakWindow, personTypes, roads, scopeAt, servicePointAt, servicePoints, type PersonType, type Scope, type ServicePoint } from '../lib/scene-data';
 import { useLiveFeed, type LiveStatus } from '../lib/live-feed';
-import { SYSTEM_BY, applyQueueEvents, applyWorld, queueAssist, rulesFor, suggestionText, useQueueEvents, worldKey } from '../lib/queue';
+import { SYSTEM_BY, canDo, applyQueueEvents, applyWorld, queueAssist, rulesFor, suggestionText, useQueueEvents, worldKey } from '../lib/queue';
 import { demoOffset } from '../lib/use-demo-clock';
 import { LONG_WAIT, alertsAt, bottlenecksAt, etaOf, fmtDur, fmtMin, generatePatients, knownUntil, placeText, patientToken, kioskAt, maskHN, patientAt, searchPatients, statusColor as patientColor, statusText, stepText, type Patient, type StepKind } from '../lib/patients';
+import { LoginScreen, UserChip } from './LoginScreen';
 import type { LabelKind, PickedPerson, SceneApi, SceneMode, SceneView } from './HospitalScene';
 import QRCode from 'qrcode';
 import QueuePage from './pages/QueuePage';
@@ -350,7 +351,7 @@ export default function HospitalDashboard() {
  // In groups set to "auto", any open dashboard carries out the moves; the API keeps the first and drops repeats.
  const autoBusy = useRef(false);
  useEffect(()=>{
-  if (!following || autoBusy.current) return;
+  if (!following || autoBusy.current || (queueSync.online && !canDo(queueSync.user,'staff'))) return; // online: only a signed-in screen may act
   const todo = assist.suggestions.filter(sg=>rulesFor(queueSync.settings,sg.group).mode==='auto');
   if (!todo.length) return;
   autoBusy.current = true;
@@ -436,6 +437,7 @@ export default function HospitalDashboard() {
    </div>
    <div className={'clock'+(clockOffset?' testing':'')}><strong>{clock.time}</strong><small>{clock.date}</small>{clockOffset!==0 && <button className="testBadge" title="กำลังใช้เวลาทดสอบ · ปรับที่ ตั้งค่า → โหมดทดสอบ" onClick={()=>setActiveNav('ตั้งค่า')}>ทดสอบ</button>}</div>
    <LiveStatusBadge status={live.status} at={live.snapshot?.at} source={live.snapshot?.source}/>
+   {queueSync.user && <UserChip user={queueSync.user} logout={queueSync.logout}/>}
   </header>
 
   <section className="mapStage">
@@ -446,7 +448,7 @@ export default function HospitalDashboard() {
    </div>
 
    <nav className="nav">
-    {navItems.map(([Icon,label])=><button key={label} className={activeNav===label?'navItem selected':'navItem'} onClick={()=>setActiveNav(label)}><Icon size={20}/>{label}
+    {navItems.filter(([,label])=>label!=='ตั้งค่า' || !queueSync.online || canDo(queueSync.user,'supervisor')).map(([Icon,label])=><button key={label} className={activeNav===label?'navItem selected':'navItem'} onClick={()=>setActiveNav(label)}><Icon size={20}/>{label}
      {label==='การแจ้งเตือน' && openAlerts>0 && <span className="navBadge" aria-label={`${openAlerts} รายการรอดำเนินการ`}>{openAlerts}</span>}</button>)}
    </nav>
 
@@ -457,7 +459,8 @@ export default function HospitalDashboard() {
    {activeNav==='สถิติและรายงาน' && <StatsPage patients={patients} minute={minute} timeNote={timeNote}/>}
    {activeNav==='การแจ้งเตือน' && <AlertsPage alerts={opsAlerts} rules={rules} onRules={saveRules} acks={acks} onAck={ackAlert} minute={minute} timeNote={timeNote} onOpenPatient={openOnMap}/>}
    {activeNav==='ผังโรงพยาบาล' && <CapacityPage patients={patients} minute={minute} timeNote={timeNote} onOpenPatient={openOnMap}/>}
-   {activeNav==='ตั้งค่า' && <SettingsPage settings={queueSync.settings} save={queueSync.saveSettings} events={queueSync.events} minute={minute} timeNote={timeNote} focusGroup={settingsFocus}/>}
+   {activeNav==='ตั้งค่า' && <SettingsPage settings={queueSync.settings} save={queueSync.saveSettings} events={queueSync.events} minute={minute} timeNote={timeNote} focusGroup={settingsFocus}
+     user={queueSync.online ? queueSync.user : null} listUsers={queueSync.listUsers} saveUser={queueSync.saveUser}/>}
 
    {onMap && <>
    <div className="viewBar">
@@ -581,6 +584,8 @@ export default function HospitalDashboard() {
    </aside>
    </>}
   </section>
+  {/* Online and nobody signed in on this browser: staff sign in first (offline keeps the local demo mode). */}
+  {queueSync.online && queueSync.authReady && !queueSync.user && <LoginScreen login={queueSync.login}/>}
  </main>;
 }
 
