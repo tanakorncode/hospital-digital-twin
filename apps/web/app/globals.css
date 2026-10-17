@@ -2081,3 +2081,47 @@ kbd{margin-left:6px;padding:1px 6px;border-radius:5px;background:#ffffff33;borde
 .lineForm label.lineCheck{flex-direction:row;align-items:center;gap:6px;font-size:13px;color:#065f46}
 .lineStatus{display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:14px}
 .lineStatus b.ok{color:#047857}
+
+/* ---- LINE patient screens ---- */
+.liffBar{display:flex;align-items:center;gap:8px}
+.liffBar h1{margin:0;font-size:22px}
+.liffBack{display:inline-flex;align-items:center;gap:2px;min-height:44px;padding:0 10px 0 4px;border:0;border-radius:12px;background:#fff;color:#0f2340;font:inherit;font-size:16px;font-weight:700;cursor:pointer}
+.liffCard h2{margin:0;font-size:21px;line-height:1.3;display:flex;align-items:center;gap:6px}
+.liffCard p{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.liffCard.center p{justify-content:center}
+.liffTicket small{color:#3d5168;font-size:15px}
+.liffQueue{display:inline-block;padding:4px 26px;border-radius:16px;background:#0f2340;color:#fff;font-size:64px;line-height:1.1;letter-spacing:1px}
+.liffTicket .liffBtn{display:inline-flex;align-items:center;justify-content:center;gap:4px;text-decoration:none;width:100%}
+.liffCodeQr{display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 0}
+.liffCodeQr img{width:180px;height:180px}
+.liffCode.small{font-size:26px}
+.liffChoices{display:flex;flex-direction:column;gap:8px}
+.liffChoice{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:60px;padding:0 16px;border:2px solid #c9d6e4;border-radius:16px;background:#fff;color:#0f2340;font:inherit;font-size:18px;text-align:left;cursor:pointer}
+.liffChoice.small{min-height:50px;font-size:16.5px}
+.liffChoice.on{border-color:#06c755;background:#ecfdf3}
+.liffDays{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px}
+.liffDays button{flex:0 0 auto;min-height:52px;padding:0 14px;border:2px solid #c9d6e4;border-radius:14px;background:#fff;color:#0f2340;font:inherit;font-size:16px;cursor:pointer}
+.liffDays button.on{border-color:#06c755;background:#ecfdf3;font-weight:800}
+.liffSlots{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.liffSlots button{display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-height:64px;padding:8px 14px;border:2px solid #c9d6e4;border-radius:14px;background:#fff;color:#0f2340;font:inherit;cursor:pointer}
+.liffSlots button b{font-size:18px}
+.liffSlots button small{color:#047857;font-size:14px}
+.liffSlots button.on{border-color:#06c755;background:#ecfdf3}
+.liffSum{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:0;font-size:18px}
+.liffSum dt{color:#3d5168}
+.liffSum dd{margin:0;font-weight:700}
+.liffOk{color:#06a548}
+.liffPending{padding:8px 10px;border-radius:12px;background:#fffbeb;color:#92400e;font-size:15.5px}
+.liffBtn.ghost.danger{color:#9f1239;border-color:#fecdd3;background:#fff}
+.liffPast{padding:6px 10px;color:#3d5168;font-size:15.5px}
+.liffPast summary{cursor:pointer;font-weight:700;min-height:40px;display:flex;align-items:center}
+.liffPast p{margin:6px 0}
+.liffHeadRow{display:flex;align-items:center;justify-content:space-between}
+.liffIcon{display:grid;place-items:center;width:44px;height:44px;border:0;border-radius:12px;background:#f1f5f9;color:#0f2340;cursor:pointer}
+.liffSearch{display:flex;align-items:center;gap:8px;padding:0 14px;border:2px solid #c9d6e4;border-radius:16px;background:#fff;color:#3d5168}
+.liffSearch input{flex:1;min-height:52px;border:0;outline:0;font:inherit;font-size:17px;background:transparent;color:#0f2340}
+.liffDir{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px}
+.liffDir li{display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-top:1px solid #eef2f6;font-size:17px}
+.liffDir li:first-child{border-top:0}
+.liffDir small{color:#3d5168;white-space:nowrap}
+.liffNote.center{display:flex;align-items:center;justify-content:center;gap:6px;text-align:center}

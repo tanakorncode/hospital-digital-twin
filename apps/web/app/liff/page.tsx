@@ -1,17 +1,19 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
-import { CalendarCheck, CalendarClock, CheckCircle2, IdCard, ListOrdered, Map as MapIcon, ShieldCheck, Unlink } from 'lucide-react';
+import { CalendarCheck, CalendarClock, CheckCircle2, ChevronLeft, IdCard, ListOrdered, Map as MapIcon, ShieldCheck, Unlink } from 'lucide-react';
+import { Appointments, BookQueue, HospitalMap, MyQueue } from '../../components/LiffViews';
 import { loadSession, patientApi, saveSession } from '../../lib/patient-api';
 
 // The patient's page inside LINE (LIFF), opened from the hospital's rich menu.
 // 1. Sign in: the LIFF SDK gives an ID token, the API checks it with LINE and opens an app session.
 //    No LIFF id configured: with the API's test switch on, a "test" sign-in as a made-up LINE user (never real patients).
 // 2. Not linked yet: explain why and what is used, then show a one-time QR / code to take to the counter with the ID card.
-// 3. Linked: the patient's own menu (my queue, booking, appointments, map — stage 2.6).
+// 3. Linked: the patient's own menu — my queue, booking, appointments, map (components/LiffViews).
 // Big text, high contrast, one thing per screen; nothing personal beyond the HN's last 4 digits.
 type Liff = { init:(o:{liffId:string})=>Promise<void>; isLoggedIn:()=>boolean; login:()=>void; getIDToken:()=>string|null; isInClient:()=>boolean };
 type Me = {linked:false} | {linked:true; hn:string; linkedAt:string};
+type View = 'queue'|'book'|'appts'|'map';
 type Stage = {kind:'loading'} | {kind:'error'; text:string} | {kind:'dev'} | {kind:'ready'; me:Me};
 const SDK = 'https://static.line-scdn.net/liff/edge/2/sdk.js';
 
@@ -124,12 +126,19 @@ function LinkFlow({enabled,onLinked}:{enabled:boolean; onLinked:()=>Promise<void
 function Home({me,onUnlinked}:{me:Extract<Me,{linked:true}>; onUnlinked:()=>Promise<void>}) {
  const [justLinked] = useState(()=>Date.now()-new Date(me.linkedAt).getTime()<5*60_000);
  const [confirm,setConfirm] = useState(false);
+ const [view,setView] = useState<View|null>(null);
+ // The phone's back button closes a screen instead of leaving the page.
+ useEffect(()=>{ const back = ()=>setView(null); window.addEventListener('popstate',back); return ()=>window.removeEventListener('popstate',back); },[]);
+ const open = (v:View) => { window.history.pushState({view:v},''); setView(v); window.scrollTo(0,0); };
  const unlink = async () => { const r = await patientApi('POST','/link/unlink'); if (r.ok) await onUnlinked(); };
- const tiles:[typeof ListOrdered,string,string][] = [[ListOrdered,'คิวของฉัน','ดูลำดับและเวลารอ'],[CalendarCheck,'จองคิว','จองล่วงหน้า'],[CalendarClock,'นัดหมาย','ดู · ขอเลื่อน · ยกเลิก'],[MapIcon,'แผนที่','ทางไปจุดบริการ']];
+ const tiles:[View,typeof ListOrdered,string,string][] = [['queue',ListOrdered,'คิวของฉัน','ดูลำดับและเวลารอ'],['book',CalendarCheck,'จองคิว','จองล่วงหน้า'],['appts',CalendarClock,'นัดหมาย','ดู · ขอเลื่อน · ยกเลิก'],['map',MapIcon,'แผนที่','ทางไปจุดบริการ']];
+ if (view) { const t = tiles.find(x=>x[0]===view)!;
+  return <><div className="liffBar"><button className="liffBack" onClick={()=>window.history.back()}><ChevronLeft size={24}/> เมนู</button><h1>{t[2]}</h1></div>
+   {view==='queue' ? <MyQueue/> : view==='book' ? <BookQueue/> : view==='appts' ? <Appointments/> : <HospitalMap/>}</>; }
  return <>
   {justLinked && <section className="liffCard ok"><CheckCircle2 size={32}/><h1>เชื่อมบัญชีเรียบร้อย</h1></section>}
   <section className="liffCard"><p className="liffWho">ผู้ป่วย HN <b>{me.hn}</b></p>
-   <div className="liffTiles">{tiles.map(([I,t,s])=><button key={t} className="liffTile" disabled><I size={30}/><b>{t}</b><small>{s}</small><em>เร็ว ๆ นี้</em></button>)}</div></section>
+   <div className="liffTiles">{tiles.map(([v,I,t,s])=><button key={v} className="liffTile" onClick={()=>open(v)}><I size={30}/><b>{t}</b><small>{s}</small></button>)}</div></section>
   <section className="liffCard muted">{confirm
    ? <><p>ยกเลิกการเชื่อมบัญชี? ครั้งหน้าต้องยืนยันตัวตนที่เคาน์เตอร์ใหม่</p><div className="liffRow"><button className="liffBtn ghost" onClick={()=>setConfirm(false)}>ไม่ยกเลิก</button><button className="liffBtn danger" onClick={()=>void unlink()}>ยกเลิกการเชื่อม</button></div></>
    : <button className="liffLink" onClick={()=>setConfirm(true)}><Unlink size={16}/> ยกเลิกการเชื่อมบัญชี</button>}</section>
