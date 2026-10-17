@@ -15,6 +15,7 @@ import { CheckInService } from './checkin.service';
 import { AppointmentService } from './appointment.service';
 import { PatientIdentityService } from './patient-identity.service';
 import { NotificationService } from './notification.service';
+import { WayfindingService } from './wayfinding.service';
 import { FeaturesService } from './features.service';
 import { IdempotencyService } from './idempotency.service';
 import { VisitsService, type EnterInput } from './visits.service';
@@ -54,7 +55,7 @@ function attempt<T>(fn: () => T) {
 export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
   @WebSocketServer() server!: Server;
   private unsubscribe?: () => void;
-  constructor(private readonly flowService: FlowService, private readonly liveFeed: LiveFeedService, private readonly queue: QueueService, private readonly auth: AuthService, private readonly tickets: TicketsService, private readonly line: LineService, private readonly audit: AuditService, private readonly features: FeaturesService, private readonly visits: VisitsService, private readonly idempotency: IdempotencyService, private readonly booking: BookingService, private readonly checkin: CheckInService, private readonly appts: AppointmentService, private readonly identity: PatientIdentityService, private readonly notify: NotificationService) {}
+  constructor(private readonly flowService: FlowService, private readonly liveFeed: LiveFeedService, private readonly queue: QueueService, private readonly auth: AuthService, private readonly tickets: TicketsService, private readonly line: LineService, private readonly audit: AuditService, private readonly features: FeaturesService, private readonly visits: VisitsService, private readonly idempotency: IdempotencyService, private readonly booking: BookingService, private readonly checkin: CheckInService, private readonly appts: AppointmentService, private readonly identity: PatientIdentityService, private readonly notify: NotificationService, private readonly wayfinding: WayfindingService) {}
   // Every connected dashboard receives each live snapshot ('live:update').
   afterInit() {
     this.unsubscribe = this.liveFeed.subscribe((snap) => this.server.emit('live:update', snap));
@@ -614,6 +615,48 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
     if (!this.notify.retry(body?.id)) return fail('INVALID_STATE_TRANSITION', 'ส่งใหม่ได้เฉพาะข้อความที่ส่งไม่สำเร็จ');
     this.audit.record({ ...actor(me), action: 'notify.retry', targetType: 'notification', targetId: String(body?.id) });
     return { ok: true };
+  }
+
+  // ---- Wayfinding places and QR signs (stage 2.8, administrators) ----------------------------------------------------
+  @SubscribeMessage('wayfinding:list')
+  wayfindingList(@ConnectedSocket() client: Socket) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (!may(me, 'admin')) return DENIED;
+    return { ok: true, destinations: this.wayfinding.list(true), enabled: this.features.on('wayfinding') };
+  }
+  @SubscribeMessage('wayfinding:save')
+  wayfindingSave(@ConnectedSocket() client: Socket, @MessageBody() body: Record<string, unknown>) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (!may(me, 'admin')) return DENIED;
+    return attempt(() => {
+      const d = this.wayfinding.save(body ?? {}, `user:${me.id}`);
+      this.audit.record({ ...actor(me), action: 'wayfinding.save', targetType: 'destination', targetId: d.code });
+      return { ok: true, destination: d };
+    });
+  }
+  @SubscribeMessage('wayfinding:import')
+  wayfindingImport(@ConnectedSocket() client: Socket, @MessageBody() body: { list?: unknown }) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (!may(me, 'admin')) return DENIED;
+    return attempt(() => {
+      const r = this.wayfinding.importMany(body?.list, `user:${me.id}`);
+      this.audit.record({ ...actor(me), action: 'wayfinding.import', targetType: 'destination', meta: r });
+      return { ok: true, ...r };
+    });
+  }
+  @SubscribeMessage('wayfinding:retire')
+  wayfindingRetire(@ConnectedSocket() client: Socket, @MessageBody() body: { code?: unknown; replacedBy?: unknown }) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (!may(me, 'admin')) return DENIED;
+    return attempt(() => {
+      const d = this.wayfinding.retire(body?.code, body?.replacedBy, `user:${me.id}`);
+      this.audit.record({ ...actor(me), action: 'wayfinding.retire', targetType: 'destination', targetId: d.code, meta: { replacedBy: d.replacedBy } });
+      return { ok: true, destination: d };
+    });
   }
 
   // Call this method only from a trusted, authenticated ingestion service.

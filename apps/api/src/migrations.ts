@@ -331,4 +331,27 @@ export const MIGRATIONS: Migration[] = [
         created_at TEXT NOT NULL);
     `,
   },
+  {
+    version: 8,
+    name: 'wayfinding destinations',
+    sql: `
+      -- Public places patients look for, and where the QR signs hang. A QR holds only the URL and this code
+      -- (/wayfinding?at=CODE) — never anything about a patient. A place that moves keeps its code, or is retired with a
+      -- pointer to its replacement, so signs already on the walls keep working.
+      CREATE TABLE destinations (
+        code TEXT PRIMARY KEY,
+        name_th TEXT NOT NULL,
+        building_id TEXT NOT NULL,
+        level INTEGER NOT NULL CHECK (level BETWEEN 0 AND 20),
+        zone_index INTEGER,
+        room_id TEXT,
+        landmark_th TEXT,
+        description_th TEXT,
+        is_public INTEGER NOT NULL DEFAULT 1 CHECK (is_public IN (0,1)),
+        status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE','RETIRED')),
+        replaced_by TEXT,
+        updated_at TEXT NOT NULL,
+        updated_by TEXT);
+    `,
+  },
 ];
