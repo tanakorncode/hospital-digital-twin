@@ -43,6 +43,7 @@ export type Patient = {
   triage?:Triage; // ER only
   // Real patient (live data mode): built from a server visit, not simulated — no HN here, steps only as far as ordered.
   live?:boolean; priority?:PriorityKey;
+  booked?:string; // came with a booking: its time (e.g. 09:00–10:00)
 };
 export type PriorityKey = 'monk'|'pregnant'|'wheelchair'|'disabled'|'elderly';
 export type PatientStatus = 'waiting'|'calling'|'held'|'serving'|'result'|'long'|'missed'|'ward'|'done';
@@ -460,7 +461,7 @@ export function searchPatients(patients:Patient[], query:string, minute:number) 
 // A visit from the API (mirrors apps/api/src/visits.service.ts): who is in today's queue, with which number and
 // which steps they have been sent to — no name, no HN.
 export type LiveVisit = {id:string; queue:string; flow:'opd'|'er'; clinicKey?:string; dept:string; priority?:PriorityKey; triage?:number;
-  arrival:number; steps:{kind:StepKind; at:number}[]; status:'active'|'cancelled'};
+  arrival:number; steps:{kind:StepKind; at:number}[]; status:'active'|'cancelled'; bookedSlot?:string};
 type DoneEvent = {action:string; at:number; patientId?:string; step?:number};
 // Each step starts when the previous one was finished (or when it was ordered, if later); nothing is predicted:
 // called / end stay open (DAY) until staff call, start and finish it — applyQueueEvents fills them in from the log.
@@ -482,7 +483,7 @@ export function livePatients(visits:LiveVisit[], events:DoneEvent[]):Patient[] {
     const deptWhere = c ? where('opd',c.level,c.dept) : where('er',1,'ห้องฉุกเฉิน');
     return {id:v.id,queue:v.queue,hn:'',flow:v.flow,dept:v.dept,deptWhere,arrival:v.arrival,steps,clinicKey:v.clinicKey,
       age:v.priority==='elderly'?'elderly':'adult',female:v.priority==='pregnant' || seed%2===0,seed,
-      help:v.priority==='wheelchair'?'รถเข็น':undefined,triage:v.flow==='er' && v.triage ? v.triage as Triage : undefined,live:true,priority:v.priority};
+      help:v.priority==='wheelchair'?'รถเข็น':undefined,triage:v.flow==='er' && v.triage ? v.triage as Triage : undefined,live:true,priority:v.priority,booked:v.bookedSlot};
   });
 }
 // Where a live step happens before a station takes it (the station's own spot replaces `serve` once it calls).

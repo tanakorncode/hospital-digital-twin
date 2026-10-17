@@ -274,7 +274,7 @@ function StationConsole({patients,minute,queue,onOpen,assist,onOpenSettings}:{pa
     {cur ? <div className="ncBody">
      <b className="ncQueue">{cur.p.queue}</b>
      <div className="ncInfo">
-      <div className="ncTags">{prio && <PriorityTag p={prio}/>}<span className="tag">{cur.step.kind==='followup'?'ฟังผล':stepText[cur.step.kind].serve}</span>
+      <div className="ncTags">{prio && <PriorityTag p={prio}/>}{cur.p.booked && <span className="tag booked">จอง {cur.p.booked}</span>}<span className="tag">{cur.step.kind==='followup'?'ฟังผล':stepText[cur.step.kind].serve}</span>
        {cur.step.assigned===st.id && cur.step.movedFrom!==st.id && <span className="tag moved">ย้ายมาจาก {stationById(cur.step.movedFrom)?.label}</span>}
        {cur.step.owner && <span className="tag owner">หมอเจ้าของไข้</span>}{cur.step.locked && <span className="tag lock">🔒 ล็อก</span>}<span className="tag hn">{maskHN(cur.p.hn)}</span></div>
       <span className="ncDept">{cur.p.dept} · มาถึง {fmtMin(cur.p.arrival)} · รอ {Math.round(Math.max(0,(cur.step.calls?.[0] ?? m)-cur.step.start))} นาที</span>

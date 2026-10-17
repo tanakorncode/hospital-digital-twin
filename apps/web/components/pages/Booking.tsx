@@ -1,6 +1,7 @@
 'use client';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CalendarCheck, CalendarPlus, CheckCircle2, RefreshCw, Search, X } from 'lucide-react';
+import { CalendarCheck, CalendarPlus, CheckCircle2, LogIn, RefreshCw, Search, X } from 'lucide-react';
+import { CheckInCard, type CheckInResult } from '../CheckInCard';
 import { opdClinics, type Clinic } from '../../lib/patients';
 import { actionKey, type QueueSync } from '../../lib/queue';
 
@@ -38,7 +39,7 @@ export function BookingAdminPane({api,rev,features,setFeature}:{api:Api; rev:num
  useEffect(()=>{ if (!msg) return; const t = setTimeout(()=>setMsg(null),5000); return ()=>clearTimeout(t); },[msg]);
  const say = (r:{ok:boolean; reason?:string}, ok:string) => setMsg(r.ok ? {text:ok} : {text:r.reason ?? 'บันทึกไม่สำเร็จ',bad:true});
  const savePolicy = async (c:Clinic, patch:Partial<Policy>) => {
-  const r = await api('booking:policy:set',{serviceCode:c.key,displayName:c.dept,...patch});
+  const r = await api('booking:policy:set',{serviceCode:c.key,displayName:c.dept,queuePrefix:c.letter,...patch});
   say(r,`บันทึกกติกา ${c.dept} แล้ว`); if (r.ok) void reload();
  };
  const on = !!features.phase2.generalBooking;
@@ -140,6 +141,7 @@ export function BookingTab({api,rev,features}:{api:Api; rev:number; features:Que
  const [msg,setMsg] = useState<{text:string; bad?:boolean}|null>(null);
  const [cancelFor,setCancelFor] = useState<string|null>(null);
  const [newOpen,setNewOpen] = useState(false);
+ const [checked,setChecked] = useState<CheckInResult|null>(null);
  useEffect(()=>{ if (!msg) return; const t = setTimeout(()=>setMsg(null),5000); return ()=>clearTimeout(t); },[msg]);
  const load = useCallback(async ()=>{ const r = await api<{ok:boolean; bookings?:Booking[]; reason?:string}>('booking:list',{date,serviceCode:svc||undefined}); setList(r.ok ? r.bookings ?? [] : []); },[api,date,svc]);
  useEffect(()=>{ void load(); },[load,rev]);
@@ -153,6 +155,13 @@ export function BookingTab({api,rev,features}:{api:Api; rev:number; features:Que
   const r = await api<{ok:boolean; reason?:string; booking?:Booking}>('booking:cancel',{bookingId:b.id,reason});
   setMsg(r.ok ? {text:`ยกเลิก ${b.code} แล้ว · ช่วง ${timeOf(b.startsAt)} ว่างให้คนอื่นจองได้`} : {text:r.reason ?? 'ยกเลิกไม่สำเร็จ',bad:true});
   if (r.ok && found) setFound(found.map(x=>x.id===b.id && r.booking ? r.booking : x));
+ };
+ // At the counter: the patient has arrived — into today's queue (same number again if already done).
+ const checkIn = async (b:Booking) => {
+  const now = new Date(), letter = clinics.find(c=>c.key===b.serviceCode)?.letter;
+  const r = await api<CheckInResult>('checkin:booking',{code:b.code,channel:'COUNTER',at:now.getHours()*60+now.getMinutes(),prefix:letter});
+  if (r.ok) { setChecked(r); void load(); if (found) setFound(found.map(x=>x.id===b.id ? {...x,status:'CONVERTED_TO_QUEUE'} : x)); }
+  else setMsg({text:r.reason ?? 'เช็กอินไม่สำเร็จ',bad:true});
  };
  const on = !!features.phase2.generalBooking;
  const rows = found ?? list;
@@ -173,10 +182,15 @@ export function BookingTab({api,rev,features}:{api:Api; rev:number; features:Que
    <tbody>{rows.map(b=><tr key={b.id} className={b.status==='CANCELLED'||b.status==='EXPIRED'?'muted':''}>
     <td>{found?`${dayOf(b.startsAt)} `:''}{timeOf(b.startsAt)}–{timeOf(b.endsAt)}</td><td><b className="bookCode">{b.code}</b></td><td>{b.serviceName}</td><td>{b.hn}</td>
     <td>{b.channel==='LINE'?'LINE':'เจ้าหน้าที่'}</td><td><span className={'bookState s-'+b.status}>{statusText[b.status]}</span>{b.cancellationReason && <small className="muted"> · {b.cancellationReason}</small>}</td>
-    <td className="slotActs">{b.status==='CONFIRMED' && (cancelFor===b.id
+    <td className="slotActs">{b.status==='CONFIRMED' && new Date(b.startsAt).toLocaleDateString('sv-SE')===today() && cancelFor!==b.id &&
+     <button className="btn sm" onClick={()=>void checkIn(b)}><LogIn size={13}/> เช็กอิน</button>}
+     {b.status==='CONFIRMED' && (cancelFor===b.id
      ? <span className="slotCancel">{cancelReasons.map(r=><button key={r} className="btn ghost sm" onClick={()=>void cancel(b,r)}>{r}</button>)}<button className="iconBtn" aria-label="ไม่ยกเลิก" onClick={()=>setCancelFor(null)}><X size={14}/></button></span>
      : <button className="linkBtn danger" onClick={()=>setCancelFor(b.id)}>ยกเลิก</button>)}</td></tr>)}</tbody></table></div>
    : <p className="ncEmpty">{found ? 'ไม่พบการจอง' : 'ยังไม่มีการจองในวันนี้'}</p>}
+  {checked && <div className="modalBack" onClick={()=>setChecked(null)}><div className="moveDialog visitDialog" role="dialog" aria-modal="true" aria-label="ผลการเช็กอิน" onClick={e=>e.stopPropagation()}>
+   <header><div><b>เช็กอิน {checked.booking?.code}</b><small className="muted">ให้ผู้ป่วยสแกน QR หรือพิมพ์บัตรคิว</small></div><button className="iconBtn" aria-label="ปิด" onClick={()=>setChecked(null)}><X size={18}/></button></header>
+   <CheckInCard r={checked}/><footer><button className="btn ghost" onClick={()=>window.print()}>พิมพ์บัตรคิว</button><button className="btn" onClick={()=>setChecked(null)}>เสร็จ</button></footer></div></div>}
   {newOpen && <NewBooking api={api} clinics={open} policies={policies} onClose={()=>setNewOpen(false)}
    onMade={b=>{ setMsg({text:`จองแล้ว ${b.code} · ${b.serviceName} ${dayOf(b.startsAt)} ${timeOf(b.startsAt)}`}); setDate(new Date(b.startsAt).toLocaleDateString('sv-SE')); setFound(null); }}/>}
  </div>;
