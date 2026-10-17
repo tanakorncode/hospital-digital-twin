@@ -3,6 +3,7 @@ import { Logger } from '@nestjs/common';
 import { AuditService } from '../src/audit.service';
 import { AuthService } from '../src/auth.service';
 import { BookingService } from '../src/booking.service';
+import { CheckInService } from '../src/checkin.service';
 import { DbService } from '../src/db.service';
 import { FeaturesService } from '../src/features.service';
 import { IdempotencyService } from '../src/idempotency.service';
@@ -28,8 +29,8 @@ export function makeApi() {
   const visits = new VisitsService(db);
   const queue = new QueueService(db, visits), tickets = new TicketsService(db), line = new LineService(db, tickets);
   const audit = new AuditService(db), features = new FeaturesService(db), idempotency = new IdempotencyService(db);
-  const booking = new BookingService(db);
-  const gateway = new FlowGateway(new FlowService(), new LiveFeedService(), queue, auth, tickets, line, audit, features, visits, idempotency, booking);
+  const booking = new BookingService(db), checkin = new CheckInService(db, booking, visits);
+  const gateway = new FlowGateway(new FlowService(), new LiveFeedService(), queue, auth, tickets, line, audit, features, visits, idempotency, booking, checkin);
   // Broadcasts: `to` = only that room (staff), `except` = everyone else (public screens), neither = everyone.
   const emitted: { event: string; data: unknown; to?: string; except?: string }[] = [];
   (gateway as unknown as { server: unknown }).server = {
@@ -37,7 +38,7 @@ export function makeApi() {
     to: (room: string) => ({ emit: (event: string, data: unknown) => emitted.push({ event, data, to: room }) }),
     except: (room: string) => ({ emit: (event: string, data: unknown) => emitted.push({ event, data, except: room }) }),
   };
-  return { db, auth, queue, tickets, line, audit, features, idempotency, visits, booking, gateway, emitted };
+  return { db, auth, queue, tickets, line, audit, features, idempotency, visits, booking, checkin, gateway, emitted };
 }
 // A socket as the gateway sees it, optionally signed in with a session token.
 export function fakeSocket(token = '') {

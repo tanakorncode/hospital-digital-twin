@@ -11,6 +11,7 @@ import { LineService } from './line.service';
 import { AuditService } from './audit.service';
 import { AppError, fail } from './errors';
 import { BookingService } from './booking.service';
+import { CheckInService } from './checkin.service';
 import { FeaturesService } from './features.service';
 import { IdempotencyService } from './idempotency.service';
 import { VisitsService, type EnterInput } from './visits.service';
@@ -50,7 +51,7 @@ function attempt<T>(fn: () => T) {
 export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
   @WebSocketServer() server!: Server;
   private unsubscribe?: () => void;
-  constructor(private readonly flowService: FlowService, private readonly liveFeed: LiveFeedService, private readonly queue: QueueService, private readonly auth: AuthService, private readonly tickets: TicketsService, private readonly line: LineService, private readonly audit: AuditService, private readonly features: FeaturesService, private readonly visits: VisitsService, private readonly idempotency: IdempotencyService, private readonly booking: BookingService) {}
+  constructor(private readonly flowService: FlowService, private readonly liveFeed: LiveFeedService, private readonly queue: QueueService, private readonly auth: AuthService, private readonly tickets: TicketsService, private readonly line: LineService, private readonly audit: AuditService, private readonly features: FeaturesService, private readonly visits: VisitsService, private readonly idempotency: IdempotencyService, private readonly booking: BookingService, private readonly checkin: CheckInService) {}
   // Every connected dashboard receives each live snapshot ('live:update').
   afterInit() {
     this.unsubscribe = this.liveFeed.subscribe((snap) => this.server.emit('live:update', snap));
@@ -363,6 +364,29 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
       // Looking a patient up by HN is access to personal data: kept in the trail (without the HN itself).
       if (typeof body?.hn === 'string' && body.hn.trim()) this.audit.record({ ...actor(me), action: 'booking.search.hn', targetType: 'patient-search', meta: { results: list.length } });
       return { ok: true, bookings: list };
+    });
+  }
+
+  // ---- Check-in (stage 2.3) ------------------------------------------------------------------------------------------
+  // A booked patient arrives: at the kiosk (code typed or scanned, only inside the check-in window) or at the counter.
+  // Answers with the queue number and the link for the patient's QR — the same ones if it was already done.
+  @SubscribeMessage('checkin:booking')
+  checkInBooking(@ConnectedSocket() client: Socket, @MessageBody() body: { code?: unknown; channel?: unknown; at?: unknown; prefix?: unknown }) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (overLimit(client, 'command')) return SLOW;
+    return attempt(() => {
+      if (this.queue.getSettings().dataMode !== 'live') throw new AppError('POLICY_REJECTED', 'ระบบอยู่ในโหมดสาธิต — เช็กอินเข้าคิวจริงได้เมื่อเปิดโหมดผู้ป่วยจริง');
+      const channel = body?.channel === 'KIOSK' ? 'KIOSK' : 'COUNTER';
+      const r = this.checkin.checkInBooking(body?.code, { channel, at: body?.at, by: `user:${me.id}`, prefix: body?.prefix });
+      if (!r.already) {
+        this.audit.record({ ...actor(me), action: 'checkin.booking', targetType: 'booking', targetId: r.booking.id, meta: { channel, late: r.late, visit: r.visit.id } });
+        this.server.emit('visit', r.visit);
+        this.bookingChanged(r.booking.serviceCode, r.booking.startsAt);
+      }
+      const ticket = this.tickets.issue(r.visit.id, me.name);
+      return { ok: true, already: r.already, late: r.late, visit: r.visit, ticket: { token: ticket.token, expiresAt: ticket.expiresAt },
+        booking: { code: r.booking.code, serviceName: r.booking.serviceName, startsAt: r.booking.startsAt, endsAt: r.booking.endsAt } };
     });
   }
 

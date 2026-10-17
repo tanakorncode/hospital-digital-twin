@@ -8,7 +8,8 @@ import { AppError } from './errors';
 // Every change runs in one write transaction (DbService.tx), so two people can never take the last place, and a
 // cancelled booking gives its place back exactly once.
 // Times: stored as UTC ISO-8601; the hospital enters and reads them in local time (the server runs in TZ=Asia/Bangkok).
-export type Policy = { serviceCode: string; displayName: string; enabled: boolean; advanceDays: number; cancelCutoffMinutes: number; maxActivePerPatient: number; version: number; updatedAt: string };
+export type Policy = { serviceCode: string; displayName: string; enabled: boolean; advanceDays: number; cancelCutoffMinutes: number; maxActivePerPatient: number; version: number; updatedAt: string;
+  queuePrefix?: string; checkinEarlyMinutes: number; checkinLateMinutes: number };
 export type Slot = { id: string; serviceCode: string; startsAt: string; endsAt: string; capacity: number; reserved: number; remaining: number; status: 'OPEN' | 'CLOSED' | 'CANCELLED' };
 export type BookingStatus = 'CONFIRMED' | 'CANCELLED' | 'EXPIRED' | 'CHECKED_IN' | 'CONVERTED_TO_QUEUE';
 // What staff see. The HN is masked (last 4 digits) — enough to confirm with the patient at the counter.
@@ -30,12 +31,13 @@ export function localInstant(date: string, time: string) {
 }
 const localDate = (d: Date) => d.toLocaleDateString('sv-SE');
 
-type PolicyRow = { service_code: string; display_name: string; enabled: number; advance_days: number; cancel_cutoff_minutes: number; max_active_per_patient: number; policy_version: number; updated_at: string };
+type PolicyRow = { service_code: string; display_name: string; enabled: number; advance_days: number; cancel_cutoff_minutes: number; max_active_per_patient: number; policy_version: number; updated_at: string; queue_prefix: string | null; checkin_early_minutes: number; checkin_late_minutes: number };
 type SlotRow = { id: string; service_code: string; starts_at: string; ends_at: string; capacity: number; reserved_count: number; status: Slot['status'] };
 type BookingRow = { id: string; booking_code: string; patient_profile_id: string; slot_id: string; service_code: string; status: BookingStatus; channel: 'STAFF' | 'LINE';
   visit_id: string | null; cancelled_at: string | null; cancellation_reason: string | null; created_at: string; starts_at: string; ends_at: string; display_name: string | null; hn: string | null };
 const toPolicy = (r: PolicyRow): Policy => ({ serviceCode: r.service_code, displayName: r.display_name, enabled: !!r.enabled, advanceDays: r.advance_days,
-  cancelCutoffMinutes: r.cancel_cutoff_minutes, maxActivePerPatient: r.max_active_per_patient, version: r.policy_version, updatedAt: r.updated_at });
+  cancelCutoffMinutes: r.cancel_cutoff_minutes, maxActivePerPatient: r.max_active_per_patient, version: r.policy_version, updatedAt: r.updated_at,
+  queuePrefix: r.queue_prefix ?? undefined, checkinEarlyMinutes: r.checkin_early_minutes, checkinLateMinutes: r.checkin_late_minutes });
 const toSlot = (r: SlotRow): Slot => ({ id: r.id, serviceCode: r.service_code, startsAt: r.starts_at, endsAt: r.ends_at, capacity: r.capacity, reserved: r.reserved_count,
   remaining: Math.max(0, r.capacity - r.reserved_count), status: r.status });
 const toBooking = (r: BookingRow): Booking => ({ id: r.id, code: r.booking_code, serviceCode: r.service_code, serviceName: r.display_name ?? r.service_code, startsAt: r.starts_at,
@@ -63,30 +65,37 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
   }
   // Create or change a service's rules. Every change bumps the version (bookings keep the rules they were made under
   // in the audit trail).
-  setPolicy(input: { serviceCode?: unknown; displayName?: unknown; enabled?: unknown; advanceDays?: unknown; cancelCutoffMinutes?: unknown; maxActivePerPatient?: unknown }, by: string): Policy {
+  setPolicy(input: { serviceCode?: unknown; displayName?: unknown; enabled?: unknown; advanceDays?: unknown; cancelCutoffMinutes?: unknown; maxActivePerPatient?: unknown;
+    queuePrefix?: unknown; checkinEarlyMinutes?: unknown; checkinLateMinutes?: unknown }, by: string): Policy {
     const code = input.serviceCode;
     if (typeof code !== 'string' || !SERVICE_RE.test(code)) throw bad('ระบุบริการ (คลินิก)');
     const cur = this.policy(code);
     const name = input.displayName === undefined ? cur?.displayName : input.displayName;
-    if (typeof name !== 'string' || !name.trim() || name.length > 40) throw bad('ระบุชื่อบริการ');
+    if (typeof name !== 'string' || !name.trim() || name.length > 30) throw bad('ระบุชื่อบริการ (ไม่เกิน 30 ตัวอักษร)');
     const int = (v: unknown, lo: number, hi: number, fallback: number, what: string) => {
       if (v === undefined) return fallback;
       if (!Number.isInteger(v) || (v as number) < lo || (v as number) > hi) throw bad(`${what}ต้องอยู่ระหว่าง ${lo}–${hi}`);
       return v as number;
     };
     if (input.enabled !== undefined && typeof input.enabled !== 'boolean') throw bad('ค่าเปิด/ปิดไม่ถูกต้อง');
+    if (input.queuePrefix !== undefined && (typeof input.queuePrefix !== 'string' || !/^[A-Z]{1,2}$/.test(input.queuePrefix))) throw bad('อักษรนำหน้าคิวไม่ถูกต้อง');
     const next = {
       enabled: input.enabled === undefined ? cur?.enabled ?? false : input.enabled,
       advanceDays: int(input.advanceDays, 0, 180, cur?.advanceDays ?? 14, 'จองล่วงหน้า'),
       cancelCutoffMinutes: int(input.cancelCutoffMinutes, 0, 10080, cur?.cancelCutoffMinutes ?? 60, 'เวลาปิดรับยกเลิก'),
       maxActivePerPatient: int(input.maxActivePerPatient, 1, 10, cur?.maxActivePerPatient ?? 1, 'จำนวนการจองต่อคน'),
+      queuePrefix: (input.queuePrefix as string | undefined) ?? cur?.queuePrefix ?? null,
+      checkinEarlyMinutes: int(input.checkinEarlyMinutes, 0, 720, cur?.checkinEarlyMinutes ?? 120, 'เช็กอินก่อนเวลา'),
+      checkinLateMinutes: int(input.checkinLateMinutes, 0, 720, cur?.checkinLateMinutes ?? 60, 'เช็กอินหลังเวลา'),
     };
     const at = this.now().toISOString();
-    this.store.db.prepare(`INSERT INTO booking_policies (service_code, display_name, enabled, advance_days, cancel_cutoff_minutes, max_active_per_patient, policy_version, updated_at, updated_by)
-      VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?) ON CONFLICT(service_code) DO UPDATE SET display_name = excluded.display_name, enabled = excluded.enabled, advance_days = excluded.advance_days,
+    this.store.db.prepare(`INSERT INTO booking_policies (service_code, display_name, enabled, advance_days, cancel_cutoff_minutes, max_active_per_patient, policy_version, updated_at, updated_by,
+      queue_prefix, checkin_early_minutes, checkin_late_minutes)
+      VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?) ON CONFLICT(service_code) DO UPDATE SET display_name = excluded.display_name, enabled = excluded.enabled, advance_days = excluded.advance_days,
       cancel_cutoff_minutes = excluded.cancel_cutoff_minutes, max_active_per_patient = excluded.max_active_per_patient, policy_version = policy_version + 1,
-      updated_at = excluded.updated_at, updated_by = excluded.updated_by`)
-      .run(code, name.trim(), next.enabled ? 1 : 0, next.advanceDays, next.cancelCutoffMinutes, next.maxActivePerPatient, at, by);
+      updated_at = excluded.updated_at, updated_by = excluded.updated_by, queue_prefix = excluded.queue_prefix, checkin_early_minutes = excluded.checkin_early_minutes,
+      checkin_late_minutes = excluded.checkin_late_minutes`)
+      .run(code, name.trim(), next.enabled ? 1 : 0, next.advanceDays, next.cancelCutoffMinutes, next.maxActivePerPatient, at, by, next.queuePrefix, next.checkinEarlyMinutes, next.checkinLateMinutes);
     return this.policy(code)!;
   }
 

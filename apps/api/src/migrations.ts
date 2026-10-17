@@ -134,4 +134,34 @@ export const MIGRATIONS: Migration[] = [
       CREATE INDEX bookings_slot_status ON bookings (slot_id, status);
     `,
   },
+  {
+    version: 4,
+    name: 'check-in',
+    sql: `
+      -- Per service: the queue-number letter, and when a booked patient may check in at the kiosk
+      -- (from N minutes before the slot until N minutes after it ends; staff at the counter may check in later the same day).
+      ALTER TABLE booking_policies ADD COLUMN queue_prefix TEXT;
+      ALTER TABLE booking_policies ADD COLUMN checkin_early_minutes INTEGER NOT NULL DEFAULT 120;
+      ALTER TABLE booking_policies ADD COLUMN checkin_late_minutes INTEGER NOT NULL DEFAULT 60;
+
+      -- Which patient a visit belongs to (never sent to screens), and the booked time staff see beside the number.
+      ALTER TABLE visits ADD COLUMN patient_profile_id TEXT;
+      ALTER TABLE visits ADD COLUMN booked_slot TEXT;
+
+      -- One check-in per booking (or appointment): repeating it finds this record and the same visit.
+      CREATE TABLE check_in_records (
+        id TEXT PRIMARY KEY,
+        source_type TEXT NOT NULL CHECK (source_type IN ('BOOKING','APPOINTMENT','WALK_IN')),
+        source_id TEXT NOT NULL,
+        patient_profile_id TEXT REFERENCES patient_profiles(id),
+        status TEXT NOT NULL CHECK (status IN ('COMPLETED')),
+        visit_day TEXT NOT NULL,
+        visit_id TEXT NOT NULL,
+        channel TEXT NOT NULL CHECK (channel IN ('COUNTER','KIOSK','LINE')),
+        late INTEGER NOT NULL DEFAULT 0 CHECK (late IN (0,1)),
+        created_by TEXT,
+        created_at TEXT NOT NULL,
+        UNIQUE (source_type, source_id));
+    `,
+  },
 ];
