@@ -251,6 +251,14 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
   private ownerOf(bookingId: string) {
     return (this.store.db.prepare('SELECT patient_profile_id AS p FROM bookings WHERE id = ?').get(bookingId) as { p: string } | undefined)?.p;
   }
+  // A patient's own bookings (their LINE page): upcoming, and those of the last 30 days.
+  forProfile(profileId: string): Booking[] {
+    const since = new Date(this.now().getTime() - 30 * 86_400_000).toISOString();
+    return (this.store.db.prepare(`${BOOKING_SELECT} WHERE b.patient_profile_id = ? AND s.ends_at > ? ORDER BY s.starts_at DESC LIMIT 30`).all(profileId, since) as BookingRow[]).map(toBooking);
+  }
+  ownedBy(bookingId: unknown, profileId: string) {
+    return typeof bookingId === 'string' && (this.store.db.prepare('SELECT 1 FROM bookings WHERE id = ? AND patient_profile_id = ?').get(bookingId, profileId) !== undefined);
+  }
   // Staff lists: one day (optionally one service), or one booking by its code, or a patient's bookings by HN.
   list(f: { date?: unknown; serviceCode?: unknown; code?: unknown; hn?: unknown }): Booking[] {
     if (typeof f.code === 'string' && f.code.trim()) {

@@ -1,8 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { AppError } from '../src/errors';
-import { PatientController } from '../src/patient.controller';
-import { ADMIN_PASSWORD, makeApi, signIn } from './helpers';
+import { ADMIN_PASSWORD, makeApi, patientController, signIn } from './helpers';
 
 const U1 = `U${'a'.repeat(32)}`, U2 = `U${'b'.repeat(32)}`, U3 = `U${'c'.repeat(32)}`;
 const codeOf = async (fn: () => unknown) => { try { await fn(); } catch (e) { return (e as AppError).code; } return undefined; };
@@ -14,7 +13,7 @@ function setup() {
   api.identity.verifyIdToken = async (t: string) => { if (t.startsWith('id-U')) return t.slice(3); throw new AppError('AUTH_REQUIRED', 'bad token'); };
   const admin = signIn(api, 'admin', ADMIN_PASSWORD);
   api.gateway.setFeatures(admin, { patch: { accountLinking: true } });
-  const ctl = new PatientController(api.identity, api.features, api.audit);
+  const ctl = patientController(api);
   const login = async (subject: string) => `Bearer ${(await ctl.session('1.1.1.1', { idToken: `id-${subject}-token` })).token}`;
   return { api, admin, ctl, login };
 }

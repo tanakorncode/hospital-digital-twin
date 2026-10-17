@@ -15,6 +15,7 @@ import { QueueService } from '../src/queue.service';
 import { TicketsService } from '../src/tickets.service';
 import { LineService } from '../src/line.service';
 import { PatientIdentityService } from '../src/patient-identity.service';
+import { PatientController } from '../src/patient.controller';
 import { VisitsService } from '../src/visits.service';
 
 Logger.overrideLogger(false); // keep test output clean
@@ -55,3 +56,6 @@ export function signIn(api: ReturnType<typeof makeApi>, username: string, passwo
   api.gateway.handleConnection(s);
   return s;
 }
+// The patient's REST controller (LINE pages) wired to a test API.
+export const patientController = (api: ReturnType<typeof makeApi>) =>
+  new PatientController(api.identity, api.features, api.audit, api.booking, api.appts, api.visits, api.tickets, api.idempotency, api.gateway);

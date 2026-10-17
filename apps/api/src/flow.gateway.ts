@@ -269,7 +269,7 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
   // Administrators set the rules and the slots; staff book for patients at the counter or on the phone (the path for
   // patients without LINE) and cancel on request. Patients book for themselves from LINE in a later stage.
   // Screens that show bookings refresh on 'booking:changed' (staff only; it carries no patient data).
-  private bookingChanged(serviceCode: string, startsAt?: string) {
+  bookingChanged(serviceCode: string, startsAt?: string) {
     this.server.to(STAFF_ROOM).emit('booking:changed', { serviceCode, date: startsAt ? new Date(startsAt).toLocaleDateString('sv-SE') : undefined });
   }
   @SubscribeMessage('booking:policies')
@@ -403,7 +403,7 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
   // ---- Doctor appointments (stage 2.4) ------------------------------------------------------------------------------
   // Administrators: rules per clinic and doctors' sessions. Staff: make, move, cancel appointments for patients, and
   // decide on requests to move. Supervisors: record a no-show (after the time, with a reason).
-  private apptChanged() { this.server.to(STAFF_ROOM).emit('appointment:changed', {}); }
+  apptChanged() { this.server.to(STAFF_ROOM).emit('appointment:changed', {}); }
   private staffActor(me: User) { return { kind: 'staff' as const, id: me.id, canOverride: may(me, 'supervisor') && this.features.on('staffOverrides') }; }
   @SubscribeMessage('appt:policies')
   apptPolicies(@ConnectedSocket() client: Socket) {

@@ -41,6 +41,10 @@ export class VisitsService {
   list(): Visit[] {
     return (this.store.db.prepare('SELECT * FROM visits WHERE day = ? ORDER BY arrival, id').all(today()) as Row[]).map(toVisit);
   }
+  // Today's visits of one patient (checked in from a booking or an appointment) — for their LINE page.
+  forProfile(profileId: string): Visit[] {
+    return (this.store.db.prepare(`SELECT * FROM visits WHERE day = ? AND patient_profile_id = ? AND status = 'active' ORDER BY arrival`).all(today(), profileId) as Row[]).map(toVisit);
+  }
   get(id: unknown): Visit | undefined {
     if (typeof id !== 'string' || !VISIT_ID_RE.test(id)) return undefined;
     const r = this.store.db.prepare('SELECT * FROM visits WHERE day = ? AND id = ?').get(today(), id) as Row | undefined;

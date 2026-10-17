@@ -251,6 +251,7 @@ export class AppointmentService implements OnModuleInit, OnModuleDestroy {
       if (actor.kind === 'patient' && this.pastCutoff(a)) throw new AppError('POLICY_REJECTED', 'เลยเวลาขอเลื่อนนัดแล้ว กรุณาติดต่อคลินิก');
       const s = this.slot(slotId);
       if (s.clinicCode !== a.clinicCode) throw new AppError('POLICY_REJECTED', 'เลื่อนได้ภายในคลินิกเดิมเท่านั้น');
+      if (actor.kind === 'patient' && !p?.patientSelectsProvider && s.providerCode !== a.providerCode) throw new AppError('POLICY_REJECTED', 'เลื่อนได้เฉพาะกับแพทย์ท่านเดิม');
       if (p) this.checkSlotUsable(s, p);
       if (actor.kind === 'patient' && p && !p.rescheduleNeedsApproval) return { appointment: this.reschedule(a.id, s.id, actor), immediate: true };
       if (a.pendingRequest) throw new AppError('POLICY_REJECTED', 'มีคำขอเลื่อนนัดที่รอพิจารณาอยู่แล้ว');
@@ -326,6 +327,17 @@ export class AppointmentService implements OnModuleInit, OnModuleDestroy {
     const [a, b] = dayRange(f.date), c = typeof f.clinicCode === 'string' && f.clinicCode ? f.clinicCode : null;
     return (this.store.db.prepare(`${APPT_SELECT} WHERE s.starts_at >= ? AND s.starts_at < ? AND (? IS NULL OR a.clinic_code = ?) ORDER BY s.starts_at, p.provider_name`)
       .all(a, b, c, c) as ApptRow[]).map((r) => this.toAppt(r));
+  }
+  // A patient's own appointments (their LINE page): upcoming, and those of the last 30 days.
+  forProfile(profileId: string): Appointment[] {
+    const since = new Date(this.now().getTime() - 30 * 86_400_000).toISOString();
+    return (this.store.db.prepare(`${APPT_SELECT} WHERE a.patient_profile_id = ? AND s.ends_at > ? ORDER BY s.starts_at DESC LIMIT 30`).all(profileId, since) as ApptRow[]).map((r) => this.toAppt(r));
+  }
+  // Where a patient may move their own appointment: same clinic, and the same doctor unless the clinic lets patients choose.
+  movableSlots(id: unknown, date: unknown, profileId: string): ApptSlot[] {
+    const a = this.mine(id, { kind: 'patient', profileId }), p = this.policy(a.clinicCode);
+    return this.bookable(a.clinicCode, date, p?.patientSelectsProvider ? undefined : a.providerCode)
+      .filter((s) => s.startsAt !== a.startsAt || s.providerCode !== a.providerCode);
   }
   requests(status: unknown = 'PENDING'): RescheduleRequest[] {
     const st = typeof status === 'string' ? status : 'PENDING';
