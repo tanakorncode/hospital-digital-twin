@@ -402,7 +402,7 @@ export type QueueSync = {events:QueueEvent[]; online:boolean; send:(cmd:QueueCom
   visits:LiveVisit[]; enterVisit:(v:VisitInput, key:string)=>Promise<VisitRes>; addVisitStep:(visitId:string, kind:StepKind, at:number, key:string)=>Promise<VisitRes>;
   cancelVisit:(visitId:string, reason:string)=>Promise<VisitRes>;
   // Phase 2 screens (booking …): any API command, and a counter that moves when bookings change somewhere.
-  api:<T extends Res = Res & Record<string,unknown>>(event:string, body:unknown)=>Promise<T & {code?:string}>; bookingRev:number};
+  api:<T extends Res = Res & Record<string,unknown>>(event:string, body:unknown)=>Promise<T & {code?:string}>; bookingRev:number; apptRev:number};
 // What the API has switched on: LINE notifications (needs the hospital's OA settings) and the Phase 2 switches.
 export type Phase2Flag = 'accountLinking'|'generalBooking'|'appointments'|'notifications'|'wayfinding'|'staffOverrides';
 export type Features = {line:boolean; phase2:Partial<Record<Phase2Flag,boolean>>};
@@ -444,6 +444,7 @@ export function useQueueEvents():QueueSync {
   const [authReady,setAuthReady] = useState(false);
   const [features,setFeatures] = useState<Features>({line:false,phase2:{}});
   const [bookingRev,setBookingRev] = useState(0);
+  const [apptRev,setApptRev] = useState(0);
   const [visits,setVisits] = useState<LiveVisit[]>([]);
   const socket = useRef<Socket|null>(null);
   useEffect(()=>{
@@ -455,6 +456,7 @@ export function useQueueEvents():QueueSync {
     s.on('auth:me',(u:AuthUser|null)=>{ setUser(u); setAuthReady(true); if (!u) { try { localStorage.removeItem(sessionKey); } catch { /* ignore */ } } });
     s.on('features',(f:{line?:boolean; phase2?:Features['phase2']})=>setFeatures({line:!!f?.line,phase2:f?.phase2 ?? {}}));
     s.on('booking:changed',()=>setBookingRev(r=>r+1));
+    s.on('appointment:changed',()=>setApptRev(r=>r+1));
     s.on('disconnect',()=>setOnline(false));
     s.on('visits',(list:LiveVisit[])=>setVisits(Array.isArray(list)?list:[]));
     s.on('visit',(v:LiveVisit)=>setVisits(prev=>{ const i = prev.findIndex(x=>x.id===v.id); if (i<0) return [...prev,v]; const next = [...prev]; next[i] = v; return next; }));
@@ -506,7 +508,7 @@ export function useQueueEvents():QueueSync {
   const addVisitStep = useCallback((visitId:string, kind:StepKind, at:number, key:string)=>request<VisitRes>('visit:step',{visitId,kind,at,key}),[request]);
   const cancelVisit = useCallback((visitId:string, reason:string)=>request<VisitRes>('visit:cancel',{visitId,reason}),[request]);
   const api = useCallback(<T extends Res>(event:string, body:unknown)=>request<T & {code?:string}>(event,body),[request]) as QueueSync['api'];
-  return {events,online,send,settings,saveSettings,user,authReady,login,logout,listUsers,saveUser,resolveTicket,familyTicket,features,lineLink,visits,enterVisit,addVisitStep,cancelVisit,api,bookingRev};
+  return {events,online,send,settings,saveSettings,user,authReady,login,logout,listUsers,saveUser,resolveTicket,familyTicket,features,lineLink,visits,enterVisit,addVisitStep,cancelVisit,api,bookingRev,apptRev};
 }
 
 // Thai announcement, read character by character so queue numbers are unambiguous.

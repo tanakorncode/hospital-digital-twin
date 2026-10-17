@@ -1472,6 +1472,7 @@ kbd{margin-left:6px;padding:1px 6px;border-radius:5px;background:#ffffff33;borde
 .setIco.i-history{background:linear-gradient(135deg,#cbd5e1,#64748b);--sh:#64748b40}
 .setIco.i-test{background:linear-gradient(135deg,#fcd34d,#ea580c);--sh:#ea580c40}
 .setIco.i-booking{background:linear-gradient(135deg,#f9a8d4,#be185d);--sh:#be185d40}
+.setIco.i-appts{background:linear-gradient(135deg,#93c5fd,#1d4ed8);--sh:#1d4ed840}
 .setIco.i-data{background:linear-gradient(135deg,#6ee7b7,#047857);--sh:#04785740}
 .setPane{position:relative;display:flex;flex-direction:column;gap:12px;min-width:0}
 .setToast{margin:0;padding:10px 14px;border-radius:12px;background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46;font-size:13.5px;font-weight:600}
@@ -1914,6 +1915,7 @@ kbd{margin-left:6px;padding:1px 6px;border-radius:5px;background:#ffffff33;borde
 .visitRow>span{font-size:13px;font-weight:700;color:#10233b}
 .segBtns{display:flex;flex-wrap:wrap;gap:6px}
 .segBtns button{min-height:40px;padding:6px 12px;border:1.5px solid #d5e0ec;border-radius:10px;background:#fff;color:#0f2340;font:inherit;font-size:13.5px;cursor:pointer}
+.segBtns button:disabled{opacity:.45;cursor:default}
 .segBtns button.on{border-color:#1677ff;background:#eef5ff;box-shadow:0 0 0 3px #1677ff1f;font-weight:700}
 .visitClinics{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px}
 .visitClinics button{display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto auto;column-gap:8px;align-items:center;padding:8px 10px;border:1.5px solid #d5e0ec;border-radius:10px;background:#fff;text-align:left;font:inherit;cursor:pointer;color:#0f2340}
@@ -1995,6 +1997,10 @@ kbd{margin-left:6px;padding:1px 6px;border-radius:5px;background:#ffffff33;borde
 .kioskHead h1{margin:0;font-size:40px}
 .kioskHead p{margin:8px 0 0;font-size:22px;color:#3d5168}
 .kioskForm,.kioskDone{display:flex;flex-direction:column;align-items:center;gap:18px;width:min(900px,100%)}
+.kioskKind{display:flex;gap:12px;width:100%}
+.kioskKind button{flex:1;display:flex;align-items:center;justify-content:center;gap:12px;min-height:72px;border:3px solid #c9d6e4;border-radius:18px;background:#fff;color:#0f2340;font:inherit;font-size:24px;font-weight:700;cursor:pointer}
+.kioskKind button b{font-size:30px;letter-spacing:2px}
+.kioskKind button.on{border-color:#1667d9;background:#e8f0ff;color:#0b4fb3}
 .kioskCode{display:flex;align-items:center;gap:10px;padding:10px 22px;border:3px solid #0f2340;border-radius:20px;background:#fff}
 .kioskCode span{font-size:56px;font-weight:800;color:#60738a;letter-spacing:4px}
 .kioskCode input{width:calc(6ch + 64px);border:0;outline:0;font:inherit;font-size:64px;font-weight:800;letter-spacing:8px;color:#0f2340;background:transparent;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
@@ -2011,3 +2017,17 @@ kbd{margin-left:6px;padding:1px 6px;border-radius:5px;background:#ffffff33;borde
 .kioskHelp{margin:0;font-size:20px;color:#3d5168}
 @media (max-width:700px){.kioskKeys{grid-template-columns:repeat(5,1fr)}.kioskHead h1{font-size:28px}.kioskCode input{font-size:44px}.kioskCode span{font-size:40px}}
 @media print{.kiosk .kioskHead,.kiosk .kioskActs{display:none}}
+
+/* ---- Doctor appointments (Phase 2) ---- */
+.apptReqs{display:flex;flex-direction:column;gap:6px;padding:10px 12px;border-radius:12px;background:#fffbeb;border:1.5px solid #fcd34d}
+.apptReqs h4{margin:0;font-size:13.5px;color:#7c2d12}
+.apptReqs h4 em{margin-left:6px;padding:0 7px;border-radius:8px;background:#f59e0b;color:#fff;font-style:normal;font-size:12px}
+.apptReq{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:6px 0;border-top:1px solid #fde68a;font-size:13px}
+.apptReq:first-of-type{border-top:0}
+.apptMove{display:inline-flex;align-items:center;gap:5px}
+.apptPending{color:#b45309;font-weight:600}
+.apptDate{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.apptDate input{padding:7px 9px;border:1px solid #d5e0ec;border-radius:8px;font:inherit;font-size:13px}
+.apptDoc{display:flex;flex-direction:column;gap:5px;padding:6px 0}
+.apptDoc>b{font-size:13px;color:#10233b}
+.bookState.s-NO_SHOW{background:#fef3c7;color:#92400e}

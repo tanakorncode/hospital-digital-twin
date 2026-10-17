@@ -16,11 +16,11 @@ export type Booking = {id:string; code:string; serviceCode:string; serviceName:s
  channel:'STAFF'|'LINE'; hn:string; cancellationReason?:string};
 const statusText:Record<Booking['status'],string> = {CONFIRMED:'จองแล้ว',CANCELLED:'ยกเลิก',EXPIRED:'หมดอายุ',CHECKED_IN:'เช็กอินแล้ว',CONVERTED_TO_QUEUE:'เข้าคิวแล้ว'};
 const slotText:Record<Slot['status'],string> = {OPEN:'เปิด',CLOSED:'ปิดรับ',CANCELLED:'ยกเลิก'};
-const today = () => new Date().toLocaleDateString('sv-SE');
-const addDays = (d:string, n:number) => { const x = new Date(`${d}T12:00:00`); x.setDate(x.getDate()+n); return x.toLocaleDateString('sv-SE'); };
+export const today = () => new Date().toLocaleDateString('sv-SE');
+export const addDays = (d:string, n:number) => { const x = new Date(`${d}T12:00:00`); x.setDate(x.getDate()+n); return x.toLocaleDateString('sv-SE'); };
 export const timeOf = (iso:string) => new Date(iso).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'});
 export const dayOf = (iso:string) => new Date(iso.length===10 ? `${iso}T12:00:00` : iso).toLocaleDateString('th-TH',{weekday:'short',day:'numeric',month:'short'});
-const weekdayNames = ['อา','จ','อ','พ','พฤ','ศ','ส'];
+export const weekdayNames = ['อา','จ','อ','พ','พฤ','ศ','ส'];
 const clinicName = (c:Clinic) => `${c.letter} · ${c.dept}`;
 
 function usePolicies(api:Api, rev:number) {
@@ -60,7 +60,7 @@ export function BookingAdminPane({api,rev,features,setFeature}:{api:Api; rev:num
   <SlotList api={api} rev={rev} clinics={clinics.filter(c=>policies.some(p=>p.serviceCode===c.key))} onDone={say}/>
  </section>;
 }
-function NumPick({value,options,unit,onPick}:{value:number; options:number[]; unit:string; onPick:(v:number)=>void}) {
+export function NumPick({value,options,unit,onPick}:{value:number; options:number[]; unit:string; onPick:(v:number)=>void}) {
  const list = options.includes(value) ? options : [...options,value].sort((a,b)=>a-b);
  return <select className="numPick" value={value} onChange={e=>onPick(Number(e.target.value))}>{list.map(v=><option key={v} value={v}>{v} {unit}</option>)}</select>;
 }
@@ -159,7 +159,7 @@ export function BookingTab({api,rev,features}:{api:Api; rev:number; features:Que
  // At the counter: the patient has arrived — into today's queue (same number again if already done).
  const checkIn = async (b:Booking) => {
   const now = new Date(), letter = clinics.find(c=>c.key===b.serviceCode)?.letter;
-  const r = await api<CheckInResult>('checkin:booking',{code:b.code,channel:'COUNTER',at:now.getHours()*60+now.getMinutes(),prefix:letter});
+  const r = await api<CheckInResult>('checkin:code',{code:b.code,channel:'COUNTER',at:now.getHours()*60+now.getMinutes(),prefix:letter});
   if (r.ok) { setChecked(r); void load(); if (found) setFound(found.map(x=>x.id===b.id ? {...x,status:'CONVERTED_TO_QUEUE'} : x)); }
   else setMsg({text:r.reason ?? 'เช็กอินไม่สำเร็จ',bad:true});
  };
@@ -189,7 +189,7 @@ export function BookingTab({api,rev,features}:{api:Api; rev:number; features:Que
      : <button className="linkBtn danger" onClick={()=>setCancelFor(b.id)}>ยกเลิก</button>)}</td></tr>)}</tbody></table></div>
    : <p className="ncEmpty">{found ? 'ไม่พบการจอง' : 'ยังไม่มีการจองในวันนี้'}</p>}
   {checked && <div className="modalBack" onClick={()=>setChecked(null)}><div className="moveDialog visitDialog" role="dialog" aria-modal="true" aria-label="ผลการเช็กอิน" onClick={e=>e.stopPropagation()}>
-   <header><div><b>เช็กอิน {checked.booking?.code}</b><small className="muted">ให้ผู้ป่วยสแกน QR หรือพิมพ์บัตรคิว</small></div><button className="iconBtn" aria-label="ปิด" onClick={()=>setChecked(null)}><X size={18}/></button></header>
+   <header><div><b>เช็กอิน {checked.source?.code}</b><small className="muted">ให้ผู้ป่วยสแกน QR หรือพิมพ์บัตรคิว</small></div><button className="iconBtn" aria-label="ปิด" onClick={()=>setChecked(null)}><X size={18}/></button></header>
    <CheckInCard r={checked}/><footer><button className="btn ghost" onClick={()=>window.print()}>พิมพ์บัตรคิว</button><button className="btn" onClick={()=>setChecked(null)}>เสร็จ</button></footer></div></div>}
   {newOpen && <NewBooking api={api} clinics={open} policies={policies} onClose={()=>setNewOpen(false)}
    onMade={b=>{ setMsg({text:`จองแล้ว ${b.code} · ${b.serviceName} ${dayOf(b.startsAt)} ${timeOf(b.startsAt)}`}); setDate(new Date(b.startsAt).toLocaleDateString('sv-SE')); setFound(null); }}/>}

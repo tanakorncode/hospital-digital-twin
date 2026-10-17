@@ -1,9 +1,10 @@
 'use client';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Building2, CalendarClock, Clock, Database, FlaskConical, History, KeyRound, Layers, Minus, Plus, RotateCcw, Search, Sparkles, Trash2, UserCog, X, type LucideIcon } from 'lucide-react';
+import { Building2, CalendarClock, Clock, Database, Stethoscope, FlaskConical, History, KeyRound, Layers, Minus, Plus, RotateCcw, Search, Sparkles, Trash2, UserCog, X, type LucideIcon } from 'lucide-react';
 import { fmtMin, opdClinics, screeningCounters, screeningStationId, type Clinic } from '../../lib/patients';
 import { CLINIC_FLOORS, DEFAULT_HOURS, buildingStats, builtInDeptCount, buildings, roomsPerFloor, type CustomDept } from '../../lib/scene-data';
 import { BookingAdminPane } from './Booking';
+import { ApptAdminPane } from './Appointments';
 import { DEFAULT_RULES, canDo, isLive, roleText, type AuthUser, type QueueSync, type Role, type UserInput, counterServices, everyStation, modeText, queueGroups, rulesFor, scopeName, type AssistMode, type QueueEvent, type QueueGroup, type QueueRules, type QueueSettings, type SettingsPatch } from '../../lib/queue';
 
 // Settings, one topic at a time (left menu). Rules read as sentences with − / + steppers; several changes are saved
@@ -22,7 +23,7 @@ const modes:{id:AssistMode; hint:string}[] = [{id:'off',hint:'แสดงสถ
 const valText = (k:keyof QueueRules, v:unknown) => k==='mode' ? modeText[v as AssistMode] : k==='cap' && v===0 ? 'ไม่จำกัด' : String(v);
 const ruleName:Record<keyof QueueRules,string> = {mode:'ระดับตัวช่วย',stallMin:'เกณฑ์ไม่ตอบรับ',slowFactor:'เกณฑ์ช้ากว่าปกติ',cap:'เพดานคิว',imbalance:'เกณฑ์เกลี่ยคิว'};
 const loadPref = (k:string, d:string) => { try { return localStorage.getItem(k) ?? d; } catch { return d; } };
-type Pane = 'hours'|'units'|'assist'|'groups'|'history'|'test'|'data'|'booking'|'users';
+type Pane = 'hours'|'units'|'assist'|'groups'|'history'|'test'|'data'|'booking'|'appts'|'users';
 const panes:{id:Pane; icon:LucideIcon; title:string; sub:string}[] = [
  {id:'hours',icon:Clock,title:'เวลาให้บริการ',sub:'เวลาเปิด–ปิด OPD'},
  {id:'units',icon:Building2,title:'แผนกและจุดบริการ',sub:'เพิ่มแผนก · เปิด–ปิดห้อง/ช่อง'},
@@ -32,14 +33,15 @@ const panes:{id:Pane; icon:LucideIcon; title:string; sub:string}[] = [
  {id:'test',icon:FlaskConical,title:'โหมดทดสอบ',sub:'เวลาจำลองสำหรับทดสอบ/สาธิต'},
  {id:'data',icon:Database,title:'ข้อมูลผู้ป่วย',sub:'สาธิต หรือ ผู้ป่วยจริง'},
  {id:'booking',icon:CalendarClock,title:'การจองล่วงหน้า',sub:'กติกาและช่วงเวลาให้จอง'},
+ {id:'appts',icon:Stethoscope,title:'นัดแพทย์',sub:'กติกาและตารางออกตรวจ'},
  {id:'users',icon:UserCog,title:'ผู้ใช้งาน',sub:'บัญชีเจ้าหน้าที่และสิทธิ์'},
 ];
 // What each role may open (the API enforces the same). Offline / not connected: everything except accounts and real data.
 const panesFor = (u:AuthUser|null):Pane[] => !u ? ['hours','units','assist','groups','history','test']
- : u.role==='admin' ? ['hours','units','assist','groups','history','test','data','booking','users'] : ['groups','history'];
+ : u.role==='admin' ? ['hours','units','assist','groups','history','test','data','booking','appts','users'] : ['groups','history'];
 
 export default function SettingsPage({settings,save,events,minute,timeNote,focusGroup,user=null,listUsers,saveUser,sync}:{settings:QueueSettings;save:Save;events:QueueEvent[];minute:number;timeNote:string;focusGroup?:string|null;
- user?:AuthUser|null;listUsers?:QueueSync['listUsers'];saveUser?:QueueSync['saveUser'];sync?:Pick<QueueSync,'api'|'bookingRev'|'features'>}) {
+ user?:AuthUser|null;listUsers?:QueueSync['listUsers'];saveUser?:QueueSync['saveUser'];sync?:Pick<QueueSync,'api'|'bookingRev'|'apptRev'|'features'>}) {
  const allowed = panesFor(user);
  const [pane,setPane] = useState<Pane>(focusGroup || !allowed.includes('hours') ? 'groups' : 'hours');
  const [msg,setMsg] = useState<{text:string;bad?:boolean}|null>(null);
@@ -72,6 +74,8 @@ export default function SettingsPage({settings,save,events,minute,timeNote,focus
     {pane==='history' && <HistoryPane history={history}/>}
     {pane==='test' && <TestPane settings={settings} commit={commit}/>}
     {pane==='data' && <DataPane settings={settings} commit={commit}/>}
+    {pane==='appts' && sync && <ApptAdminPane api={sync.api} rev={sync.apptRev} features={sync.features}
+     setFeature={async on=>{ const r = await sync.api('features:set',{patch:{appointments:on}}); setMsg(r.ok ? {text:on?'เปิดระบบนัดแพทย์แล้ว':'ปิดระบบนัดแพทย์แล้ว'} : {text:r.reason ?? 'บันทึกไม่สำเร็จ',bad:true}); }}/>}
     {pane==='booking' && sync && <BookingAdminPane api={sync.api} rev={sync.bookingRev} features={sync.features}
      setFeature={async on=>{ const r = await sync.api('features:set',{patch:{generalBooking:on}}); setMsg(r.ok ? {text:on?'เปิดระบบจองแล้ว':'ปิดระบบจองแล้ว'} : {text:r.reason ?? 'บันทึกไม่สำเร็จ',bad:true}); }}/>}
     {pane==='users' && user && listUsers && saveUser && <UsersPane me={user} listUsers={listUsers} saveUser={saveUser}/>}

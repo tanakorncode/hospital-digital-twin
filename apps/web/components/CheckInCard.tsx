@@ -7,7 +7,7 @@ import { opdClinics, type LiveVisit } from '../lib/patients';
 // What a booked patient gets at check-in (counter or kiosk): the queue number, where to wait, and the QR of their
 // own queue page. No name, no HN — this is shown on a screen and may be printed.
 export type CheckInResult = {ok:boolean; reason?:string; already?:boolean; late?:boolean; visit?:LiveVisit; ticket?:{token:string; expiresAt:string};
- booking?:{code:string; serviceName:string; startsAt:string; endsAt:string}};
+ source?:{kind:'BOOKING'|'APPOINTMENT'; code:string; serviceName:string; startsAt:string; endsAt:string; providerName?:string}};
 export function CheckInCard({r,big=false}:{r:CheckInResult; big?:boolean}) {
  const [src,setSrc] = useState('');
  const url = typeof window!=='undefined' && r.ticket ? `${window.location.origin}/q/${r.ticket.token}` : '';
@@ -19,9 +19,9 @@ export function CheckInCard({r,big=false}:{r:CheckInResult; big?:boolean}) {
   <small className="ciLabel">หมายเลขคิวของคุณ</small>
   <b className="ciQueue">{r.visit.queue}</b>
   <span className="ciWhere"><MapPin size={big?22:16}/> ไปรอที่ พื้นที่รอ{r.visit.dept}{c?` · OPD ชั้น ${c.level}`:''}</span>
-  <small className="ciNext">ขั้นแรก: ซักประวัติ / วัดสัญญาณชีพ · จองไว้ {r.visit.bookedSlot ?? ''}</small>
+  <small className="ciNext">ขั้นแรก: ซักประวัติ / วัดสัญญาณชีพ{r.visit.bookedSlot ? ` · ${r.visit.bookedSlot}` : ''}</small>
   {src && <img className="ciQr" src={src} alt={`QR หน้าคิว ${r.visit.queue}`}/>}
   <small className="ciHint">สแกน QR เพื่อดูลำดับคิวและแผนที่นำทางบนมือถือ · ไม่ต้องนั่งรอหน้าห้อง</small>
-  {r.late && <small className="ciLate">เช็กอินนอกช่วงเวลาที่จอง</small>}
+  {r.late && <small className="ciLate">เช็กอินนอกช่วงเวลาที่{r.source?.kind==='APPOINTMENT'?'นัด':'จอง'}</small>}
  </div>;
 }
