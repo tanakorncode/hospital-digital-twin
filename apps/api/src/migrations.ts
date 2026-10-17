@@ -71,4 +71,67 @@ export const MIGRATIONS: Migration[] = [
         PRIMARY KEY (day, prefix));
     `,
   },
+  {
+    version: 3,
+    name: 'patients and general booking',
+    sql: `
+      -- The hospital's patient as this system knows them. external_patient_id = the HN in the HIS (the HIS stays the
+      -- source of truth). Never sent to public screens. VERIFIED = identity checked by staff (ID card) or the HIS.
+      CREATE TABLE patient_profiles (
+        id TEXT PRIMARY KEY,
+        external_patient_id TEXT UNIQUE,
+        identity_status TEXT NOT NULL DEFAULT 'UNVERIFIED' CHECK (identity_status IN ('UNVERIFIED','VERIFIED','REVOKED')),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL);
+
+      -- One policy per bookable service (an OPD clinic). Off until an administrator opens it.
+      CREATE TABLE booking_policies (
+        service_code TEXT PRIMARY KEY,
+        display_name TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0,1)),
+        advance_days INTEGER NOT NULL DEFAULT 14 CHECK (advance_days BETWEEN 0 AND 180),
+        cancel_cutoff_minutes INTEGER NOT NULL DEFAULT 60 CHECK (cancel_cutoff_minutes BETWEEN 0 AND 10080),
+        max_active_per_patient INTEGER NOT NULL DEFAULT 1 CHECK (max_active_per_patient BETWEEN 1 AND 10),
+        policy_version INTEGER NOT NULL DEFAULT 1 CHECK (policy_version >= 1),
+        updated_at TEXT NOT NULL,
+        updated_by TEXT);
+
+      -- Capacity by time. reserved_count can never pass capacity (the CHECK is the last line of defence; the
+      -- booking transaction uses a conditional update so it never even tries).
+      CREATE TABLE booking_slots (
+        id TEXT PRIMARY KEY,
+        service_code TEXT NOT NULL,
+        starts_at TEXT NOT NULL,
+        ends_at TEXT NOT NULL,
+        capacity INTEGER NOT NULL CHECK (capacity >= 0),
+        reserved_count INTEGER NOT NULL DEFAULT 0 CHECK (reserved_count >= 0 AND reserved_count <= capacity),
+        status TEXT NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN','CLOSED','CANCELLED')),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        CHECK (starts_at < ends_at),
+        UNIQUE (service_code, starts_at));
+      CREATE INDEX booking_slots_service_time ON booking_slots (service_code, starts_at, status);
+
+      -- A reserved place in a slot. Not a queue number: the patient joins the queue at check-in.
+      -- Idempotent creation uses idempotency_keys (scope per caller), so no key column is needed here.
+      CREATE TABLE bookings (
+        id TEXT PRIMARY KEY,
+        booking_code TEXT NOT NULL UNIQUE,
+        patient_profile_id TEXT NOT NULL REFERENCES patient_profiles(id),
+        slot_id TEXT NOT NULL REFERENCES booking_slots(id),
+        service_code TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('CONFIRMED','CANCELLED','EXPIRED','CHECKED_IN','CONVERTED_TO_QUEUE')),
+        channel TEXT NOT NULL CHECK (channel IN ('STAFF','LINE')),
+        created_by TEXT,
+        visit_id TEXT,
+        checked_in_at TEXT,
+        cancelled_at TEXT,
+        cancellation_reason TEXT,
+        cancelled_by TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL);
+      CREATE INDEX bookings_patient_status ON bookings (patient_profile_id, status);
+      CREATE INDEX bookings_slot_status ON bookings (slot_id, status);
+    `,
+  },
 ];

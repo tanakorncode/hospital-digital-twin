@@ -16,6 +16,9 @@ export class DbService implements OnModuleDestroy {
     const file = process.env.DB_PATH ?? join(__dirname, '..', 'data', 'hospital.db');
     mkdirSync(dirname(file), { recursive: true });
     this.db = new DatabaseSync(file);
+    // First of all: another writer (the backup script, a second process starting at the same moment) makes this
+    // connection wait up to 5 s instead of failing at once with "database is locked".
+    this.db.exec('PRAGMA busy_timeout = 5000;');
     this.db.exec(`
       PRAGMA journal_mode = WAL;
       PRAGMA foreign_keys = ON;
@@ -38,8 +41,6 @@ export class DbService implements OnModuleDestroy {
         created_at TEXT NOT NULL,
         expires_at TEXT NOT NULL);
     `);
-    // Another writer (the backup script, an admin tool) waits up to 5 s instead of failing at once.
-    this.db.exec('PRAGMA busy_timeout = 5000;');
     this.migrate();
     this.log.log(`SQLite: ${file}`);
   }

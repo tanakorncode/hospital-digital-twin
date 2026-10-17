@@ -10,6 +10,7 @@ import { TicketsService } from './tickets.service';
 import { LineService } from './line.service';
 import { AuditService } from './audit.service';
 import { AppError, fail } from './errors';
+import { BookingService } from './booking.service';
 import { FeaturesService } from './features.service';
 import { IdempotencyService } from './idempotency.service';
 import { VisitsService, type EnterInput } from './visits.service';
@@ -49,7 +50,7 @@ function attempt<T>(fn: () => T) {
 export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
   @WebSocketServer() server!: Server;
   private unsubscribe?: () => void;
-  constructor(private readonly flowService: FlowService, private readonly liveFeed: LiveFeedService, private readonly queue: QueueService, private readonly auth: AuthService, private readonly tickets: TicketsService, private readonly line: LineService, private readonly audit: AuditService, private readonly features: FeaturesService, private readonly visits: VisitsService, private readonly idempotency: IdempotencyService) {}
+  constructor(private readonly flowService: FlowService, private readonly liveFeed: LiveFeedService, private readonly queue: QueueService, private readonly auth: AuthService, private readonly tickets: TicketsService, private readonly line: LineService, private readonly audit: AuditService, private readonly features: FeaturesService, private readonly visits: VisitsService, private readonly idempotency: IdempotencyService, private readonly booking: BookingService) {}
   // Every connected dashboard receives each live snapshot ('live:update').
   afterInit() {
     this.unsubscribe = this.liveFeed.subscribe((snap) => this.server.emit('live:update', snap));
@@ -258,6 +259,110 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
         this.server.emit('visit', visit);
       }
       return { ok: true, visit };
+    });
+  }
+
+  // ---- General booking (stage 2.2) ------------------------------------------------------------------------------
+  // Administrators set the rules and the slots; staff book for patients at the counter or on the phone (the path for
+  // patients without LINE) and cancel on request. Patients book for themselves from LINE in a later stage.
+  // Screens that show bookings refresh on 'booking:changed' (staff only; it carries no patient data).
+  private bookingChanged(serviceCode: string, startsAt?: string) {
+    this.server.to(STAFF_ROOM).emit('booking:changed', { serviceCode, date: startsAt ? new Date(startsAt).toLocaleDateString('sv-SE') : undefined });
+  }
+  @SubscribeMessage('booking:policies')
+  bookingPolicies(@ConnectedSocket() client: Socket) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    return { ok: true, policies: this.booking.policies(), enabled: this.features.on('generalBooking') };
+  }
+  @SubscribeMessage('booking:policy:set')
+  setBookingPolicy(@ConnectedSocket() client: Socket, @MessageBody() body: Parameters<BookingService['setPolicy']>[0]) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (!may(me, 'admin')) return DENIED;
+    return attempt(() => {
+      const p = this.booking.setPolicy(body ?? {}, me.name);
+      this.audit.record({ ...actor(me), action: 'booking.policy', targetType: 'booking-policy', targetId: p.serviceCode,
+        meta: { version: p.version, enabled: p.enabled, advanceDays: p.advanceDays, cancelCutoffMinutes: p.cancelCutoffMinutes, maxActivePerPatient: p.maxActivePerPatient } });
+      this.bookingChanged(p.serviceCode);
+      return { ok: true, policy: p };
+    });
+  }
+  @SubscribeMessage('booking:slots')
+  bookingSlots(@ConnectedSocket() client: Socket, @MessageBody() body: { serviceCode?: unknown; date?: unknown; bookable?: boolean }) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    return attempt(() => ({ ok: true, slots: body?.bookable ? this.booking.bookable(body.serviceCode, body.date) : this.booking.slots(body?.serviceCode, body?.date) }));
+  }
+  @SubscribeMessage('booking:slots:create')
+  createBookingSlots(@ConnectedSocket() client: Socket, @MessageBody() body: Parameters<BookingService['createSlots']>[0]) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (!may(me, 'admin')) return DENIED;
+    return attempt(() => {
+      const r = this.booking.createSlots(body ?? {});
+      this.audit.record({ ...actor(me), action: 'booking.slots.create', targetType: 'booking-policy', targetId: String(body?.serviceCode), meta: { created: r.created, from: body?.from, to: body?.to } });
+      this.bookingChanged(String(body?.serviceCode));
+      return { ok: true, ...r };
+    });
+  }
+  @SubscribeMessage('booking:slot:set')
+  setBookingSlot(@ConnectedSocket() client: Socket, @MessageBody() body: { slotId?: unknown; status?: unknown; capacity?: unknown; reason?: unknown }) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (!may(me, 'admin')) return DENIED;
+    return attempt(() => {
+      const r = this.booking.setSlot(body?.slotId, body ?? {}, `user:${me.id}`);
+      this.audit.record({ ...actor(me), action: 'booking.slot.update', targetType: 'booking-slot', targetId: r.slot.id,
+        reason: typeof body?.reason === 'string' ? body.reason : undefined, meta: { status: r.slot.status, capacity: r.slot.capacity, cancelledBookings: r.cancelled.length } });
+      for (const b of r.cancelled) this.audit.record({ ...actor(me), action: 'booking.cancel', targetType: 'booking', targetId: b.id, reason: b.cancellationReason, meta: { slotCancelled: true } });
+      this.bookingChanged(r.slot.serviceCode, r.slot.startsAt);
+      return { ok: true, slot: r.slot, cancelled: r.cancelled.length };
+    });
+  }
+  // Book for a patient whose identity staff have checked (as at registration today). `key`: a retried tap returns the
+  // same booking instead of taking a second place.
+  @SubscribeMessage('booking:create')
+  createBooking(@ConnectedSocket() client: Socket, @MessageBody() body: { hn?: unknown; slotId?: unknown; key?: unknown }) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (overLimit(client, 'command')) return SLOW;
+    return attempt(() => {
+      this.features.require('generalBooking');
+      const { key, ...input } = body ?? {};
+      const { result, replayed } = this.idempotency.run(`booking:create:user:${me.id}`, key, input, () =>
+        this.booking.book(this.booking.profileForHN(input.hn), input.slotId, 'STAFF', `user:${me.id}`));
+      if (!replayed) {
+        this.audit.record({ ...actor(me), action: 'booking.create', targetType: 'booking', targetId: result.id, meta: { channel: 'STAFF', serviceCode: result.serviceCode } });
+        this.bookingChanged(result.serviceCode, result.startsAt);
+      }
+      return { ok: true, booking: result };
+    });
+  }
+  // Cancel on the patient's request. After the cut-off: supervisors only, with staff overrides switched on.
+  @SubscribeMessage('booking:cancel')
+  cancelBooking(@ConnectedSocket() client: Socket, @MessageBody() body: { bookingId?: unknown; reason?: unknown }) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    return attempt(() => {
+      const r = this.booking.cancel(body?.bookingId, body?.reason, { kind: 'staff', id: me.id, name: me.name, canOverride: may(me, 'supervisor') && this.features.on('staffOverrides') });
+      if (r.changed) {
+        this.audit.record({ ...actor(me), action: 'booking.cancel', targetType: 'booking', targetId: r.booking.id, reason: r.booking.cancellationReason, meta: { override: r.override } });
+        this.bookingChanged(r.booking.serviceCode, r.booking.startsAt);
+      }
+      return { ok: true, booking: r.booking };
+    });
+  }
+  @SubscribeMessage('booking:list')
+  listBookings(@ConnectedSocket() client: Socket, @MessageBody() body: { date?: unknown; serviceCode?: unknown; code?: unknown; hn?: unknown }) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (overLimit(client, 'command')) return SLOW;
+    return attempt(() => {
+      const list = this.booking.list(body ?? {});
+      // Looking a patient up by HN is access to personal data: kept in the trail (without the HN itself).
+      if (typeof body?.hn === 'string' && body.hn.trim()) this.audit.record({ ...actor(me), action: 'booking.search.hn', targetType: 'patient-search', meta: { results: list.length } });
+      return { ok: true, bookings: list };
     });
   }
 
