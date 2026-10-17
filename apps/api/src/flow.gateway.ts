@@ -14,6 +14,7 @@ import { BookingService } from './booking.service';
 import { CheckInService } from './checkin.service';
 import { AppointmentService } from './appointment.service';
 import { PatientIdentityService } from './patient-identity.service';
+import { NotificationService } from './notification.service';
 import { FeaturesService } from './features.service';
 import { IdempotencyService } from './idempotency.service';
 import { VisitsService, type EnterInput } from './visits.service';
@@ -53,7 +54,7 @@ function attempt<T>(fn: () => T) {
 export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
   @WebSocketServer() server!: Server;
   private unsubscribe?: () => void;
-  constructor(private readonly flowService: FlowService, private readonly liveFeed: LiveFeedService, private readonly queue: QueueService, private readonly auth: AuthService, private readonly tickets: TicketsService, private readonly line: LineService, private readonly audit: AuditService, private readonly features: FeaturesService, private readonly visits: VisitsService, private readonly idempotency: IdempotencyService, private readonly booking: BookingService, private readonly checkin: CheckInService, private readonly appts: AppointmentService, private readonly identity: PatientIdentityService) {}
+  constructor(private readonly flowService: FlowService, private readonly liveFeed: LiveFeedService, private readonly queue: QueueService, private readonly auth: AuthService, private readonly tickets: TicketsService, private readonly line: LineService, private readonly audit: AuditService, private readonly features: FeaturesService, private readonly visits: VisitsService, private readonly idempotency: IdempotencyService, private readonly booking: BookingService, private readonly checkin: CheckInService, private readonly appts: AppointmentService, private readonly identity: PatientIdentityService, private readonly notify: NotificationService) {}
   // Every connected dashboard receives each live snapshot ('live:update').
   afterInit() {
     this.unsubscribe = this.liveFeed.subscribe((snap) => this.server.emit('live:update', snap));
@@ -82,7 +83,8 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
   publishQueueEvent(e: QueueEvent) {
     this.server.to(STAFF_ROOM).emit('queue:event', e);
     this.server.except(STAFF_ROOM).emit('queue:event', publicEvent(e));
-    void this.line.onQueueEvent(e);
+    this.line.onQueueEvent(e);
+    this.notify.onQueueEvent(e);
   }
   private publishLog() {
     const list = this.queue.list();
@@ -315,7 +317,10 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
     if (!me) return SIGN_IN;
     if (!may(me, 'admin')) return DENIED;
     return attempt(() => {
-      const r = this.booking.setSlot(body?.slotId, body ?? {}, `user:${me.id}`);
+      // The change and its messages to patients commit together (outbox).
+      const r = this.notify.tx(() => { const x = this.booking.setSlot(body?.slotId, body ?? {}, `user:${me.id}`);
+        for (const b of x.cancelled) this.notify.bookingCancelled(b, this.booking.profileOf(b.id)); return x; });
+      this.notify.kick();
       this.audit.record({ ...actor(me), action: 'booking.slot.update', targetType: 'booking-slot', targetId: r.slot.id,
         reason: typeof body?.reason === 'string' ? body.reason : undefined, meta: { status: r.slot.status, capacity: r.slot.capacity, cancelledBookings: r.cancelled.length } });
       for (const b of r.cancelled) this.audit.record({ ...actor(me), action: 'booking.cancel', targetType: 'booking', targetId: b.id, reason: b.cancellationReason, meta: { slotCancelled: true } });
@@ -334,7 +339,8 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
       this.features.require('generalBooking');
       const { key, ...input } = body ?? {};
       const { result, replayed } = this.idempotency.run(`booking:create:user:${me.id}`, key, input, () =>
-        this.booking.book(this.booking.profileForHN(input.hn), input.slotId, 'STAFF', `user:${me.id}`));
+        { const profile = this.booking.profileForHN(input.hn), b = this.booking.book(profile, input.slotId, 'STAFF', `user:${me.id}`); this.notify.bookingConfirmed(b, profile); return b; });
+      this.notify.kick();
       if (!replayed) {
         this.audit.record({ ...actor(me), action: 'booking.create', targetType: 'booking', targetId: result.id, meta: { channel: 'STAFF', serviceCode: result.serviceCode } });
         this.bookingChanged(result.serviceCode, result.startsAt);
@@ -348,7 +354,9 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
     const me = userOf(client);
     if (!me) return SIGN_IN;
     return attempt(() => {
-      const r = this.booking.cancel(body?.bookingId, body?.reason, { kind: 'staff', id: me.id, name: me.name, canOverride: may(me, 'supervisor') && this.features.on('staffOverrides') });
+      const r = this.notify.tx(() => { const x = this.booking.cancel(body?.bookingId, body?.reason, { kind: 'staff', id: me.id, name: me.name, canOverride: may(me, 'supervisor') && this.features.on('staffOverrides') });
+        if (x.changed) this.notify.bookingCancelled(x.booking, this.booking.profileOf(x.booking.id)); return x; });
+      this.notify.kick();
       if (r.changed) {
         this.audit.record({ ...actor(me), action: 'booking.cancel', targetType: 'booking', targetId: r.booking.id, reason: r.booking.cancellationReason, meta: { override: r.override } });
         this.bookingChanged(r.booking.serviceCode, r.booking.startsAt);
@@ -381,7 +389,11 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
     return attempt(() => {
       if (this.queue.getSettings().dataMode !== 'live') throw new AppError('POLICY_REJECTED', 'ระบบอยู่ในโหมดสาธิต — เช็กอินเข้าคิวจริงได้เมื่อเปิดโหมดผู้ป่วยจริง');
       const channel = body?.channel === 'KIOSK' ? 'KIOSK' : 'COUNTER';
-      const r = this.checkin.checkIn(body?.code, { channel, at: body?.at, by: `user:${me.id}`, prefix: body?.prefix });
+      const r = this.notify.tx(() => { const x = this.checkin.checkIn(body?.code, { channel, at: body?.at, by: `user:${me.id}`, prefix: body?.prefix });
+        const profile = this.visits.profileOf(x.visit.id);
+        if (!x.already && profile) { this.notify.checkedIn(x.visit, profile, `พื้นที่รอ ${x.visit.dept}`); if (x.source.kind === 'APPOINTMENT') this.notify.cancel('appointment', x.source.id, 'APPT_REMINDER'); }
+        return x; });
+      this.notify.kick();
       if (!r.already) {
         const booking = r.source.kind === 'BOOKING';
         this.audit.record({ ...actor(me), action: booking ? 'checkin.booking' : 'checkin.appointment', targetType: booking ? 'booking' : 'appointment', targetId: r.source.id,
@@ -447,7 +459,9 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
     if (!me) return SIGN_IN;
     if (!may(me, 'admin')) return DENIED;
     return attempt(() => {
-      const r = this.appts.setSession(body?.sessionId, body ?? {}, `user:${me.id}`);
+      const r = this.notify.tx(() => { const x = this.appts.setSession(body?.sessionId, body ?? {}, `user:${me.id}`);
+        for (const a of x.cancelled) this.notify.appointmentCancelled(a, this.appts.profileOf(a.id)!, true); return x; });
+      this.notify.kick();
       this.audit.record({ ...actor(me), action: 'appointment.session.update', targetType: 'provider-schedule', targetId: r.session.id,
         reason: typeof body?.reason === 'string' ? body.reason : undefined, meta: { status: r.session.status, cancelledAppointments: r.cancelled.length } });
       for (const a of r.cancelled) this.audit.record({ ...actor(me), action: 'appointment.cancel', targetType: 'appointment', targetId: a.id, reason: a.cancellationReason, meta: { sessionCancelled: true } });
@@ -469,7 +483,8 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
       this.features.require('appointments');
       const { key, ...input } = body ?? {};
       const { result, replayed } = this.idempotency.run(`appointment:create:user:${me.id}`, key, input, () =>
-        this.appts.create(this.booking.profileForHN(input.hn), input.slotId, 'STAFF', `user:${me.id}`));
+        { const profile = this.booking.profileForHN(input.hn), a = this.appts.create(profile, input.slotId, 'STAFF', `user:${me.id}`); this.notify.appointmentMade(a, profile); return a; });
+      this.notify.kick();
       if (!replayed) { this.audit.record({ ...actor(me), action: 'appointment.create', targetType: 'appointment', targetId: result.id, meta: { clinic: result.clinicCode } }); this.apptChanged(); }
       return { ok: true, appointment: result };
     });
@@ -479,7 +494,9 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
     const me = userOf(client);
     if (!me) return SIGN_IN;
     return attempt(() => {
-      const r = this.appts.cancel(body?.appointmentId, body?.reason, this.staffActor(me));
+      const r = this.notify.tx(() => { const x = this.appts.cancel(body?.appointmentId, body?.reason, this.staffActor(me));
+        if (x.changed) this.notify.appointmentCancelled(x.appointment, this.appts.profileOf(x.appointment.id)!, true); return x; });
+      this.notify.kick();
       if (r.changed) { this.audit.record({ ...actor(me), action: 'appointment.cancel', targetType: 'appointment', targetId: r.appointment.id, reason: r.appointment.cancellationReason, meta: { override: r.override } }); this.apptChanged(); }
       return { ok: true, appointment: r.appointment };
     });
@@ -493,7 +510,9 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
       this.features.require('appointments');
       const { key, ...input } = body ?? {};
       const before = this.appts.get(input.appointmentId);
-      const { result, replayed } = this.idempotency.run(`appointment:reschedule:user:${me.id}`, key, input, () => this.appts.reschedule(input.appointmentId, input.slotId, this.staffActor(me)));
+      const { result, replayed } = this.idempotency.run(`appointment:reschedule:user:${me.id}`, key, input, () => {
+        const a = this.appts.reschedule(input.appointmentId, input.slotId, this.staffActor(me)); this.notify.appointmentMoved(a, this.appts.profileOf(a.id)!, true); return a; });
+      this.notify.kick();
       if (!replayed) { this.audit.record({ ...actor(me), action: 'appointment.reschedule', targetType: 'appointment', targetId: result.id, meta: { from: before?.startsAt, to: result.startsAt } }); this.apptChanged(); }
       return { ok: true, appointment: result };
     });
@@ -508,7 +527,11 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
     const me = userOf(client);
     if (!me) return SIGN_IN;
     return attempt(() => {
-      const r = this.appts.decide(body?.requestId, body?.approve, body?.note, this.staffActor(me));
+      const r = this.notify.tx(() => { const x = this.appts.decide(body?.requestId, body?.approve, body?.note, this.staffActor(me)), profile = this.appts.profileOf(x.appointment.id)!;
+        if (x.status === 'APPROVED') this.notify.appointmentMoved(this.appts.get(x.appointment.id)!, profile, true);
+        else if (x.status === 'REJECTED') this.notify.moveRejected(x.appointment, profile, x.id, x.decisionNote);
+        return x; });
+      this.notify.kick();
       this.audit.record({ ...actor(me), action: r.status === 'APPROVED' ? 'appointment.reschedule.approve' : 'appointment.reschedule.reject', targetType: 'appointment', targetId: r.appointment.id, reason: r.decisionNote });
       this.apptChanged();
       return { ok: true, request: r };
@@ -520,7 +543,7 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
     if (!me) return SIGN_IN;
     if (!may(me, 'supervisor')) return { ...DENIED, reason: 'เฉพาะหัวหน้างานบันทึกไม่มาตามนัดได้' };
     return attempt(() => {
-      const a = this.appts.markNoShow(body?.appointmentId, body?.reason, `user:${me.id}`);
+      const a = this.notify.tx(() => { const x = this.appts.markNoShow(body?.appointmentId, body?.reason, `user:${me.id}`); this.notify.cancel('appointment', x.id); return x; });
       this.audit.record({ ...actor(me), action: 'appointment.noshow', targetType: 'appointment', targetId: a.id, reason: a.noShowReason });
       this.apptChanged();
       return { ok: true, appointment: a };
@@ -573,6 +596,24 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
       this.audit.record({ ...actor(me), action: 'line.revoke', targetType: 'line-link', reason: typeof body?.reason === 'string' ? body.reason : undefined });
       return { ok: true };
     });
+  }
+
+  // ---- Messages to patients (stage 2.7): what was sent, what failed, send again ------------------------------------------
+  @SubscribeMessage('notify:jobs')
+  notifyJobs(@ConnectedSocket() client: Socket, @MessageBody() body: { status?: unknown }) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (!may(me, 'admin')) return DENIED;
+    return { ok: true, line: this.notify.lineConfigured, enabled: this.features.on('notifications'), ...this.notify.jobs(body?.status) };
+  }
+  @SubscribeMessage('notify:retry')
+  notifyRetry(@ConnectedSocket() client: Socket, @MessageBody() body: { id?: unknown }) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (!may(me, 'admin')) return DENIED;
+    if (!this.notify.retry(body?.id)) return fail('INVALID_STATE_TRANSITION', 'ส่งใหม่ได้เฉพาะข้อความที่ส่งไม่สำเร็จ');
+    this.audit.record({ ...actor(me), action: 'notify.retry', targetType: 'notification', targetId: String(body?.id) });
+    return { ok: true };
   }
 
   // Call this method only from a trusted, authenticated ingestion service.

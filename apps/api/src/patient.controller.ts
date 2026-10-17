@@ -7,6 +7,7 @@ import { AppError } from './errors';
 import { FeaturesService } from './features.service';
 import { FlowGateway } from './flow.gateway';
 import { IdempotencyService } from './idempotency.service';
+import { NotificationService } from './notification.service';
 import { devLoginAllowed, PatientIdentityService, type PatientSession } from './patient-identity.service';
 import { TicketsService } from './tickets.service';
 import { VisitsService } from './visits.service';
@@ -34,7 +35,7 @@ export class PatientController {
   private hits = new Map<string, number[]>();
   constructor(private readonly identity: PatientIdentityService, private readonly features: FeaturesService, private readonly audit: AuditService,
     private readonly booking: BookingService, private readonly appts: AppointmentService, private readonly visits: VisitsService, private readonly tickets: TicketsService,
-    private readonly idempotency: IdempotencyService, private readonly gateway: FlowGateway) {}
+    private readonly idempotency: IdempotencyService, private readonly gateway: FlowGateway, private readonly notify: NotificationService) {}
   // A signed-in patient whose LINE account is linked to their hospital record.
   private linked(ip: string, auth: unknown): PatientSession & { profileId: string } {
     this.limit(ip);
@@ -118,7 +119,8 @@ export class PatientController {
     const s = this.linked(ip, auth);
     this.features.require('generalBooking');
     const { result, replayed } = this.idempotency.run(`booking:create:patient:${s.profileId}`, key, { slotId: body?.slotId }, () =>
-      this.booking.book(s.profileId, body?.slotId, 'LINE', lineRef(s)));
+      { const b = this.booking.book(s.profileId, body?.slotId, 'LINE', lineRef(s)); this.notify.bookingConfirmed(b, s.profileId); return b; });
+    this.notify.kick();
     if (!replayed) { this.audit.record({ ...this.who(s), action: 'booking.create', targetType: 'booking', targetId: result.id, meta: { channel: 'LINE', serviceCode: result.serviceCode } }); this.gateway.bookingChanged(result.serviceCode, result.startsAt); }
     return { ok: true, booking: result };
   }
@@ -147,7 +149,8 @@ export class PatientController {
   @HttpCode(200)
   cancelAppointment(@Ip() ip: string, @Param('id') id: string, @Body() body: { reason?: unknown }, @Headers('authorization') auth?: string) {
     const s = this.linked(ip, auth);
-    const r = this.appts.cancel(id, body?.reason, { kind: 'patient', profileId: s.profileId });
+    const r = this.notify.tx(() => { const x = this.appts.cancel(id, body?.reason, { kind: 'patient', profileId: s.profileId });
+      if (x.changed) this.notify.appointmentCancelled(x.appointment, s.profileId, false); return x; });
     if (r.changed) { this.audit.record({ ...this.who(s), action: 'appointment.cancel', targetType: 'appointment', targetId: r.appointment.id, reason: r.appointment.cancellationReason }); this.gateway.apptChanged(); }
     return { ok: true, appointment: r.appointment };
   }
@@ -156,7 +159,8 @@ export class PatientController {
   rescheduleAppointment(@Ip() ip: string, @Param('id') id: string, @Body() body: { slotId?: unknown; reason?: unknown }, @Headers('authorization') auth?: string) {
     const s = this.linked(ip, auth);
     this.features.require('appointments');
-    const r = this.appts.requestReschedule(id, body?.slotId, body?.reason, { kind: 'patient', profileId: s.profileId });
+    const r = this.notify.tx(() => { const x = this.appts.requestReschedule(id, body?.slotId, body?.reason, { kind: 'patient', profileId: s.profileId });
+      if (x.immediate) this.notify.appointmentMoved(x.appointment, s.profileId, false); return x; });
     this.audit.record({ ...this.who(s), action: r.immediate ? 'appointment.reschedule' : 'appointment.reschedule.request', targetType: 'appointment', targetId: r.appointment.id });
     this.gateway.apptChanged();
     return { ok: true, immediate: r.immediate, appointment: r.appointment };

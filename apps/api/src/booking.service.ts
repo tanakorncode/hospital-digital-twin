@@ -248,6 +248,7 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
     const r = this.store.db.prepare(`${BOOKING_SELECT} WHERE b.id = ?`).get(bookingId) as BookingRow | undefined;
     return r ? toBooking(r) : undefined;
   }
+  profileOf(bookingId: string) { return this.ownerOf(bookingId)!; }
   private ownerOf(bookingId: string) {
     return (this.store.db.prepare('SELECT patient_profile_id AS p FROM bookings WHERE id = ?').get(bookingId) as { p: string } | undefined)?.p;
   }

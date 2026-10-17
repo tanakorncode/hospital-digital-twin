@@ -294,4 +294,41 @@ export const MIGRATIONS: Migration[] = [
         created_at TEXT NOT NULL);
     `,
   },
+  {
+    version: 7,
+    name: 'notification jobs',
+    sql: `
+      -- Messages to patients, written in the same transaction as the change they report (so a committed booking never
+      -- loses its message, and a rolled-back one never sends one) and sent afterwards by the worker, with retries.
+      -- target: a patient (PROFILE — their linked LINE accounts at sending time) or one LINE user (the queue-slip
+      -- subscription). payload_json: what the message needs — dates, times, queue numbers, codes; never a name or HN.
+      CREATE TABLE notification_jobs (
+        id TEXT PRIMARY KEY,
+        channel TEXT NOT NULL DEFAULT 'LINE' CHECK (channel IN ('LINE')),
+        template TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        related_type TEXT,
+        related_id TEXT,
+        target_type TEXT NOT NULL CHECK (target_type IN ('PROFILE','LINE_USER')),
+        target_id TEXT NOT NULL,
+        scheduled_at TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING','PROCESSING','SENT','RETRY','FAILED','CANCELLED','SKIPPED')),
+        attempt_count INTEGER NOT NULL DEFAULT 0,
+        last_error TEXT,
+        dedupe_key TEXT NOT NULL UNIQUE,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        sent_at TEXT);
+      CREATE INDEX notification_jobs_due ON notification_jobs (status, scheduled_at);
+      CREATE INDEX notification_jobs_related ON notification_jobs (related_type, related_id, template, status);
+
+      CREATE TABLE notification_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        job_id TEXT NOT NULL REFERENCES notification_jobs(id),
+        outcome TEXT NOT NULL CHECK (outcome IN ('SENT','RETRY','FAILED','SKIPPED')),
+        http_status INTEGER,
+        error TEXT,
+        created_at TEXT NOT NULL);
+    `,
+  },
 ];

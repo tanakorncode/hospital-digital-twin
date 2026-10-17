@@ -45,6 +45,9 @@ export class VisitsService {
   forProfile(profileId: string): Visit[] {
     return (this.store.db.prepare(`SELECT * FROM visits WHERE day = ? AND patient_profile_id = ? AND status = 'active' ORDER BY arrival`).all(today(), profileId) as Row[]).map(toVisit);
   }
+  profileOf(id: string) {
+    return (this.store.db.prepare('SELECT patient_profile_id AS p FROM visits WHERE day = ? AND id = ?').get(today(), id) as { p: string | null } | undefined)?.p ?? undefined;
+  }
   get(id: unknown): Visit | undefined {
     if (typeof id !== 'string' || !VISIT_ID_RE.test(id)) return undefined;
     const r = this.store.db.prepare('SELECT * FROM visits WHERE day = ? AND id = ?').get(today(), id) as Row | undefined;

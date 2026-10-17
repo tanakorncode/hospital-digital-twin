@@ -2,34 +2,26 @@ import { Injectable, Logger } from '@nestjs/common';
 import { createHmac, randomInt, timingSafeEqual } from 'node:crypto';
 import { DbService } from './db.service';
 import type { QueueEvent } from './queue.service';
+import { NotificationService, queueTemplate } from './notification.service';
 import { TicketsService } from './tickets.service';
 
 // LINE Official Account notifications. Switched on by three settings in apps/api/.env:
 //   LINE_CHANNEL_SECRET, LINE_CHANNEL_ACCESS_TOKEN (Messaging API channel) and LINE_OA_ID (e.g. @123abcde).
 // Linking, without any login: the patient's page asks for a short code → LINE opens the OA chat with
 // "รับแจ้งเตือนคิว <code>" typed in → the webhook receives it and binds that LINE user to the patient's link.
-// Messages go out when staff call / recall the patient, move them to another point, or take on their help request.
+// Messages go out (through the notification worker) when staff call / recall the patient, move them to another point,
+// or take on their help request.
 // Only the queue number and where to go are sent — never a name or HN. "หยุด" in the chat stops notifications.
 const LINE_API = 'https://api.line.me/v2/bot/message';
 const CODE_MINUTES = 15;
 type Link = { user_id: string; patient_id: string; queue: string; ticket: string };
 
-// Where to go, from a station id (the web app has the full labels; these are enough for a message).
-export function placeOf(station: string): string {
-  let m: RegExpMatchArray | null;
-  if ((m = station.match(/^room:[a-z]+-(\d+)$/))) return `ห้องตรวจ ${m[1]}`;
-  if ((m = station.match(/^counter:([a-z]+):(\d+)$/))) {
-    const name: Record<string, string> = { registration: 'ช่องลงทะเบียน', pharmacy: 'ช่องจ่ายยา', finance: 'ช่องการเงิน', lab: 'จุดเจาะเลือด', xray: 'ห้องเอกซเรย์', triage: 'จุดคัดแยก ER' };
-    return `${name[m[1]] ?? 'ช่องบริการ'} ${m[2]}`;
-  }
-  if ((m = station.match(/^screen:opd-(\d)-\d+(?::(\d+))?$/))) return `จุดซักประวัติ ชั้น ${m[1]}${m[2] ? ` ช่อง ${m[2]}` : ''}`;
-  return 'จุดบริการ';
-}
+export { placeOf } from './places';
 
 @Injectable()
 export class LineService {
   private readonly log = new Logger('LINE');
-  constructor(private readonly store: DbService, private readonly tickets: TicketsService) {
+  constructor(private readonly store: DbService, private readonly tickets: TicketsService, private readonly notify: NotificationService) {
     store.db.exec(`
       CREATE TABLE IF NOT EXISTS line_codes (code TEXT PRIMARY KEY, ticket TEXT NOT NULL, queue TEXT NOT NULL, expires_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS line_links (
@@ -87,23 +79,25 @@ export class LineService {
     }
   }
 
-  // Step 3: after each accepted queue action — notify linked LINE users of that patient.
-  async onQueueEvent(e: QueueEvent) {
+  // Step 3: after each accepted queue action — a message job for each LINE user subscribed to that patient's slip
+  // (sent by the notification worker, with retries). Users who are also the patient's linked LINE account get it from
+  // there instead, not twice.
+  onQueueEvent(e: QueueEvent) {
     if (!this.enabled || !e.patientId) return;
     const links = this.store.db.prepare('SELECT * FROM line_links WHERE patient_id = ?').all(e.patientId) as Link[];
-    if (!links.length) return;
+    const q = links.length ? queueTemplate(e) : undefined;
+    if (!q) return;
+    const linked = new Set(this.notify.linkedSubjects(e.patientId));
+    let queued = false;
     for (const l of links) {
       if (!this.tickets.check(l.ticket).ok) { this.store.db.prepare('DELETE FROM line_links WHERE user_id = ? AND ticket = ?').run(l.user_id, l.ticket); continue; } // slip re-issued / expired
-      const text = e.action === 'call' ? `🔔 ถึงคิว ${l.queue} แล้ว\nเชิญที่ ${placeOf(e.station)}`
-        : e.action === 'recall' ? `🔔 เรียกคิว ${l.queue} อีกครั้ง\nเชิญที่ ${placeOf(e.station)}`
-        : e.action === 'transfer' && e.target ? `คิว ${l.queue} ย้ายไป ${placeOf(e.target)}\nกรุณาดูหน้าคิวสำหรับที่รอใหม่`
-        : e.action === 'resolve' && e.reason?.startsWith('assign:') ? `เจ้าหน้าที่ (${e.reason.slice(7)}) รับเรื่องของคิว ${l.queue} แล้ว กำลังไปหาคุณ`
-        : '';
-      if (text) await this.push(l.user_id, text);
+      if (linked.has(l.user_id)) continue;
+      queued = this.notify.enqueue({ template: q.template, payload: { queue: l.queue, place: q.place, who: q.who }, target: { type: 'LINE_USER', id: l.user_id },
+        related: { type: 'queue-event', id: e.id }, dedupe: `queue:${e.id}:${l.user_id}` }) || queued;
     }
+    if (queued) this.notify.kick();
   }
 
-  private async push(to: string, text: string) { await this.call(`${LINE_API}/push`, { to, messages: [{ type: 'text', text }] }); }
   private async reply(replyToken: string | undefined, text: string) { if (replyToken) await this.call(`${LINE_API}/reply`, { replyToken, messages: [{ type: 'text', text }] }); }
   private async call(url: string, body: unknown) {
     try {
