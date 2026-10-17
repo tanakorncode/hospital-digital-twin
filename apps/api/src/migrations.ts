@@ -252,4 +252,46 @@ export const MIGRATIONS: Migration[] = [
       CREATE UNIQUE INDEX appointment_requests_pending ON appointment_reschedule_requests (appointment_id) WHERE status = 'PENDING';
     `,
   },
+  {
+    version: 6,
+    name: 'LINE identity and account linking',
+    sql: `
+      -- A patient's app session, made after the server has verified a LINE ID token. Only the SHA-256 of the token
+      -- is stored. line_subject = the LINE user id (kept to recognise the person and, later, to send them messages).
+      CREATE TABLE patient_sessions (
+        token_hash TEXT PRIMARY KEY,
+        line_subject TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL);
+      CREATE INDEX patient_sessions_subject ON patient_sessions (line_subject);
+
+      -- LINE account ↔ hospital patient. Made only after the identity was checked (staff with the ID card for now).
+      -- One active link per LINE account and per patient; a new phone replaces the old link (kept, as REVOKED).
+      CREATE TABLE line_patient_links (
+        id TEXT PRIMARY KEY,
+        patient_profile_id TEXT NOT NULL REFERENCES patient_profiles(id),
+        line_subject TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE','UNLINKED','REVOKED')),
+        method TEXT NOT NULL CHECK (method IN ('STAFF_ASSISTED','OTP','HIS')),
+        verified_at TEXT NOT NULL,
+        verified_by TEXT,
+        ended_at TEXT,
+        ended_by TEXT,
+        end_reason TEXT,
+        created_at TEXT NOT NULL);
+      CREATE UNIQUE INDEX line_links_active_subject ON line_patient_links (line_subject) WHERE status = 'ACTIVE';
+      CREATE UNIQUE INDEX line_links_active_patient ON line_patient_links (patient_profile_id) WHERE status = 'ACTIVE';
+
+      -- "Link my account" at the counter: the patient shows this one-time code (QR) from LINE; staff check the ID card
+      -- and confirm. Short-lived; only the hash of the long QR token is stored.
+      CREATE TABLE link_requests (
+        id TEXT PRIMARY KEY,
+        line_subject TEXT NOT NULL,
+        token_hash TEXT NOT NULL UNIQUE,
+        short_code TEXT NOT NULL UNIQUE,
+        status TEXT NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING','USED','EXPIRED')),
+        expires_at TEXT NOT NULL,
+        created_at TEXT NOT NULL);
+    `,
+  },
 ];

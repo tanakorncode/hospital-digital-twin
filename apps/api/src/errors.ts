@@ -16,6 +16,7 @@ export const ERROR_STATUS = {
   FEATURE_DISABLED: 403,
   RATE_LIMITED: 429,
   QUEUE_ENGINE_UNAVAILABLE: 503,
+  UPSTREAM_UNAVAILABLE: 503,
 } as const;
 export type ErrorCode = keyof typeof ERROR_STATUS;
 export type Failure = { ok: false; code: ErrorCode; reason: string };

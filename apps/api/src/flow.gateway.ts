@@ -13,6 +13,7 @@ import { AppError, fail } from './errors';
 import { BookingService } from './booking.service';
 import { CheckInService } from './checkin.service';
 import { AppointmentService } from './appointment.service';
+import { PatientIdentityService } from './patient-identity.service';
 import { FeaturesService } from './features.service';
 import { IdempotencyService } from './idempotency.service';
 import { VisitsService, type EnterInput } from './visits.service';
@@ -52,7 +53,7 @@ function attempt<T>(fn: () => T) {
 export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
   @WebSocketServer() server!: Server;
   private unsubscribe?: () => void;
-  constructor(private readonly flowService: FlowService, private readonly liveFeed: LiveFeedService, private readonly queue: QueueService, private readonly auth: AuthService, private readonly tickets: TicketsService, private readonly line: LineService, private readonly audit: AuditService, private readonly features: FeaturesService, private readonly visits: VisitsService, private readonly idempotency: IdempotencyService, private readonly booking: BookingService, private readonly checkin: CheckInService, private readonly appts: AppointmentService) {}
+  constructor(private readonly flowService: FlowService, private readonly liveFeed: LiveFeedService, private readonly queue: QueueService, private readonly auth: AuthService, private readonly tickets: TicketsService, private readonly line: LineService, private readonly audit: AuditService, private readonly features: FeaturesService, private readonly visits: VisitsService, private readonly idempotency: IdempotencyService, private readonly booking: BookingService, private readonly checkin: CheckInService, private readonly appts: AppointmentService, private readonly identity: PatientIdentityService) {}
   // Every connected dashboard receives each live snapshot ('live:update').
   afterInit() {
     this.unsubscribe = this.liveFeed.subscribe((snap) => this.server.emit('live:update', snap));
@@ -534,6 +535,43 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
       const list = this.appts.list(body ?? {});
       if (typeof body?.hn === 'string' && body.hn.trim()) this.audit.record({ ...actor(me), action: 'appointment.search.hn', targetType: 'patient-search', meta: { results: list.length } });
       return { ok: true, appointments: list };
+    });
+  }
+
+  // ---- Linking a patient's LINE account (stage 2.5) ---------------------------------------------------------------
+  // At the counter: the patient shows the one-time QR from LINE, staff check the ID card as today, then confirm with the
+  // HN. Staff can see whether a patient is linked (never the LINE id) and end a link with a reason.
+  @SubscribeMessage('link:confirm')
+  confirmLink(@ConnectedSocket() client: Socket, @MessageBody() body: { code?: unknown; hn?: unknown }) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (overLimit(client, 'command')) return SLOW;
+    return attempt(() => {
+      this.features.require('accountLinking');
+      const r = this.identity.confirmLink(body?.code, body?.hn, `user:${me.id}`);
+      this.audit.record({ ...actor(me), action: 'line.link', targetType: 'line-link', targetId: r.linkId, meta: { method: 'STAFF_ASSISTED', replaced: r.replaced } });
+      return { ok: true, hn: r.hn, replaced: r.replaced };
+    });
+  }
+  @SubscribeMessage('link:status')
+  linkStatus(@ConnectedSocket() client: Socket, @MessageBody() body: { hn?: unknown }) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (overLimit(client, 'command')) return SLOW;
+    return attempt(() => {
+      const r = this.identity.status(body?.hn);
+      this.audit.record({ ...actor(me), action: 'line.status', targetType: 'patient-search' });
+      return { ok: true, ...r };
+    });
+  }
+  @SubscribeMessage('link:revoke')
+  revokeLink(@ConnectedSocket() client: Socket, @MessageBody() body: { hn?: unknown; reason?: unknown }) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    return attempt(() => {
+      this.identity.revoke(body?.hn, body?.reason, `user:${me.id}`);
+      this.audit.record({ ...actor(me), action: 'line.revoke', targetType: 'line-link', reason: typeof body?.reason === 'string' ? body.reason : undefined });
+      return { ok: true };
     });
   }
 
