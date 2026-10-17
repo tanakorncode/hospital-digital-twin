@@ -6,7 +6,7 @@ import QRCode from 'qrcode';
 import { ArrowLeftRight, Camera, Coffee, Copy, Hand, Lock, LockOpen, MapPin, QrCode, Sparkles, CheckCircle2, ChevronDown, ChevronRight, ClipboardList, ExternalLink, HeartPulse, LayoutList, List, Map as MapIcon, Megaphone, Pause, PhoneCall, Pill, Play, Repeat, ScanLine, Settings2, Siren, SkipForward, Stethoscope, TestTube, UserCheck, Volume2, VolumeX, Wallet, X } from 'lucide-react';
 import { LONG_WAIT, NO_SHOW, fmtDur, fmtMin, maskHN, opdClinics, patientAt, patientToken, placeText, statusColor, statusText, stepText, triageLevels, type Patient, type PatientState, type PatientStatus, type StepKind } from '../../lib/patients';
 import { erBoard, serviceNote } from '../../lib/ops';
-import { DEFAULT_POLICY, SYSTEM_BY, actionText, openReports, groupName, moveNote, sameZone, allStations, everyStation, announce, capFor, healthText, modeText, rulesFor, scopeName, suggestionText, type AssistView, type Suggestion, groupOf, openStations, priorityOf, stationById, stationDoctor, stationQueue, stepGroup, type PriorityPolicy, type QueueCommand, type QueueEvent, type QueueSettings, type SettingsPatch, type Station, type AuthUser } from '../../lib/queue';
+import { DEFAULT_POLICY, SYSTEM_BY, actionText, openReports, groupName, moveNote, sameZone, allStations, everyStation, announce, capFor, healthText, modeText, rulesFor, scopeName, suggestionText, type AssistView, type Suggestion, groupOf, openStations, priorityOf, stationById, stationDoctor, stationQueue, stepGroup, type PriorityPolicy, type QueueCommand, type QueueEvent, type QueueSettings, type SettingsPatch, type Station, type AuthUser, type QueueSync, useTicket } from '../../lib/queue';
 
 import { DEFAULT_HOURS, buildings, floorRooms, layoutRevision, waitingSeats, deptArea } from '../../lib/scene-data';
 import FloorPlanSvg from '../FloorPlanSvg';
@@ -15,7 +15,7 @@ const FloorScene = dynamic(()=>import('../HospitalScene').then(m=>m.FloorScene),
 
 type Tab = 'station'|'overview'|'er';
 const tabs:[Tab,string,typeof Siren][] = [['station','ช่องบริการของฉัน',PhoneCall],['overview','ภาพรวมคิว',LayoutList],['er','ห้องฉุกเฉิน',Siren]];
-export type QueueControl = {events:QueueEvent[]; online:boolean; user?:AuthUser|null; send:(c:QueueCommand)=>Promise<{ok:boolean;reason?:string}>; canAct:boolean; onNow:()=>void; settings:QueueSettings;
+export type QueueControl = {events:QueueEvent[]; online:boolean; user?:AuthUser|null; resolveTicket?:QueueSync['resolveTicket']; send:(c:QueueCommand)=>Promise<{ok:boolean;reason?:string}>; canAct:boolean; onNow:()=>void; settings:QueueSettings;
  saveSettings?:(patch:SettingsPatch, audit:{at:number; scope:string; summary:string; by?:string})=>Promise<{ok:boolean;reason?:string}>};
 
 type OpenPlace = (buildingId:string, level:number, roomId?:string)=>void;
@@ -36,14 +36,16 @@ export default function QueuePage({patients,minute,timeNote,onOpenPatient,queue,
 
 // The patient's own status page (what the QR on their slip opens). Staff can open it, or show the QR again for a
 // patient who lost the slip. The link keeps this screen's demo clock so both show the same time.
-const qrUrl = (p:Patient) => { if (typeof window==='undefined') return ''; const q = new URLSearchParams(window.location.search), keep = new URLSearchParams();
+export const qrUrl = (token:string) => { if (typeof window==='undefined' || !token) return ''; const q = new URLSearchParams(window.location.search), keep = new URLSearchParams();
  ['demoStart','hour'].forEach(k=>{ const v = q.get(k); if (v!==null) keep.set(k,v); }); const qs = keep.toString();
- return `${window.location.origin}/q/${patientToken(p)}${qs?`?${qs}`:''}`; };
+ return `${window.location.origin}/q/${token}${qs?`?${qs}`:''}`; };
 function QrButton({p,label}:{p:Patient;label?:string}) {
  const [open,setOpen] = useState(false);
  const [src,setSrc] = useState('');
  const [copied,setCopied] = useState(false);
- const url = qrUrl(p);
+ const [confirmRenew,setConfirmRenew] = useState(false);
+ const ticket = useTicket(p,open), url = qrUrl(ticket.token);
+ useEffect(()=>{ if (!url) setSrc(''); },[url]);
  useEffect(()=>{ if (open && url) QRCode.toDataURL(url,{margin:1,width:220}).then(setSrc).catch(()=>setSrc('')); },[open,url]);
  useEffect(()=>{ if (!open) return; const k = (e:KeyboardEvent)=>{ if (e.key==='Escape') setOpen(false); }; window.addEventListener('keydown',k); return ()=>window.removeEventListener('keydown',k); },[open]);
  return <>
@@ -52,10 +54,15 @@ function QrButton({p,label}:{p:Patient;label?:string}) {
   {open && <div className="modalBack" onClick={e=>{ e.stopPropagation(); setOpen(false); }}>
    <div className="qrDialog" role="dialog" aria-modal="true" aria-label={`QR คิว ${p.queue}`} onClick={e=>e.stopPropagation()}>
     <header><b>หน้าคิวของผู้ป่วย <span className="mvQueue">{p.queue}</span></b><button className="iconBtn" aria-label="ปิด" onClick={()=>setOpen(false)}><X size={16}/></button></header>
-    {src ? <img src={src} alt={`QR หน้าสถานะคิว ${p.queue}`}/> : <div className="qrPh"/>}
+    {ticket.error ? <p className="loginError">{ticket.error}</p> : src ? <img src={src} alt={`QR หน้าสถานะคิว ${p.queue}`}/> : <div className="qrPh"/>}
     <p className="muted">ให้ผู้ป่วยสแกนด้วยมือถือเพื่อดูสถานะคิวและแผนที่นำทาง · แสดงเฉพาะเลขคิว ไม่มีชื่อ/HN</p>
-    <div className="qrActs"><a className="btn" href={url} target="_blank" rel="noreferrer"><ExternalLink size={14}/> เปิดหน้าคิว</a>
-     <button className="btn ghost" onClick={()=>{ void navigator.clipboard?.writeText(url).then(()=>{ setCopied(true); setTimeout(()=>setCopied(false),2000); }); }}><Copy size={14}/> {copied?'คัดลอกแล้ว':'คัดลอกลิงก์'}</button></div>
+    <p className="qrExp">{ticket.offline ? 'โหมดออฟไลน์ · ลิงก์สาธิตในเครื่องนี้' : ticket.expiresAt ? `ลิงก์ใช้ได้ถึง ${new Date(ticket.expiresAt).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'})} น. วันนี้` : ''}</p>
+    <div className="qrActs"><a className={'btn'+(url?'':' disabled')} href={url || undefined} target="_blank" rel="noreferrer"><ExternalLink size={14}/> เปิดหน้าคิว</a>
+     <button className="btn ghost" disabled={!url} onClick={()=>{ void navigator.clipboard?.writeText(url).then(()=>{ setCopied(true); setTimeout(()=>setCopied(false),2000); }); }}><Copy size={14}/> {copied?'คัดลอกแล้ว':'คัดลอกลิงก์'}</button></div>
+    {!ticket.offline && (confirmRenew
+     ? <div className="qrRenew"><span>บัตรหาย/ลิงก์รั่ว? ออก QR ใหม่แล้ว <b>ลิงก์เดิมและลิงก์ญาติจะใช้ไม่ได้ทันที</b></span>
+        <button className="btn ghost sm" onClick={()=>setConfirmRenew(false)}>ยกเลิก</button><button className="btn sm" onClick={()=>{ setConfirmRenew(false); void ticket.renew(); }}>ออก QR ใหม่</button></div>
+     : <button className="linkBtn dark qrRenewBtn" onClick={()=>setConfirmRenew(true)}>ออก QR ใหม่ (ยกเลิกลิงก์เดิม)</button>)}
    </div></div>}
  </>;
 }
@@ -185,7 +192,11 @@ function StationConsole({patients,minute,queue,onOpen,assist,onOpenSettings}:{pa
  // Scan / type: QR link on the slip, queue number, or HN digits — then act on that patient at this station.
  const findScanned = (text:string) => {
   const t = text.trim(); if (!t) return;
-  const token = t.match(/\/q\/([a-z0-9]+)/i)?.[1];
+  const token = t.match(/\/q\/([A-Za-z0-9_-]+)/)?.[1];
+  if (token && token.length>=20 && queue.resolveTicket) { // a link issued by the API: ask who it belongs to
+   void queue.resolveTicket(token).then(r=>{ if (r.ok && r.ticket) findScanned(patients.find(x=>x.id===r.ticket!.patientId)?.queue ?? t); else { setScan(''); setMsg({text:r.reason ?? `ไม่พบ ${t}`,bad:true}); } });
+   return;
+  }
   const p = token ? patients.find(x=>patientToken(x)===token) : patients.find(x=>x.queue===t.toUpperCase() || (t.replace(/\D/g,'').length>=4 && x.hn.replace(/\D/g,'').endsWith(t.replace(/\D/g,''))));
   setScan('');
   if (!p) { setMsg({text:`ไม่พบ ${t}`,bad:true}); return; }

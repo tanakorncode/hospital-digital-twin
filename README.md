@@ -27,6 +27,7 @@ WebSocket namespace: `/hospital`, events: `flow:update`, `live:snapshot` (on con
 - **First start:** when the user table is empty the API creates an administrator from `ADMIN_USERNAME` / `ADMIN_PASSWORD`. Without a password it generates one into `apps/api/data/initial-admin.txt` — change it after signing in.
 - **Roles:** `staff` (station actions), `supervisor` (+ per-department settings), `admin` (+ hospital-wide settings, service hours, layout, test clock, user accounts). The API checks every action; the audit trail records the signed-in user's name.
 - **Public screens:** `/tv` and the patient page `/q/<token>` need no sign-in (read-only, plus the patient's help request).
+- **Patient links:** `/q/<token>` tokens are 128-bit random values issued by the API (`ticket:issue`, staff only), valid until 23:59 of the service day. Staff can re-issue a lost slip (older links, including family links, stop working). A family link is a separate read-only token (`ticket:family`, ≤ 12 h, never past the patient's link). A help request must carry the patient's own valid link.
 - Sessions last `SESSION_HOURS` (default 12); 5 failed sign-ins in 5 minutes lock that username/address for 5 minutes.
 
 ## Realtime feed

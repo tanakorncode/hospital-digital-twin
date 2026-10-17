@@ -9,7 +9,8 @@ import type { Step } from '../../../lib/patients';
 import FloorPlanSvg, { liftSpot } from '../../../components/FloorPlanSvg';
 
 // Patient-facing status page opened from the QR on the queue slip. Shows only the queue number, clinic and journey —
-// never the HN or a name — and refreshes by itself. `?view=family&exp=…` is the read-only link a patient shares.
+// never the HN or a name — and refreshes by itself. The token is checked by the API (random, expires at the end of the
+// day); a family link is a separate read-only token made from the patient's page.
 type Note = {key:string; at:number; title:string; body:string};
 const loadJson = <T,>(k:string, d:T):T => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) as T : d; } catch { return d; } };
 const saveJson = (k:string, v:unknown) => { try { localStorage.setItem(k,JSON.stringify(v)); } catch { /* ignore */ } };
@@ -25,13 +26,19 @@ function QsLoading() {
 function QueueStatusPage() {
   const { token } = useParams<{token:string}>();
   const params = useSearchParams();
-  const family = params.get('view')==='family', exp = Number(params.get('exp') ?? 0);
-  const { events, send, settings } = useQueueEvents();
+  const { events, send, settings, online, resolveTicket, familyTicket } = useQueueEvents();
+  // Who this link belongs to: the API's answer, or — when the API can't be reached (local demo) — the offline demo link.
+  const [ticket,setTicket] = useState<{patientId?:string; kind?:'patient'|'family'; expiresAt?:string; error?:string; offline?:boolean}|null>(null);
+  useEffect(()=>{
+    if (online) { void resolveTicket(token).then(r=>setTicket(r.ok && r.ticket ? {patientId:r.ticket.patientId,kind:r.ticket.kind,expiresAt:r.ticket.expiresAt} : {error:r.reason ?? 'ไม่พบคิวนี้'})); return; }
+    const t = setTimeout(()=>setTicket(x=>x ?? {offline:true}),5000); return ()=>clearTimeout(t);
+  },[online,token,resolveTicket]);
+  const family = ticket?.kind==='family';
   const minute = useDemoClock(15000,settings.demoOffset ?? 0);
   const world = worldKey(settings);
   const all = useMemo(()=>{ applyWorld(settings); return generatePatients('demo-day'); },[world]); // eslint-disable-line react-hooks/exhaustive-deps
   const patients = useMemo(()=>applyQueueEvents(all,events),[all,events]);
-  const patient = patients.find(p=>patientToken(p)===token);
+  const patient = ticket?.patientId ? patients.find(p=>p.id===ticket.patientId) : ticket?.offline ? patients.find(p=>patientToken(p)===token) : undefined;
   const [notify,setNotify] = useState(false);
   const [notes,setNotes] = useState<Note[]>([]);
   const [toast,setToast] = useState<Note|null>(null);
@@ -65,8 +72,8 @@ function QueueStatusPage() {
     if (notify) navigator.vibrate?.(fresh.some(n=>n.key.startsWith('call'))?[300,120,300]:200);
   },[st?.status,st?.index,ahead,st?.step.assigned,notify,(minute ?? 0)>=(st?.step.ready ?? Infinity),events.length]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(()=>{ if (!toast) return; const t = setTimeout(()=>setToast(null),8000); return ()=>clearTimeout(t); },[toast]);
-  if (minute===null) return <QsLoading/>;
-  if (family && exp && Date.now()>exp) return <main className="qs"><section className="qsCard"><h1>ลิงก์หมดอายุแล้ว</h1><p>ลิงก์สำหรับญาติใช้ได้เฉพาะวันที่รับบริการ ขอลิงก์ใหม่จากผู้ป่วย</p></section></main>;
+  if (minute===null || !ticket) return <QsLoading/>;
+  if (ticket.error) return <main className="qs"><section className="qsCard"><h1>{ticket.error}</h1><p>QR ใช้ได้เฉพาะวันที่รับบัตรคิว · ถ้าบัตรหายหรือมีการออกบัตรใหม่ ลิงก์เดิมจะใช้ไม่ได้ · กรุณาติดต่อจุดประชาสัมพันธ์{family?'':' หรือขอลิงก์ใหม่จากผู้ป่วย (สำหรับญาติ)'}</p></section></main>;
   if (!patient) return <main className="qs"><section className="qsCard"><h1>ไม่พบคิวนี้</h1><p>QR อาจหมดอายุแล้ว (ใช้ได้เฉพาะวันที่รับบัตรคิว) กรุณาติดต่อจุดประชาสัมพันธ์</p></section></main>;
   const steps = patient.steps, current = st?.index ?? (m<patient.arrival ? -1 : steps.length);
   // Wayfinding, always: where to wait now (from the counter they just left), the room calling them (from their
@@ -84,14 +91,17 @@ function QueueStatusPage() {
   const lastHelp = lastReport ? helpRequests(events).find(h=>h.report.id===lastReport.id) : undefined, resolved = lastHelp?.closed, assignedTo = lastHelp?.assigned?.reason?.slice(7);
   const askHelp = async (topic:string) => { if (!st) return; setSheet(null);
     const where = st.step.manual ?? st.step.assigned ?? st.step.stationId ?? `group:${stepGroup(st)}`;
-    const r = await send({action:'report',at:m,station:where,patientId:patient.id,step:st.index,reason:topic,by:'ผู้ป่วย'});
+    const r = await send({action:'report',at:m,station:where,patientId:patient.id,step:st.index,reason:topic,by:'ผู้ป่วย',ticket:token});
     setToast({key:'help',at:m,title:r.ok?'ส่งเรื่องถึงเจ้าหน้าที่แล้ว':'ส่งไม่สำเร็จ',body:r.ok?`${topic} · ${scopeName(where.replace(/^group:/,''))}`:r.reason ?? ''}); };
   const shareFamily = async () => {
-    const end = new Date(); end.setHours(23,59,59,999);
-    const q = new URLSearchParams({view:'family',exp:String(end.getTime())}); ['demoStart','hour'].forEach(k=>{ const v = params.get(k); if (v!==null) q.set(k,v); });
-    const url = `${window.location.origin}/q/${token}?${q}`;
-    try { if (navigator.share) { await navigator.share({title:`ติดตามคิว ${patient.queue}`,url}); setToast({key:'share',at:m,title:'ส่งลิงก์ให้ญาติแล้ว',body:'ญาติเห็นเฉพาะเลขคิว ขั้นตอน และเส้นทาง · ใช้ได้ถึง 23:59'}); return; } } catch { /* cancelled */ }
-    try { await navigator.clipboard.writeText(url); setToast({key:'share',at:m,title:'คัดลอกลิงก์ให้ญาติแล้ว',body:'วางใน LINE ได้เลย · ญาติเห็นเฉพาะเลขคิว ขั้นตอน และเส้นทาง · ใช้ได้ถึง 23:59'}); } catch { setToast({key:'share',at:m,title:'ลิงก์สำหรับญาติ',body:url}); }
+    // A separate read-only token for family (the API refuses to make one from a family link).
+    const r:{ok:boolean; reason?:string; ticket?:{token:string; expiresAt?:string}} = ticket.offline ? {ok:true,ticket:{token}} : await familyTicket(token);
+    if (!r.ok || !r.ticket) { setToast({key:'share',at:m,title:'สร้างลิงก์ไม่สำเร็จ',body:r.reason ?? ''}); return; }
+    const q = new URLSearchParams(); ['demoStart','hour'].forEach(k=>{ const v = params.get(k); if (v!==null) q.set(k,v); });
+    const url = `${window.location.origin}/q/${r.ticket.token}${q.toString()?`?${q}`:''}`;
+    const until = r.ticket.expiresAt ? new Date(r.ticket.expiresAt).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'}) : '23:59';
+    try { if (navigator.share) { await navigator.share({title:`ติดตามคิว ${patient.queue}`,url}); setToast({key:'share',at:m,title:'ส่งลิงก์ให้ญาติแล้ว',body:`ญาติเห็นเฉพาะเลขคิว ขั้นตอน และเส้นทาง · ใช้ได้ถึง ${until} น.`}); return; } } catch { /* cancelled */ }
+    try { await navigator.clipboard.writeText(url); setToast({key:'share',at:m,title:'คัดลอกลิงก์ให้ญาติแล้ว',body:`วางใน LINE ได้เลย · ญาติเห็นเฉพาะเลขคิว ขั้นตอน และเส้นทาง · ใช้ได้ถึง ${until} น.`}); } catch { setToast({key:'share',at:m,title:'ลิงก์สำหรับญาติ',body:url}); }
   };
   const enableNotify = async () => {
     const on = !notify; setNotify(on); saveJson(`hdt.notify.${token}`,on);
@@ -113,7 +123,7 @@ function QueueStatusPage() {
       <span className="qsToastIco">{toast.key.startsWith('call') ? <BellRing size={20}/> : toast.key==='help'||toast.key.startsWith('porter') ? <HandHelping size={20}/> : <Bell size={20}/>}</span>
       <span className="qsToastText"><b>{toast.title}</b><span>{toast.body}</span></span><small>แตะเพื่อปิด</small></div>}
     <section className="qsCard">
-      {family && <p className="qsFamily">มุมมองญาติ · ดูได้อย่างเดียว · ลิงก์ใช้ได้ถึง 23:59 วันนี้</p>}
+      {family && <p className="qsFamily">มุมมองญาติ · ดูได้อย่างเดียว · ลิงก์ใช้ได้ถึง {ticket.expiresAt ? new Date(ticket.expiresAt).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'}) : '23:59'} น.</p>}
       <div className="qsHero">
         <div><p className="qsLabel">หมายเลขคิว{family?'ของผู้ป่วย':'ของคุณ'}</p><h1 className="qsQueue">{patient.queue}</h1><p className="qsDept">{patient.dept}</p></div>
         {st && <div className="qsRingWrap"><Ring progress={!waiting ? 1 : Math.min(0.97,Math.max(0.05,st.stepWait/(st.stepWait+Math.max(1,center))))}

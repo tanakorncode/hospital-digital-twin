@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { io, type Socket } from 'socket.io-client';
 import { apiSocket } from './api-url';
-import { DEFAULT_CAPACITY, NO_SHOW, labStationSpots, opdClinics, patientAt, screeningCounters, screeningStationId, xrayRoomSpots, type Patient, type PatientState, type StepKind } from './patients';
+import { DEFAULT_CAPACITY, NO_SHOW, labStationSpots, opdClinics, patientAt, patientToken, screeningCounters, screeningStationId, xrayRoomSpots, type Patient, type PatientState, type StepKind } from './patients';
 import { buildings, counterSpot, doctorName, isOff, layoutRevision, roomDutyAt, roomSpot, setLayout, setServiceHours, waitingSpot, type Layout, type Spot } from './scene-data';
 
 const DAY = 24*60;
@@ -73,7 +73,8 @@ const clinicWaitSpot = (clinicKey:string, seed:string) => { const c = opdClinics
 export type QueueAction = 'open'|'close'|'call'|'recall'|'start'|'hold'|'return'|'done'|'transfer'|'lock'|'unlock'|'pause'|'resume'|'config'|'report'|'resolve';
 export type QueueEvent = {id:string; at:number; station:string; action:QueueAction; patientId?:string; step?:number; reason?:string; returnAfter?:number; target?:string; position?:'keep'|'end'; by?:string; key?:string};
 export const SYSTEM_BY = 'ระบบ'; // `by` of moves made by the queue assistant
-export type QueueCommand = Omit<QueueEvent,'id'>;
+// ticket: a patient's help request carries their own page link (checked by the API, not stored).
+export type QueueCommand = Omit<QueueEvent,'id'> & {ticket?:string};
 
 // Replays staff events over the simulated journeys. A station that is open (staffed) takes over the steps the
 // simulator would have given it from that moment; a call from any station takes over that patient's step.
@@ -377,7 +378,33 @@ export type QueueSync = {events:QueueEvent[]; online:boolean; send:(cmd:QueueCom
   settings:QueueSettings; saveSettings:(patch:SettingsPatch, audit:{at:number; scope:string; summary:string; by?:string})=>Promise<Res>;
   // authReady: the API has said who this session is (null = not signed in). Offline there is no sign-in.
   user:AuthUser|null; authReady:boolean; login:(username:string, password:string)=>Promise<Res>; logout:()=>void;
-  listUsers:()=>Promise<{ok:boolean; reason?:string; users?:AuthUser[]}>; saveUser:(u:UserInput)=>Promise<{ok:boolean; reason?:string; users?:AuthUser[]}>};
+  listUsers:()=>Promise<{ok:boolean; reason?:string; users?:AuthUser[]}>; saveUser:(u:UserInput)=>Promise<{ok:boolean; reason?:string; users?:AuthUser[]}>;
+  resolveTicket:(token:string)=>Promise<TicketRes>; familyTicket:(token:string)=>Promise<TicketRes>};
+
+// ---- Patient links (/q/<token>) ----------------------------------------------------------------------------
+// The API issues random tokens that expire at the end of the day; staff can re-issue (older links stop working).
+// Offline (no API) the demo falls back to a link derived from the patient id — fine for a local demo only.
+export type Ticket = {token:string; patientId:string; kind:'patient'|'family'; expiresAt:string};
+export type TicketRes = {ok:boolean; reason?:string; code?:string; ticket?:Ticket};
+let ticketApi:((patientId:string, renew:boolean)=>Promise<TicketRes>)|null = null;
+const ticketListeners = new Set<()=>void>(), ticketCache = new Map<string,Ticket>();
+const setTicketApi = (fn:typeof ticketApi) => { ticketApi = fn; if (!fn) ticketCache.clear(); ticketListeners.forEach(l=>l()); };
+// The link for a patient's QR: {token, expiresAt} from the API, or the offline demo link. `active` = only ask when shown.
+export function useTicket(p:Patient, active:boolean) {
+  const [state,setState] = useState<{token:string; expiresAt?:string; offline?:boolean; error?:string}|null>(null);
+  const [rev,setRev] = useState(0);
+  useEffect(()=>{ const l = ()=>setRev(r=>r+1); ticketListeners.add(l); return ()=>{ ticketListeners.delete(l); }; },[]);
+  const load = useCallback(async (renew=false)=>{
+    if (!ticketApi) { setState({token:patientToken(p),offline:true}); return; }
+    const hit = ticketCache.get(p.id);
+    if (hit && !renew && hit.expiresAt>new Date().toISOString()) { setState({token:hit.token,expiresAt:hit.expiresAt}); return; }
+    const r = await ticketApi(p.id,renew);
+    if (r.ok && r.ticket) { ticketCache.set(p.id,r.ticket); setState({token:r.ticket.token,expiresAt:r.ticket.expiresAt}); }
+    else setState({token:'',error:r.reason ?? 'ออก QR ไม่สำเร็จ'});
+  },[p]);
+  useEffect(()=>{ if (active) void load(); },[active,load,rev]);
+  return {...(state ?? {token:''}),renew:()=>load(true)};
+}
 export function useQueueEvents():QueueSync {
   const [events,setEvents] = useState<QueueEvent[]>([]);
   const [online,setOnline] = useState(false);
@@ -418,6 +445,10 @@ export function useQueueEvents():QueueSync {
   const logout = useCallback(()=>{ void request('auth:logout',{}); try { localStorage.removeItem(sessionKey); } catch { /* ignore */ } setUser(null); },[request]);
   const listUsers = useCallback(()=>request<Res & {users?:AuthUser[]}>('users:list',{}),[request]);
   const saveUser = useCallback((u:UserInput)=>request<Res & {users?:AuthUser[]}>('users:save',u),[request]);
+  const resolveTicket = useCallback((token:string)=>request<TicketRes>('ticket:resolve',{token}),[request]);
+  const familyTicket = useCallback((token:string)=>request<TicketRes>('ticket:family',{token}),[request]);
+  // Signed-in staff on a connected screen: QR buttons get real links from the API.
+  useEffect(()=>{ setTicketApi(online && canDo(user,'staff') ? (patientId,renew)=>request<TicketRes>('ticket:issue',{patientId,renew}) : null); },[online,user,request]);
   const send = useCallback(async (cmd:QueueCommand)=>{
     const s = socket.current;
     if (s?.connected) return await request<Res>('queue:command',cmd);
@@ -432,7 +463,7 @@ export function useQueueEvents():QueueSync {
     addLocal({at:audit.at,station:audit.scope,action:'config',reason:audit.summary,by:audit.by});
     return {ok:true};
   },[request]);
-  return {events,online,send,settings,saveSettings,user,authReady,login,logout,listUsers,saveUser};
+  return {events,online,send,settings,saveSettings,user,authReady,login,logout,listUsers,saveUser,resolveTicket,familyTicket};
 }
 
 // Thai announcement, read character by character so queue numbers are unambiguous.

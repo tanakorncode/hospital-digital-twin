@@ -5,5 +5,6 @@ import { FlowGateway } from './flow.gateway';
 import { FlowService } from './flow.service';
 import { LiveFeedService } from './live-feed.service';
 import { QueueService } from './queue.service';
-@Module({ providers: [DbService, AuthService, FlowGateway, FlowService, LiveFeedService, QueueService] })
+import { TicketsService } from './tickets.service';
+@Module({ providers: [DbService, AuthService, FlowGateway, FlowService, LiveFeedService, QueueService, TicketsService] })
 export class AppModule {}

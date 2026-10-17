@@ -4,7 +4,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { Bell, MapPin, Tags, Route as RouteIcon, RotateCcw, FastForward, Building2, ChartColumn, ClipboardList, Clock, Droplet, House, Layers, ListOrdered, LocateFixed, Minus, Pill, Plus, Radiation, Search, Settings, Stethoscope, Thermometer, Users, UsersRound, Wallet, Hospital, LayoutGrid, Play, Pause, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, X, Ticket, UserRound, Accessibility, type LucideIcon, BrainCircuit } from 'lucide-react';
 import { findDepts, findDoctors, isOff, type DeptPlace, kiosks, kioskStatusLabel, type Kiosk, DENSITY_HIGH, DENSITY_LOW, doctorName, dutyLabel, findRoom, floorDutyAt, roomDutyAt, HOURS, HOUR_END, HOUR_START, REF_HOUR, buildingDensityAt, buildingStatsAt, buildings, buildingStats, clampHour, crowdFactor, demoFlows, densityColor, densityLevel, floorDepartments, fmtHour, hourlySeries, parkingLots, peakWindow, personTypes, roads, scopeAt, servicePointAt, servicePoints, type PersonType, type Scope, type ServicePoint } from '../lib/scene-data';
 import { useLiveFeed, type LiveStatus } from '../lib/live-feed';
-import { SYSTEM_BY, canDo, applyQueueEvents, applyWorld, queueAssist, rulesFor, suggestionText, useQueueEvents, worldKey } from '../lib/queue';
+import { SYSTEM_BY, canDo, useTicket, applyQueueEvents, applyWorld, queueAssist, rulesFor, suggestionText, useQueueEvents, worldKey } from '../lib/queue';
 import { demoOffset } from '../lib/use-demo-clock';
 import { LONG_WAIT, alertsAt, bottlenecksAt, etaOf, fmtDur, fmtMin, generatePatients, knownUntil, placeText, patientToken, kioskAt, maskHN, patientAt, searchPatients, statusColor as patientColor, statusText, stepText, type Patient, type StepKind } from '../lib/patients';
 import { LoginScreen, UserChip } from './LoginScreen';
@@ -87,8 +87,9 @@ function Timeline({scope,title,hour,nowHour,onHour,playing,onTogglePlay,onNow,fo
 // QR printed on the queue slip: opens the patient's own status page (no HN, no name).
 function SlipQR({p,minute}:{p:Patient;minute:number}) {
  const [src,setSrc] = useState('');
- const url = typeof window==='undefined' ? '' : `${window.location.origin}/q/${patientToken(p)}?hour=${(minute/60).toFixed(2)}`;
- useEffect(()=>{ if (url) QRCode.toDataURL(url,{margin:1,width:160}).then(setSrc).catch(()=>setSrc('')); },[url]);
+ const ticket = useTicket(p,true);
+ const url = typeof window==='undefined' || !ticket.token ? '' : `${window.location.origin}/q/${ticket.token}?hour=${(minute/60).toFixed(2)}`;
+ useEffect(()=>{ if (url) QRCode.toDataURL(url,{margin:1,width:160}).then(setSrc).catch(()=>setSrc('')); else setSrc(''); },[url]);
  return <a className="slipQR" href={url} target="_blank" rel="noreferrer" title="หน้าสถานะสำหรับผู้ป่วย">
   {src ? <img src={src} alt="QR หน้าสถานะคิว"/> : <span/>}<small>QR บนบัตรคิว<br/>ผู้ป่วยสแกนดูสถานะเอง</small></a>;
 }

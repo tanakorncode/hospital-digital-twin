@@ -6,9 +6,11 @@ import { allowOrigin } from './cors';
 import { FlowService, FlowUpdate } from './flow.service';
 import { LiveFeedService } from './live-feed.service';
 import { QueueService, type QueueCommand, type SettingsCommand } from './queue.service';
+import { TicketsService } from './tickets.service';
 
 // Who may do what. Public screens (TV boards, the patient's QR page) connect without signing in: they receive the
-// queue log and may only send a patient's help request ('report').
+// queue log, may look up a patient link ('ticket:resolve'), make a family link from a patient link, and send the
+// patient's help request ('report') — which must carry that patient's own valid link.
 //  staff       — station actions (call, start, done, hold, move…), take on help requests
 //  supervisor  — + per-department / per-station assistant settings
 //  admin       — + hospital-wide settings, service hours, layout, test clock, user accounts
@@ -23,7 +25,7 @@ const SIGN_IN = { ok: false, reason: 'กรุณาเข้าสู่ระ
 export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
   @WebSocketServer() server!: Server;
   private unsubscribe?: () => void;
-  constructor(private readonly flowService: FlowService, private readonly liveFeed: LiveFeedService, private readonly queue: QueueService, private readonly auth: AuthService) {}
+  constructor(private readonly flowService: FlowService, private readonly liveFeed: LiveFeedService, private readonly queue: QueueService, private readonly auth: AuthService, private readonly tickets: TicketsService) {}
   // Every connected dashboard receives each live snapshot ('live:update').
   afterInit() {
     this.unsubscribe = this.liveFeed.subscribe((snap) => this.server.emit('live:update', snap));
@@ -69,6 +71,24 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
     return res.ok ? { ok: true, user: res.user, users: this.auth.list() } : res;
   }
 
+  // ---- patient links (/q/<token>) ------------------------------------------------------------------------------
+  @SubscribeMessage('ticket:issue')
+  issueTicket(@ConnectedSocket() client: Socket, @MessageBody() body: { patientId?: string; renew?: boolean }) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (!may(me, 'staff')) return DENIED;
+    if (typeof body?.patientId !== 'string' || !/^[a-z]-\d{1,6}$/i.test(body.patientId)) return { ok: false, reason: 'ไม่ได้ระบุผู้ป่วย' };
+    return { ok: true, ticket: this.tickets.issue(body.patientId, me.name, !!body.renew) };
+  }
+  @SubscribeMessage('ticket:resolve')
+  resolveTicket(@MessageBody() body: { token?: string }) {
+    return this.tickets.check(body?.token);
+  }
+  @SubscribeMessage('ticket:family')
+  familyTicket(@MessageBody() body: { token?: string; hours?: number }) {
+    return this.tickets.family(body?.token ?? '', Number(body?.hours ?? 12));
+  }
+
   @SubscribeMessage('flow:subscribe')
   subscribe(@ConnectedSocket() client: Socket, @MessageBody() body: { floorId?: string }) {
     client.join(body?.floorId ? `floor:${body.floorId}` : 'campus');
@@ -79,7 +99,14 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
   @SubscribeMessage('queue:command')
   queueCommand(@ConnectedSocket() client: Socket, @MessageBody() cmd: QueueCommand) {
     const me = userOf(client);
-    if (cmd?.action === 'report') cmd = { ...cmd, by: undefined }; // a patient's help request: no account needed
+    if (cmd?.action === 'report') { // a patient's help request: no account, but it must come from that patient's own link
+      const t = this.tickets.check((cmd as QueueCommand & { ticket?: string }).ticket);
+      if (!t.ok) return { ok: false, reason: t.reason };
+      if (t.ticket.kind !== 'patient' || t.ticket.patientId !== cmd.patientId) return { ok: false, reason: 'ลิงก์นี้ส่งเรื่องแทนผู้ป่วยไม่ได้' };
+    }
+    const { ticket: _t, ...clean } = (cmd ?? {}) as QueueCommand & { ticket?: string };
+    cmd = clean as QueueCommand;
+    if (cmd?.action === 'report') cmd = { ...cmd, by: undefined };
     else if (!me) return SIGN_IN;
     else if (!may(me, 'staff')) return DENIED;
     // The audit trail names the signed-in user (not a name typed on the screen); the assistant's automatic moves stay "ระบบ".
