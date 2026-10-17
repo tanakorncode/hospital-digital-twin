@@ -19,6 +19,7 @@ import { WayfindingService } from './wayfinding.service';
 import { FeaturesService } from './features.service';
 import { IdempotencyService } from './idempotency.service';
 import { VisitsService, type EnterInput } from './visits.service';
+import { RetentionService } from './retention.service';
 
 // Who may do what. Public screens (TV boards, the patient's QR page) connect without signing in: they receive the
 // queue log, may look up a patient link ('ticket:resolve'), make a family link from a patient link, and send the
@@ -62,7 +63,7 @@ function attempt<T>(fn: () => T) {
 export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
   @WebSocketServer() server!: Server;
   private unsubscribe?: () => void;
-  constructor(private readonly flowService: FlowService, private readonly liveFeed: LiveFeedService, private readonly queue: QueueService, private readonly auth: AuthService, private readonly tickets: TicketsService, private readonly line: LineService, private readonly audit: AuditService, private readonly features: FeaturesService, private readonly visits: VisitsService, private readonly idempotency: IdempotencyService, private readonly booking: BookingService, private readonly checkin: CheckInService, private readonly appts: AppointmentService, private readonly identity: PatientIdentityService, private readonly notify: NotificationService, private readonly wayfinding: WayfindingService) {}
+  constructor(private readonly flowService: FlowService, private readonly liveFeed: LiveFeedService, private readonly queue: QueueService, private readonly auth: AuthService, private readonly tickets: TicketsService, private readonly line: LineService, private readonly audit: AuditService, private readonly features: FeaturesService, private readonly visits: VisitsService, private readonly idempotency: IdempotencyService, private readonly booking: BookingService, private readonly checkin: CheckInService, private readonly appts: AppointmentService, private readonly identity: PatientIdentityService, private readonly notify: NotificationService, private readonly wayfinding: WayfindingService, private readonly retention: RetentionService) {}
   // Every connected dashboard receives each live snapshot ('live:update').
   afterInit() {
     this.unsubscribe = this.liveFeed.subscribe((snap) => this.server.emit('live:update', snap));
@@ -175,6 +176,33 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
     if (!me) return SIGN_IN;
     if (!may(me, 'admin')) return DENIED;
     return { ok: true, entries: this.audit.list({ targetType: typeof body?.targetType === 'string' ? body.targetType : undefined, targetId: typeof body?.targetId === 'string' ? body.targetId : undefined, limit: Number(body?.limit) || undefined }) };
+  }
+
+  // How long records are kept (administrators). 'retention:get' also says what the saved — or the proposed — settings
+  // would remove now, so the effect is visible before saving.
+  @SubscribeMessage('retention:get')
+  retentionGet(@ConnectedSocket() client: Socket, @MessageBody() body: { proposed?: unknown }) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (!may(me, 'admin')) return DENIED;
+    return attempt(() => {
+      const proposed = body?.proposed ? this.retention.check(body.proposed) : undefined;
+      return { ok: true, settings: this.retention.settings(), last: this.retention.lastRun(), preview: this.retention.run({ dryRun: true, with: proposed }).removed };
+    });
+  }
+  @SubscribeMessage('retention:set')
+  retentionSet(@ConnectedSocket() client: Socket, @MessageBody() body: { patch?: unknown }) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (!may(me, 'admin')) return DENIED;
+    return attempt(() => ({ ok: true, settings: this.retention.set(body?.patch, `user:${me.id}`) }));
+  }
+  @SubscribeMessage('retention:run')
+  retentionRun(@ConnectedSocket() client: Socket) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (!may(me, 'admin')) return DENIED;
+    return attempt(() => { const r = this.retention.run(); this.audit.record({ ...actor(me), action: 'retention.run', targetType: 'database', meta: r.removed }); return { ok: true, last: r }; });
   }
 
   // ---- patient links (/q/<token>) ------------------------------------------------------------------------------

@@ -16,7 +16,8 @@ const actionText:Record<string,string> = {
  'appointment.cancel':'ยกเลิกนัด','appointment.reschedule':'เลื่อนนัด','appointment.reschedule.request':'ขอเลื่อนนัด','appointment.reschedule.approve':'อนุมัติเลื่อนนัด',
  'appointment.reschedule.reject':'ไม่อนุมัติเลื่อนนัด','appointment.noshow':'บันทึกไม่มาตามนัด','appointment.search.hn':'ค้นนัดด้วย HN','line.link':'เชื่อมบัญชี LINE',
  'line.unlink':'ยกเลิกเชื่อม LINE (ผู้ป่วย)','line.revoke':'ยกเลิกเชื่อม LINE (เจ้าหน้าที่)','line.status':'ตรวจสถานะเชื่อม LINE','notify.retry':'ส่งข้อความใหม่',
- 'wayfinding.save':'แก้จุดนำทาง','wayfinding.import':'นำเข้าจุดนำทาง','wayfinding.retire':'เลิกใช้จุดนำทาง'};
+ 'wayfinding.save':'แก้จุดนำทาง','wayfinding.import':'นำเข้าจุดนำทาง','wayfinding.retire':'เลิกใช้จุดนำทาง',
+ 'retention.update':'แก้ระยะเวลาเก็บข้อมูล','retention.run':'สั่งล้างข้อมูลเก่า','retention.purge':'ลบข้อมูลเก่าตามระยะเวลาเก็บ'};
 const groups:[string,string][] = [['','ทั้งหมด'],['user','บัญชีผู้ใช้'],['settings','การตั้งค่า'],['feature','ฟีเจอร์'],['booking','การจอง'],['appointment','นัดหมาย'],['visit','คิว'],
  ['line-link','บัญชี LINE'],['patient-search','การค้นข้อมูลผู้ป่วย'],['destination','จุดนำทาง']];
 const when = (iso:string) => new Date(iso).toLocaleString('th-TH',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',second:'2-digit'});

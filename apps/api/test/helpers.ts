@@ -19,6 +19,7 @@ import { PatientController } from '../src/patient.controller';
 import { NotificationService } from '../src/notification.service';
 import { WayfindingService } from '../src/wayfinding.service';
 import { VisitsService } from '../src/visits.service';
+import { RetentionService } from '../src/retention.service';
 
 Logger.overrideLogger(false); // keep test output clean
 
@@ -36,7 +37,8 @@ export function makeApi() {
   const booking = new BookingService(db), appts = new AppointmentService(db), checkin = new CheckInService(db, booking, visits, appts), identity = new PatientIdentityService(db, booking);
   const notify = new NotificationService(db, features, identity, visits), wayfinding = new WayfindingService(db);
   const queue = new QueueService(db, visits), tickets = new TicketsService(db), line = new LineService(db, tickets, notify, wayfinding, features);
-  const gateway = new FlowGateway(new FlowService(), new LiveFeedService(), queue, auth, tickets, line, audit, features, visits, idempotency, booking, checkin, appts, identity, notify, wayfinding);
+  const retention = new RetentionService(db, audit);
+  const gateway = new FlowGateway(new FlowService(), new LiveFeedService(), queue, auth, tickets, line, audit, features, visits, idempotency, booking, checkin, appts, identity, notify, wayfinding, retention);
   // Broadcasts: `to` = only that room (staff), `except` = everyone else (public screens), neither = everyone.
   const emitted: { event: string; data: unknown; to?: string; except?: string }[] = [];
   // `sockets`: the connected screens (signIn adds its socket), so account changes can reach screens already open.
@@ -47,7 +49,7 @@ export function makeApi() {
     to: (room: string) => ({ emit: (event: string, data: unknown) => emitted.push({ event, data, to: room }) }),
     except: (room: string) => ({ emit: (event: string, data: unknown) => emitted.push({ event, data, except: room }) }),
   };
-  return { db, auth, queue, tickets, line, audit, features, idempotency, visits, booking, appts, checkin, identity, notify, wayfinding, gateway, emitted, sockets };
+  return { db, auth, queue, tickets, line, audit, features, idempotency, visits, booking, appts, checkin, identity, notify, wayfinding, gateway, emitted, sockets, retention };
 }
 // A socket as the gateway sees it, optionally signed in with a session token.
 export function fakeSocket(token = '') {
