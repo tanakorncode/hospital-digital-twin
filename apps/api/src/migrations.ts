@@ -164,4 +164,92 @@ export const MIGRATIONS: Migration[] = [
         UNIQUE (source_type, source_id));
     `,
   },
+  {
+    version: 5,
+    name: 'doctor appointments',
+    sql: `
+      -- Doctor appointments: a separate domain from general booking — own rules, own capacity, own codes (AP…).
+      -- If the hospital's HIS already owns appointments, leave this switched off (no second schedule).
+      CREATE TABLE appointment_policies (
+        clinic_code TEXT PRIMARY KEY,
+        display_name TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0,1)),
+        advance_days INTEGER NOT NULL DEFAULT 90 CHECK (advance_days BETWEEN 0 AND 365),
+        cancel_cutoff_minutes INTEGER NOT NULL DEFAULT 1440 CHECK (cancel_cutoff_minutes BETWEEN 0 AND 20160),
+        reschedule_needs_approval INTEGER NOT NULL DEFAULT 1 CHECK (reschedule_needs_approval IN (0,1)),
+        patient_selects_provider INTEGER NOT NULL DEFAULT 0 CHECK (patient_selects_provider IN (0,1)),
+        queue_prefix TEXT,
+        checkin_early_minutes INTEGER NOT NULL DEFAULT 120,
+        checkin_late_minutes INTEGER NOT NULL DEFAULT 60,
+        policy_version INTEGER NOT NULL DEFAULT 1,
+        updated_at TEXT NOT NULL,
+        updated_by TEXT);
+
+      -- A doctor's clinic session (one day, one block of time). provider_code = the doctor's code in the HIS / licence no.
+      CREATE TABLE provider_schedules (
+        id TEXT PRIMARY KEY,
+        provider_code TEXT NOT NULL,
+        provider_name TEXT NOT NULL,
+        clinic_code TEXT NOT NULL,
+        starts_at TEXT NOT NULL,
+        ends_at TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN','CLOSED','CANCELLED')),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        CHECK (starts_at < ends_at),
+        UNIQUE (provider_code, starts_at));
+      CREATE INDEX provider_schedules_clinic_time ON provider_schedules (clinic_code, starts_at, status);
+
+      CREATE TABLE appointment_slots (
+        id TEXT PRIMARY KEY,
+        schedule_id TEXT NOT NULL REFERENCES provider_schedules(id),
+        starts_at TEXT NOT NULL,
+        ends_at TEXT NOT NULL,
+        capacity INTEGER NOT NULL CHECK (capacity >= 0),
+        reserved_count INTEGER NOT NULL DEFAULT 0 CHECK (reserved_count >= 0 AND reserved_count <= capacity),
+        status TEXT NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN','CLOSED','CANCELLED')),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        CHECK (starts_at < ends_at),
+        UNIQUE (schedule_id, starts_at));
+      CREATE INDEX appointment_slots_schedule_time ON appointment_slots (schedule_id, starts_at, status);
+
+      -- While a reschedule request waits, the appointment keeps its confirmed slot (status stays CONFIRMED).
+      -- NO_SHOW is only ever set by authorised staff with a reason — never from LINE inactivity.
+      CREATE TABLE appointments (
+        id TEXT PRIMARY KEY,
+        appointment_code TEXT NOT NULL UNIQUE,
+        patient_profile_id TEXT NOT NULL REFERENCES patient_profiles(id),
+        slot_id TEXT NOT NULL REFERENCES appointment_slots(id),
+        clinic_code TEXT NOT NULL,
+        provider_code TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('CONFIRMED','CANCELLED','CHECKED_IN','COMPLETED','NO_SHOW','EXPIRED')),
+        channel TEXT NOT NULL CHECK (channel IN ('STAFF','LINE')),
+        created_by TEXT,
+        visit_id TEXT,
+        checked_in_at TEXT,
+        cancelled_at TEXT,
+        cancellation_reason TEXT,
+        cancelled_by TEXT,
+        no_show_reason TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL);
+      CREATE INDEX appointments_patient_status ON appointments (patient_profile_id, status);
+      CREATE INDEX appointments_slot_status ON appointments (slot_id, status);
+
+      CREATE TABLE appointment_reschedule_requests (
+        id TEXT PRIMARY KEY,
+        appointment_id TEXT NOT NULL REFERENCES appointments(id),
+        requested_slot_id TEXT NOT NULL REFERENCES appointment_slots(id),
+        status TEXT NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING','APPROVED','REJECTED','CANCELLED')),
+        reason TEXT,
+        requested_by TEXT,
+        decided_by TEXT,
+        decided_at TEXT,
+        decision_note TEXT,
+        created_at TEXT NOT NULL);
+      -- At most one waiting request per appointment.
+      CREATE UNIQUE INDEX appointment_requests_pending ON appointment_reschedule_requests (appointment_id) WHERE status = 'PENDING';
+    `,
+  },
 ];

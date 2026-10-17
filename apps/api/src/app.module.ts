@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AuditService } from './audit.service';
+import { AppointmentService } from './appointment.service';
 import { AuthService } from './auth.service';
 import { BookingService } from './booking.service';
 import { CheckInService } from './checkin.service';
@@ -16,5 +17,5 @@ import { LiveFeedService } from './live-feed.service';
 import { QueueService } from './queue.service';
 import { TicketsService } from './tickets.service';
 import { VisitsService } from './visits.service';
-@Module({ controllers: [HealthController, IngestController, LineController], providers: [DbService, AuditService, IdempotencyService, FeaturesService, AuthService, FlowGateway, FlowService, LiveFeedService, QueueService, TicketsService, LineService, VisitsService, BookingService, CheckInService] })
+@Module({ controllers: [HealthController, IngestController, LineController], providers: [DbService, AuditService, IdempotencyService, FeaturesService, AuthService, FlowGateway, FlowService, LiveFeedService, QueueService, TicketsService, LineService, VisitsService, BookingService, AppointmentService, CheckInService] })
 export class AppModule {}

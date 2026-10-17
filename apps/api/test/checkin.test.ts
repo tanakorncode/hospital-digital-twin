@@ -33,7 +33,7 @@ test('checking in turns the booking into a queue number, with the booked time be
   assert.equal(r.ok, true, r.reason);
   assert.equal(r.already, false);
   assert.equal(r.visit!.queue, 'A001');
-  assert.equal(r.visit!.bookedSlot, '09:00–10:00');
+  assert.equal(r.visit!.bookedSlot, 'จอง 09:00–10:00');
   assert.deepEqual(r.visit!.steps.map((s) => s.kind), ['screening', 'exam']);
   assert.ok(r.ticket!.token.length >= 20, 'the patient page link for the slip');
   assert.equal(api.booking.get(b.id)!.status, 'CONVERTED_TO_QUEUE');

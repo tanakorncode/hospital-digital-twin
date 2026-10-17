@@ -12,6 +12,7 @@ import { AuditService } from './audit.service';
 import { AppError, fail } from './errors';
 import { BookingService } from './booking.service';
 import { CheckInService } from './checkin.service';
+import { AppointmentService } from './appointment.service';
 import { FeaturesService } from './features.service';
 import { IdempotencyService } from './idempotency.service';
 import { VisitsService, type EnterInput } from './visits.service';
@@ -51,7 +52,7 @@ function attempt<T>(fn: () => T) {
 export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
   @WebSocketServer() server!: Server;
   private unsubscribe?: () => void;
-  constructor(private readonly flowService: FlowService, private readonly liveFeed: LiveFeedService, private readonly queue: QueueService, private readonly auth: AuthService, private readonly tickets: TicketsService, private readonly line: LineService, private readonly audit: AuditService, private readonly features: FeaturesService, private readonly visits: VisitsService, private readonly idempotency: IdempotencyService, private readonly booking: BookingService, private readonly checkin: CheckInService) {}
+  constructor(private readonly flowService: FlowService, private readonly liveFeed: LiveFeedService, private readonly queue: QueueService, private readonly auth: AuthService, private readonly tickets: TicketsService, private readonly line: LineService, private readonly audit: AuditService, private readonly features: FeaturesService, private readonly visits: VisitsService, private readonly idempotency: IdempotencyService, private readonly booking: BookingService, private readonly checkin: CheckInService, private readonly appts: AppointmentService) {}
   // Every connected dashboard receives each live snapshot ('live:update').
   afterInit() {
     this.unsubscribe = this.liveFeed.subscribe((snap) => this.server.emit('live:update', snap));
@@ -367,26 +368,172 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
     });
   }
 
-  // ---- Check-in (stage 2.3) ------------------------------------------------------------------------------------------
-  // A booked patient arrives: at the kiosk (code typed or scanned, only inside the check-in window) or at the counter.
-  // Answers with the queue number and the link for the patient's QR — the same ones if it was already done.
-  @SubscribeMessage('checkin:booking')
-  checkInBooking(@ConnectedSocket() client: Socket, @MessageBody() body: { code?: unknown; channel?: unknown; at?: unknown; prefix?: unknown }) {
+  // ---- Check-in (stages 2.3 / 2.4) -----------------------------------------------------------------------------------
+  // A patient with a booking (BK…) or an appointment (AP…) arrives: at the kiosk (code typed or scanned, only inside the
+  // check-in window) or at the counter. Answers with the queue number and the link for the patient's QR — the same
+  // ones if it was already done.
+  @SubscribeMessage('checkin:code')
+  checkInCode(@ConnectedSocket() client: Socket, @MessageBody() body: { code?: unknown; channel?: unknown; at?: unknown; prefix?: unknown }) {
     const me = userOf(client);
     if (!me) return SIGN_IN;
     if (overLimit(client, 'command')) return SLOW;
     return attempt(() => {
       if (this.queue.getSettings().dataMode !== 'live') throw new AppError('POLICY_REJECTED', 'ระบบอยู่ในโหมดสาธิต — เช็กอินเข้าคิวจริงได้เมื่อเปิดโหมดผู้ป่วยจริง');
       const channel = body?.channel === 'KIOSK' ? 'KIOSK' : 'COUNTER';
-      const r = this.checkin.checkInBooking(body?.code, { channel, at: body?.at, by: `user:${me.id}`, prefix: body?.prefix });
+      const r = this.checkin.checkIn(body?.code, { channel, at: body?.at, by: `user:${me.id}`, prefix: body?.prefix });
       if (!r.already) {
-        this.audit.record({ ...actor(me), action: 'checkin.booking', targetType: 'booking', targetId: r.booking.id, meta: { channel, late: r.late, visit: r.visit.id } });
+        const booking = r.source.kind === 'BOOKING';
+        this.audit.record({ ...actor(me), action: booking ? 'checkin.booking' : 'checkin.appointment', targetType: booking ? 'booking' : 'appointment', targetId: r.source.id,
+          meta: { channel, late: r.late, visit: r.visit.id } });
         this.server.emit('visit', r.visit);
-        this.bookingChanged(r.booking.serviceCode, r.booking.startsAt);
+        if (booking) this.bookingChanged(r.visit.clinicKey ?? '', r.source.startsAt); else this.apptChanged();
       }
       const ticket = this.tickets.issue(r.visit.id, me.name);
-      return { ok: true, already: r.already, late: r.late, visit: r.visit, ticket: { token: ticket.token, expiresAt: ticket.expiresAt },
-        booking: { code: r.booking.code, serviceName: r.booking.serviceName, startsAt: r.booking.startsAt, endsAt: r.booking.endsAt } };
+      const { id: _id, ...source } = r.source;
+      return { ok: true, already: r.already, late: r.late, visit: r.visit, ticket: { token: ticket.token, expiresAt: ticket.expiresAt }, source };
+    });
+  }
+  // Older name (stage 2.3 screens).
+  @SubscribeMessage('checkin:booking')
+  checkInBooking(@ConnectedSocket() client: Socket, @MessageBody() body: { code?: unknown; channel?: unknown; at?: unknown; prefix?: unknown }) {
+    return this.checkInCode(client, body);
+  }
+
+  // ---- Doctor appointments (stage 2.4) ------------------------------------------------------------------------------
+  // Administrators: rules per clinic and doctors' sessions. Staff: make, move, cancel appointments for patients, and
+  // decide on requests to move. Supervisors: record a no-show (after the time, with a reason).
+  private apptChanged() { this.server.to(STAFF_ROOM).emit('appointment:changed', {}); }
+  private staffActor(me: User) { return { kind: 'staff' as const, id: me.id, canOverride: may(me, 'supervisor') && this.features.on('staffOverrides') }; }
+  @SubscribeMessage('appt:policies')
+  apptPolicies(@ConnectedSocket() client: Socket) {
+    if (!userOf(client)) return SIGN_IN;
+    return { ok: true, policies: this.appts.policies(), enabled: this.features.on('appointments') };
+  }
+  @SubscribeMessage('appt:policy:set')
+  setApptPolicy(@ConnectedSocket() client: Socket, @MessageBody() body: Record<string, unknown>) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (!may(me, 'admin')) return DENIED;
+    return attempt(() => {
+      const p = this.appts.setPolicy(body ?? {}, me.name);
+      this.audit.record({ ...actor(me), action: 'appointment.policy', targetType: 'appointment-policy', targetId: p.clinicCode,
+        meta: { version: p.version, enabled: p.enabled, advanceDays: p.advanceDays, cancelCutoffMinutes: p.cancelCutoffMinutes, rescheduleNeedsApproval: p.rescheduleNeedsApproval } });
+      this.apptChanged();
+      return { ok: true, policy: p };
+    });
+  }
+  @SubscribeMessage('appt:sessions:create')
+  createApptSessions(@ConnectedSocket() client: Socket, @MessageBody() body: Record<string, unknown>) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (!may(me, 'admin')) return DENIED;
+    return attempt(() => {
+      const r = this.appts.createSessions(body ?? {});
+      this.audit.record({ ...actor(me), action: 'appointment.sessions.create', targetType: 'appointment-policy', targetId: String(body?.clinicCode),
+        meta: { provider: body?.providerCode, sessions: r.sessions, conflicts: r.conflicts.length } });
+      this.apptChanged();
+      return { ok: true, ...r };
+    });
+  }
+  @SubscribeMessage('appt:sessions')
+  apptSessions(@ConnectedSocket() client: Socket, @MessageBody() body: { clinicCode?: unknown; date?: unknown }) {
+    if (!userOf(client)) return SIGN_IN;
+    return attempt(() => ({ ok: true, sessions: this.appts.sessions(body?.clinicCode, body?.date) }));
+  }
+  @SubscribeMessage('appt:session:set')
+  setApptSession(@ConnectedSocket() client: Socket, @MessageBody() body: { sessionId?: unknown; status?: unknown; reason?: unknown }) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (!may(me, 'admin')) return DENIED;
+    return attempt(() => {
+      const r = this.appts.setSession(body?.sessionId, body ?? {}, `user:${me.id}`);
+      this.audit.record({ ...actor(me), action: 'appointment.session.update', targetType: 'provider-schedule', targetId: r.session.id,
+        reason: typeof body?.reason === 'string' ? body.reason : undefined, meta: { status: r.session.status, cancelledAppointments: r.cancelled.length } });
+      for (const a of r.cancelled) this.audit.record({ ...actor(me), action: 'appointment.cancel', targetType: 'appointment', targetId: a.id, reason: a.cancellationReason, meta: { sessionCancelled: true } });
+      this.apptChanged();
+      return { ok: true, session: r.session, cancelled: r.cancelled.length };
+    });
+  }
+  @SubscribeMessage('appt:slots')
+  apptSlots(@ConnectedSocket() client: Socket, @MessageBody() body: { clinicCode?: unknown; date?: unknown; providerCode?: unknown; bookable?: boolean }) {
+    if (!userOf(client)) return SIGN_IN;
+    return attempt(() => ({ ok: true, slots: body?.bookable ? this.appts.bookable(body.clinicCode, body.date, body.providerCode) : this.appts.slots(body?.clinicCode, body?.date, body?.providerCode) }));
+  }
+  @SubscribeMessage('appt:create')
+  createAppt(@ConnectedSocket() client: Socket, @MessageBody() body: { hn?: unknown; slotId?: unknown; key?: unknown }) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (overLimit(client, 'command')) return SLOW;
+    return attempt(() => {
+      this.features.require('appointments');
+      const { key, ...input } = body ?? {};
+      const { result, replayed } = this.idempotency.run(`appointment:create:user:${me.id}`, key, input, () =>
+        this.appts.create(this.booking.profileForHN(input.hn), input.slotId, 'STAFF', `user:${me.id}`));
+      if (!replayed) { this.audit.record({ ...actor(me), action: 'appointment.create', targetType: 'appointment', targetId: result.id, meta: { clinic: result.clinicCode } }); this.apptChanged(); }
+      return { ok: true, appointment: result };
+    });
+  }
+  @SubscribeMessage('appt:cancel')
+  cancelAppt(@ConnectedSocket() client: Socket, @MessageBody() body: { appointmentId?: unknown; reason?: unknown }) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    return attempt(() => {
+      const r = this.appts.cancel(body?.appointmentId, body?.reason, this.staffActor(me));
+      if (r.changed) { this.audit.record({ ...actor(me), action: 'appointment.cancel', targetType: 'appointment', targetId: r.appointment.id, reason: r.appointment.cancellationReason, meta: { override: r.override } }); this.apptChanged(); }
+      return { ok: true, appointment: r.appointment };
+    });
+  }
+  // Staff move an appointment now (the patient asked at the counter / on the phone).
+  @SubscribeMessage('appt:reschedule')
+  rescheduleAppt(@ConnectedSocket() client: Socket, @MessageBody() body: { appointmentId?: unknown; slotId?: unknown; key?: unknown }) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    return attempt(() => {
+      this.features.require('appointments');
+      const { key, ...input } = body ?? {};
+      const before = this.appts.get(input.appointmentId);
+      const { result, replayed } = this.idempotency.run(`appointment:reschedule:user:${me.id}`, key, input, () => this.appts.reschedule(input.appointmentId, input.slotId, this.staffActor(me)));
+      if (!replayed) { this.audit.record({ ...actor(me), action: 'appointment.reschedule', targetType: 'appointment', targetId: result.id, meta: { from: before?.startsAt, to: result.startsAt } }); this.apptChanged(); }
+      return { ok: true, appointment: result };
+    });
+  }
+  @SubscribeMessage('appt:requests')
+  apptRequests(@ConnectedSocket() client: Socket, @MessageBody() body: { status?: unknown }) {
+    if (!userOf(client)) return SIGN_IN;
+    return attempt(() => ({ ok: true, requests: this.appts.requests(body?.status) }));
+  }
+  @SubscribeMessage('appt:decide')
+  decideAppt(@ConnectedSocket() client: Socket, @MessageBody() body: { requestId?: unknown; approve?: unknown; note?: unknown }) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    return attempt(() => {
+      const r = this.appts.decide(body?.requestId, body?.approve, body?.note, this.staffActor(me));
+      this.audit.record({ ...actor(me), action: r.status === 'APPROVED' ? 'appointment.reschedule.approve' : 'appointment.reschedule.reject', targetType: 'appointment', targetId: r.appointment.id, reason: r.decisionNote });
+      this.apptChanged();
+      return { ok: true, request: r };
+    });
+  }
+  @SubscribeMessage('appt:noshow')
+  noShowAppt(@ConnectedSocket() client: Socket, @MessageBody() body: { appointmentId?: unknown; reason?: unknown }) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (!may(me, 'supervisor')) return { ...DENIED, reason: 'เฉพาะหัวหน้างานบันทึกไม่มาตามนัดได้' };
+    return attempt(() => {
+      const a = this.appts.markNoShow(body?.appointmentId, body?.reason, `user:${me.id}`);
+      this.audit.record({ ...actor(me), action: 'appointment.noshow', targetType: 'appointment', targetId: a.id, reason: a.noShowReason });
+      this.apptChanged();
+      return { ok: true, appointment: a };
+    });
+  }
+  @SubscribeMessage('appt:list')
+  listAppts(@ConnectedSocket() client: Socket, @MessageBody() body: { date?: unknown; clinicCode?: unknown; code?: unknown; hn?: unknown }) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (overLimit(client, 'command')) return SLOW;
+    return attempt(() => {
+      const list = this.appts.list(body ?? {});
+      if (typeof body?.hn === 'string' && body.hn.trim()) this.audit.record({ ...actor(me), action: 'appointment.search.hn', targetType: 'patient-search', meta: { results: list.length } });
+      return { ok: true, appointments: list };
     });
   }
 

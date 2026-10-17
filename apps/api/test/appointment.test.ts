@@ -1,0 +1,181 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import type { Appointment, ApptSlot, RescheduleRequest } from '../src/appointment.service';
+import { localInstant } from '../src/booking.service';
+import type { AppError } from '../src/errors';
+import type { Visit } from '../src/visits.service';
+import { ADMIN_PASSWORD, makeApi, signIn } from './helpers';
+
+type R = { ok: boolean; code?: string; reason?: string; appointment?: Appointment; request?: RescheduleRequest; slots?: ApptSlot[]; appointments?: Appointment[];
+  sessions?: number; skipped?: number; conflicts?: string[]; cancelled?: number; visit?: Visit; already?: boolean };
+const MED = 'opd-2-0', EYE = 'opd-4-1';
+let n = 0;
+const key = () => `ap-key-${String(++n).padStart(6, '0')}`;
+const codeOf = (fn: () => unknown) => { try { fn(); } catch (e) { return (e as AppError).code; } return undefined; };
+
+// Monday 2 Nov 2026, 10:00. Dr A: Tue–Thu 09:00–12:00 in 30-min slots of 2. Dr B: Tue 13:00–15:00.
+function setup(opts: { approval?: boolean; cutoff?: number } = {}) {
+  const api = makeApi();
+  const setNow = (d: Date) => { api.appts.now = () => d; api.booking.now = () => d; };
+  setNow(localInstant('2026-11-02', '10:00'));
+  const admin = signIn(api, 'admin', ADMIN_PASSWORD);
+  api.gateway.setFeatures(admin, { patch: { appointments: true } });
+  for (const [c, name] of [[MED, 'อายุรกรรมทั่วไป'], [EYE, 'ตา']])
+    api.gateway.setApptPolicy(admin, { clinicCode: c, displayName: name, enabled: true, queuePrefix: c === MED ? 'A' : 'H', rescheduleNeedsApproval: opts.approval ?? true, cancelCutoffMinutes: opts.cutoff ?? 1440 });
+  const made = api.gateway.createApptSessions(admin, { clinicCode: MED, providerCode: 'D001', providerName: 'นพ.สมชาย ใจดี', from: '2026-11-03', to: '2026-11-05', weekdays: [2, 3, 4], start: '09:00', end: '12:00', minutes: 30, capacity: 2 }) as R;
+  api.gateway.createApptSessions(admin, { clinicCode: MED, providerCode: 'D002', providerName: 'พญ.สมศรี รักษา', from: '2026-11-03', to: '2026-11-03', weekdays: [2], start: '13:00', end: '15:00', minutes: 30, capacity: 2 });
+  api.gateway.saveUser(admin, { username: 'staff.a', name: 'A', role: 'staff', password: 'password-1' });
+  api.gateway.saveUser(admin, { username: 'head.b', name: 'B', role: 'supervisor', password: 'password-2' });
+  const staff = signIn(api, 'staff.a', 'password-1'), head = signIn(api, 'head.b', 'password-2');
+  const slot = (date: string, time: string, provider = 'D001') => api.appts.slots(MED, date, provider).find((s) => s.startsAt === localInstant(date, time).toISOString())!;
+  const make = (hn: string, date = '2026-11-03', time = '09:00', provider = 'D001') => api.gateway.createAppt(staff, { hn, slotId: slot(date, time, provider).id, key: key() }) as R;
+  return { api, admin, staff, head, slot, make, setNow, made };
+}
+
+test('administrators set rules and doctors\' sessions; a doctor is never in two sessions at once', () => {
+  const { api, admin, staff, made } = setup();
+  assert.deepEqual([made.sessions, made.conflicts!.length], [3, 0]);
+  assert.equal(api.appts.slots(MED, '2026-11-03').length, 6 + 4, 'Dr A 6 slots + Dr B 4 slots');
+  assert.equal((api.gateway.setApptPolicy(staff, { clinicCode: MED, enabled: false }) as R).code, 'FORBIDDEN');
+  const again = api.gateway.createApptSessions(admin, { clinicCode: MED, providerCode: 'D001', providerName: 'นพ.สมชาย ใจดี', from: '2026-11-03', to: '2026-11-03', weekdays: [2], start: '09:00', end: '12:00', minutes: 30, capacity: 2 }) as R;
+  assert.equal(again.skipped, 1, 'the same session again is skipped');
+  const clash = api.gateway.createApptSessions(admin, { clinicCode: EYE, providerCode: 'D001', providerName: 'นพ.สมชาย ใจดี', from: '2026-11-04', to: '2026-11-04', weekdays: [3], start: '10:00', end: '11:00', minutes: 30, capacity: 2 }) as R;
+  assert.deepEqual([clash.sessions, clash.conflicts], [0, ['2026-11-04']], 'overlaps his medicine session that day');
+  assert.equal((api.gateway.apptSessions(staff, { clinicCode: MED, date: '2026-11-03' }) as { sessions: unknown[] }).sessions.length, 2);
+});
+
+test('staff make an appointment by HN: an AP code, the doctor, the HN masked; one per clinic per day', () => {
+  const { api, admin, make } = setup();
+  const r = make('65-123456');
+  assert.equal(r.ok, true, r.reason);
+  assert.match(r.appointment!.code, /^AP[A-Z0-9]{6}$/);
+  assert.equal(r.appointment!.providerName, 'นพ.สมชาย ใจดี');
+  assert.equal(r.appointment!.hn, '••3456');
+  assert.equal(make('65-123456', '2026-11-03', '13:00', 'D002').code, 'POLICY_REJECTED', 'already has one in this clinic that day');
+  assert.equal(make('65-123456', '2026-11-04').ok, true, 'another day is fine');
+  api.gateway.setFeatures(admin, { patch: { appointments: false } });
+  assert.equal(make('65-9').code, 'FEATURE_DISABLED');
+});
+
+test('a slot never takes more than its places', () => {
+  const { make } = setup();
+  assert.equal(make('65-1').ok, true);
+  assert.equal(make('65-2').ok, true);
+  assert.equal(make('65-3').code, 'SLOT_FULL_OR_CLOSED');
+});
+
+test('cancelling gives the place back once; after the cut-off only a supervisor with overrides', () => {
+  const { api, admin, staff, head, slot, make } = setup({ cutoff: 1440 * 2 });
+  const a = make('65-1').appointment!; // Tue 09:00 — less than 2 days away
+  assert.equal((api.gateway.cancelAppt(staff, { appointmentId: a.id, reason: 'ขอยกเลิก' }) as R).code, 'POLICY_REJECTED');
+  assert.equal((api.gateway.cancelAppt(head, { appointmentId: a.id, reason: 'ขอยกเลิก' }) as R).code, 'POLICY_REJECTED');
+  api.gateway.setFeatures(admin, { patch: { staffOverrides: true } });
+  assert.equal((api.gateway.cancelAppt(head, { appointmentId: a.id, reason: 'ผู้ป่วยนอนโรงพยาบาลที่อื่น' }) as R).appointment!.status, 'CANCELLED');
+  assert.equal((api.gateway.cancelAppt(head, { appointmentId: a.id, reason: 'ซ้ำ' }) as R).ok, true);
+  assert.equal(slot('2026-11-03', '09:00').reserved, 0, 'released exactly once');
+});
+
+test('moving an appointment swaps the places in one step — or changes nothing', () => {
+  const { api, staff, slot, make } = setup();
+  const a = make('65-1').appointment!;
+  make('65-2', '2026-11-04', '09:00'); make('65-3', '2026-11-04', '09:00'); // Wed 09:00 is now full
+  const full = api.gateway.rescheduleAppt(staff, { appointmentId: a.id, slotId: slot('2026-11-04', '09:00').id, key: key() }) as R;
+  assert.equal(full.code, 'SLOT_FULL_OR_CLOSED');
+  assert.equal(api.appts.get(a.id)!.startsAt, localInstant('2026-11-03', '09:00').toISOString(), 'still at the old time');
+  assert.equal(slot('2026-11-03', '09:00').reserved, 1);
+  const moved = api.gateway.rescheduleAppt(staff, { appointmentId: a.id, slotId: slot('2026-11-03', '13:00', 'D002').id, key: key() }) as R;
+  assert.equal(moved.appointment!.providerName, 'พญ.สมศรี รักษา');
+  assert.equal(slot('2026-11-03', '09:00').reserved, 0);
+  assert.equal(slot('2026-11-03', '13:00', 'D002').reserved, 1);
+  api.gateway.createApptSessions(signIn(api, 'admin', ADMIN_PASSWORD), { clinicCode: EYE, providerCode: 'D009', providerName: 'นพ.ตา', from: '2026-11-03', to: '2026-11-03', weekdays: [2], start: '09:00', end: '10:00', minutes: 30, capacity: 2 });
+  const eye = api.appts.slots(EYE, '2026-11-03')[0];
+  assert.equal((api.gateway.rescheduleAppt(staff, { appointmentId: a.id, slotId: eye.id, key: key() }) as R).code, 'POLICY_REJECTED', 'another clinic');
+});
+
+test('a request to move holds no place until approved; approval fails cleanly if the slot filled up', () => {
+  const { api, staff, slot, make } = setup();
+  const a = make('65-1').appointment!;
+  const target = slot('2026-11-04', '10:00');
+  const asked = api.appts.requestReschedule(a.id, target.id, 'ติดธุระ', { kind: 'staff', id: 1, canOverride: false });
+  assert.equal(asked.immediate, false);
+  assert.equal(api.appts.get(a.id)!.status, 'CONFIRMED', 'the original appointment stays valid');
+  assert.equal(api.appts.get(a.id)!.pendingRequest!.id, asked.request!.id);
+  assert.equal(slot('2026-11-04', '10:00').reserved, 0, 'no place held while waiting');
+  assert.equal(codeOf(() => api.appts.requestReschedule(a.id, target.id, 'x', { kind: 'staff', id: 1, canOverride: false })), 'POLICY_REJECTED', 'one waiting request at a time');
+  make('65-2', '2026-11-04', '10:00'); make('65-3', '2026-11-04', '10:00');
+  assert.equal((api.gateway.decideAppt(staff, { requestId: asked.request!.id, approve: true }) as R).code, 'SLOT_FULL_OR_CLOSED');
+  assert.equal(api.appts.requests()[0].status, 'PENDING', 'still waiting; nothing moved');
+  assert.equal((api.gateway.decideAppt(staff, { requestId: asked.request!.id, approve: false }) as R).code, 'VALIDATION_ERROR', 'a rejection needs a reason');
+  assert.equal((api.gateway.decideAppt(staff, { requestId: asked.request!.id, approve: false, note: 'ช่วงนั้นเต็ม เสนอวันพฤหัส' }) as R).request!.status, 'REJECTED');
+  const b = api.appts.requestReschedule(a.id, slot('2026-11-05', '09:00').id, '', { kind: 'staff', id: 1, canOverride: false });
+  const ok = api.gateway.decideAppt(staff, { requestId: b.request!.id, approve: true }) as R;
+  assert.equal(ok.request!.status, 'APPROVED');
+  assert.equal(api.appts.get(a.id)!.startsAt, localInstant('2026-11-05', '09:00').toISOString());
+  assert.equal(api.appts.get(a.id)!.pendingRequest, undefined);
+});
+
+test('patients reach only their own appointments; without approval their move happens at once', () => {
+  const { api, slot, make } = setup({ approval: false });
+  const a = make('65-1', '2026-11-04').appointment!; // Wednesday: outside the 24-h cut-off
+  const owner = api.booking.profileForHN('65-1'), other = api.booking.profileForHN('65-2');
+  assert.equal(codeOf(() => api.appts.cancel(a.id, 'x', { kind: 'patient', profileId: other })), 'RESOURCE_NOT_FOUND');
+  assert.equal(codeOf(() => api.appts.requestReschedule(a.id, slot('2026-11-05', '09:00').id, 'x', { kind: 'patient', profileId: other })), 'RESOURCE_NOT_FOUND');
+  const r = api.appts.requestReschedule(a.id, slot('2026-11-05', '09:00').id, 'ติดงาน', { kind: 'patient', profileId: owner });
+  assert.equal(r.immediate, true);
+  assert.equal(r.appointment.startsAt, localInstant('2026-11-05', '09:00').toISOString());
+  const t = make('65-9').appointment!; // Tuesday 09:00: inside the cut-off
+  assert.equal(codeOf(() => api.appts.requestReschedule(t.id, slot('2026-11-05', '10:00').id, 'x', { kind: 'patient', profileId: api.booking.profileForHN('65-9') })), 'POLICY_REJECTED');
+});
+
+test('cancelling a doctor\'s session cancels its appointments and closes requests into it', () => {
+  const { api, admin, slot, make } = setup();
+  const a = make('65-1').appointment!, b = make('65-2', '2026-11-04').appointment!;
+  api.appts.requestReschedule(b.id, slot('2026-11-03', '10:00').id, '', { kind: 'staff', id: 1, canOverride: false });
+  const session = api.appts.sessions(MED, '2026-11-03').find((s) => s.providerCode === 'D001')!;
+  assert.equal((api.gateway.setApptSession(admin, { sessionId: session.id, status: 'CANCELLED' }) as R).code, 'VALIDATION_ERROR');
+  const r = api.gateway.setApptSession(admin, { sessionId: session.id, status: 'CANCELLED', reason: 'แพทย์ลาประชุม' }) as R;
+  assert.equal(r.cancelled, 1);
+  assert.equal(api.appts.get(a.id)!.cancellationReason, 'แพทย์ลาประชุม');
+  assert.equal(api.appts.get(b.id)!.status, 'CONFIRMED');
+  assert.equal(api.appts.get(b.id)!.pendingRequest, undefined, 'the request into the cancelled session is closed');
+  assert.equal(make('65-3', '2026-11-03', '11:00').code, 'SLOT_FULL_OR_CLOSED');
+});
+
+test('no-show: a supervisor\'s decision after the time, with a reason — never automatic', () => {
+  const { api, staff, head, make, setNow } = setup();
+  const a = make('65-1').appointment!;
+  assert.equal((api.gateway.noShowAppt(staff, { appointmentId: a.id, reason: 'x' }) as R).code, 'FORBIDDEN');
+  assert.equal((api.gateway.noShowAppt(head, { appointmentId: a.id, reason: 'x' }) as R).code, 'POLICY_REJECTED', 'not over yet');
+  setNow(localInstant('2026-11-03', '12:00'));
+  assert.equal((api.gateway.noShowAppt(head, { appointmentId: a.id }) as R).code, 'VALIDATION_ERROR');
+  assert.equal((api.gateway.noShowAppt(head, { appointmentId: a.id, reason: 'โทรติดต่อแล้วไม่มา' }) as R).appointment!.status, 'NO_SHOW');
+  const b = make('65-2', '2026-11-04').appointment!;
+  setNow(localInstant('2026-11-05', '07:00'));
+  assert.equal(api.appts.expire(), 1);
+  assert.equal(api.appts.get(b.id)!.status, 'EXPIRED', 'an unmarked past appointment expires — it is not a no-show');
+});
+
+test('an AP code checks in like a booking: a queue number with the doctor beside it, the same one if repeated', () => {
+  const { api, admin, make, setNow } = setup();
+  api.gateway.queueSettings(admin, { patch: { dataMode: 'live' }, at: 400, scope: 'system', summary: 'live' });
+  const a = make('65-1').appointment!;
+  setNow(localInstant('2026-11-03', '08:30'));
+  const r = api.gateway.checkInCode(admin, { code: a.code, channel: 'KIOSK', at: 510 }) as R;
+  assert.equal(r.ok, true, r.reason);
+  assert.equal(r.visit!.queue, 'A001');
+  assert.equal(r.visit!.bookedSlot, 'นัด 09:00 · นพ.สมชาย ใจดี');
+  assert.equal(api.appts.get(a.id)!.status, 'CHECKED_IN');
+  assert.equal((api.gateway.checkInCode(admin, { code: a.code, channel: 'COUNTER', at: 511 }) as R).visit!.id, r.visit!.id);
+  assert.equal(api.visits.list().length, 1);
+  assert.equal((api.gateway.cancelAppt(admin, { appointmentId: a.id, reason: 'x' }) as R).code, 'INVALID_STATE_TRANSITION');
+});
+
+test('staff find appointments by day, code or HN (HN searches audited without the HN)', () => {
+  const { api, staff, make } = setup();
+  const a = make('65-424242').appointment!;
+  assert.equal((api.gateway.listAppts(staff, { date: '2026-11-03' }) as R).appointments!.length, 1);
+  assert.equal((api.gateway.listAppts(staff, { code: a.code.toLowerCase() }) as R).appointments![0].id, a.id);
+  assert.equal((api.gateway.listAppts(staff, { hn: '65-424242' }) as R).appointments!.length, 1);
+  assert.ok(!JSON.stringify(api.audit.list({ targetType: 'patient-search' })).includes('424242'));
+  assert.ok(api.emitted.some((e) => e.event === 'appointment:changed' && e.to === 'staff'));
+});
