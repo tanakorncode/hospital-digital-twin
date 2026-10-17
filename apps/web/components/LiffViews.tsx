@@ -62,7 +62,8 @@ export function BookQueue() {
  const [step,setStep] = useState<'list'|'service'|'slot'|'confirm'|'done'>('list');
  const [services,setServices] = useState<Service[]>([]);
  const [svc,setSvc] = useState<Service|null>(null);
- const [date,setDate] = useState(plusDays(1));
+ const [date,setDate] = useState('');
+ const [days,setDays] = useState<string[]|null>(null); // only days with a place left (no empty weekends / holidays)
  const [slots,setSlots] = useState<Slot[]|null>(null);
  const [slot,setSlot] = useState<Slot|null>(null);
  const [key,setKey] = useState('');
@@ -71,7 +72,10 @@ export function BookQueue() {
  const [cancelFor,setCancelFor] = useState<string|null>(null);
  const load = useCallback(async ()=>{ const r = await patientApi<{bookings:Booking[]}>('GET','/bookings'); if (r.ok) setMine(r.bookings); else setError(r.reason); },[]);
  useEffect(()=>{ void load(); },[load]);
- useEffect(()=>{ if (step!=='slot' || !svc) return; setSlots(null);
+ useEffect(()=>{ if (step!=='slot' || !svc) return; setDays(null);
+  void patientApi<{days:string[]}>('GET',`/booking/days?service=${encodeURIComponent(svc.serviceCode)}`).then(r=>{ const d = r.ok ? r.days.slice(0,14) : []; setDays(d); setDate(x=>d.includes(x) ? x : d[0] ?? ''); });
+ },[step,svc]);
+ useEffect(()=>{ if (step!=='slot' || !svc || !date) return; setSlots(null);
   void patientApi<{slots:Slot[]}>('GET',`/booking/slots?service=${encodeURIComponent(svc.serviceCode)}&date=${date}`).then(r=>setSlots(r.ok ? r.slots : []));
  },[step,svc,date]);
  const startNew = async () => { setError(''); const r = await patientApi<{services:Service[]}>('GET','/booking/services');
@@ -89,15 +93,15 @@ export function BookQueue() {
   if (r.ok) void load(); else setError(r.reason);
  };
  if (step==='service') return <section className="liffCard"><h2>เลือกบริการ</h2>
-  {services.length ? <div className="liffChoices">{services.map(s=><button key={s.serviceCode} className="liffChoice" onClick={()=>{ setSvc(s); setDate(plusDays(1)); setSlot(null); setStep('slot'); }}>
+  {services.length ? <div className="liffChoices">{services.map(s=><button key={s.serviceCode} className="liffChoice" onClick={()=>{ setSvc(s); setDate(''); setSlot(null); setStep('slot'); }}>
    <b>{s.displayName}</b><ChevronRight size={22}/></button>)}</div> : <p>ตอนนี้ยังไม่มีบริการที่เปิดให้จองทาง LINE</p>}
   <button className="liffBtn ghost" onClick={()=>setStep('list')}>ย้อนกลับ</button></section>;
  if (step==='slot' && svc) {
-  const days = Array.from({length:Math.min(14,svc.advanceDays)},(_,i)=>plusDays(i+1));
   return <section className="liffCard"><h2>{svc.displayName}</h2><p className="liffNote">เลือกวัน แล้วเลือกช่วงเวลาที่ยังว่าง</p>
+   {days===null ? <Busy/> : !days.length ? <p>ตอนนี้ยังไม่มีวันที่เปิดให้จอง หรือเต็มแล้ว · สอบถามเคาน์เตอร์ได้</p> : <>
    <div className="liffDays">{days.map(d=><button key={d} className={d===date?'on':''} aria-pressed={d===date} onClick={()=>{ setDate(d); setSlot(null); }}>{dayShort(d)}</button>)}</div>
    {slots===null ? <Busy/> : slots.length ? <div className="liffSlots">{slots.map(s=><button key={s.id} className={slot?.id===s.id?'on':''} aria-pressed={slot?.id===s.id} onClick={()=>setSlot(s)}>
-    <b>{time(s.startsAt)}–{time(s.endsAt)}</b><small>ว่าง {s.remaining}</small></button>)}</div> : <p>วันนี้ไม่มีช่วงที่ว่าง ลองเลือกวันอื่น</p>}
+    <b>{time(s.startsAt)}–{time(s.endsAt)}</b><small>ว่าง {s.remaining}</small></button>)}</div> : <p>วันนี้ไม่มีช่วงที่ว่าง ลองเลือกวันอื่น</p>}</>}
    <div className="liffRow"><button className="liffBtn ghost" onClick={()=>setStep('service')}>ย้อนกลับ</button>
     <button className="liffBtn" disabled={!slot} onClick={()=>{ setKey(newKey()); setStep('confirm'); }}>ถัดไป</button></div></section>;
  }
@@ -170,14 +174,15 @@ export function Appointments() {
 }
 
 function MoveAppt({a,needsApproval,advanceDays,onClose}:{a:Appt; needsApproval:boolean; advanceDays:number; onClose:(text?:string)=>void}) {
- const days = useMemo(()=>Array.from({length:Math.min(28,advanceDays)},(_,i)=>plusDays(i+1)),[advanceDays]);
- const [date,setDate] = useState(days[0]);
+ const [days,setDays] = useState<string[]|null>(null); // days with a free time with this doctor
+ const [date,setDate] = useState('');
  const [slots,setSlots] = useState<Slot[]|null>(null);
+ useEffect(()=>{ void patientApi<{days:string[]}>('GET',`/appointments/${a.id}/days`).then(r=>{ const d = r.ok ? r.days.slice(0,Math.min(28,advanceDays)) : []; setDays(d); setDate(d[0] ?? ''); }); },[a.id,advanceDays]);
  const [slot,setSlot] = useState<Slot|null>(null);
  const [reason,setReason] = useState('');
  const [busy,setBusy] = useState(false);
  const [error,setError] = useState('');
- useEffect(()=>{ setSlots(null); setSlot(null);
+ useEffect(()=>{ if (!date) return; setSlots(null); setSlot(null);
   void patientApi<{slots:Slot[]}>('GET',`/appointments/${a.id}/slots?date=${date}`).then(r=>setSlots(r.ok ? r.slots : [])); },[a.id,date]);
  const send = async () => {
   if (!slot || busy) return;
@@ -189,9 +194,10 @@ function MoveAppt({a,needsApproval,advanceDays,onClose}:{a:Appt; needsApproval:b
  };
  return <section className="liffCard"><div className="liffHeadRow"><h2>ขอเลื่อนนัด</h2><button className="liffIcon" aria-label="ปิด" onClick={()=>onClose()}><X size={22}/></button></div>
   <p className="liffNote">นัดเดิม {day(a.startsAt)} {time(a.startsAt)} น. · {a.providerName}{needsApproval ? ' · คลินิกจะพิจารณาคำขอ' : ''}</p>
+  {days===null ? <Busy/> : !days.length ? <p>ตอนนี้ไม่มีวันว่างที่เลื่อนไปได้ · ติดต่อเคาน์เตอร์หรือโทรหาคลินิก</p> : <>
   <div className="liffDays">{days.map(d=><button key={d} className={d===date?'on':''} aria-pressed={d===date} onClick={()=>setDate(d)}>{dayShort(d)}</button>)}</div>
   {slots===null ? <Busy/> : slots.length ? <div className="liffSlots">{slots.map(s=><button key={s.id} className={slot?.id===s.id?'on':''} aria-pressed={slot?.id===s.id} onClick={()=>setSlot(s)}>
-   <b>{time(s.startsAt)}</b><small>{s.providerName}</small></button>)}</div> : <p>วันนี้ไม่มีเวลาว่าง ลองเลือกวันอื่น</p>}
+   <b>{time(s.startsAt)}</b><small>{s.providerName}</small></button>)}</div> : <p>วันนี้ไม่มีเวลาว่าง ลองเลือกวันอื่น</p>}</>}
   <div className="liffChoices">{['ติดงาน','ติดธุระ','ไม่สบาย เดินทางไม่ได้'].map(r=><button key={r} className={'liffChoice small'+(reason===r?' on':'')} aria-pressed={reason===r} onClick={()=>setReason(r)}>{r}</button>)}</div>
   {error && <p className="liffError" role="alert">{error}</p>}
   <button className="liffBtn" disabled={!slot || busy} onClick={()=>void send()}>{busy?'กำลังส่ง…':needsApproval?'ส่งคำขอเลื่อนนัด':'ยืนยันเลื่อนนัด'}</button></section>;

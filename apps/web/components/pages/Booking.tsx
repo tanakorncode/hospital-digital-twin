@@ -199,7 +199,8 @@ export function BookingTab({api,rev,user,features}:{api:Api; rev:number; user?:A
 function NewBooking({api,clinics,policies,onClose,onMade}:{api:Api; clinics:Clinic[]; policies:Policy[]; onClose:()=>void; onMade:(b:Booking)=>void}) {
  const [hn,setHn] = useState('');
  const [svc,setSvc] = useState(clinics[0]?.key ?? '');
- const [date,setDate] = useState(()=>addDays(today(),1));
+ const [date,setDate] = useState('');
+ const [days,setDays] = useState<string[]|null>(null); // only days with a place left — no empty weekends / holidays
  const [slots,setSlots] = useState<Slot[]|null>(null);
  const [slotId,setSlotId] = useState('');
  const [busy,setBusy] = useState(false);
@@ -211,8 +212,10 @@ function NewBooking({api,clinics,policies,onClose,onMade}:{api:Api; clinics:Clin
  const key = k.sig===sig ? k.key : '';
  useEffect(()=>{ if (k.sig!==sig) setK({sig,key:actionKey()}); },[sig,k.sig]);
  const p = policies.find(x=>x.serviceCode===svc);
- const days = Array.from({length:Math.min(14,(p?.advanceDays ?? 14)+1)},(_,i)=>addDays(today(),i));
- useEffect(()=>{ let live = true; setSlots(null); setSlotId('');
+ useEffect(()=>{ let live = true; setDays(null);
+  void api<{ok:boolean; days?:string[]}>('booking:days',{serviceCode:svc}).then(r=>{ if (!live) return; const d = (r.ok ? r.days ?? [] : []).slice(0,14); setDays(d); setDate(x=>d.includes(x) ? x : d[0] ?? ''); });
+  return ()=>{ live = false; }; },[api,svc]);
+ useEffect(()=>{ if (!date) { setSlots([]); return; } let live = true; setSlots(null); setSlotId('');
   void api<{ok:boolean; slots?:Slot[]}>('booking:slots',{serviceCode:svc,date,bookable:true}).then(r=>{ if (live) setSlots(r.ok ? r.slots ?? [] : []); });
   return ()=>{ live = false; }; },[api,svc,date]);
  useEffect(()=>{ const f = (e:KeyboardEvent)=>{ if (e.key==='Escape') onClose(); }; window.addEventListener('keydown',f); return ()=>window.removeEventListener('keydown',f); },[onClose]);
@@ -236,7 +239,8 @@ function NewBooking({api,clinics,policies,onClose,onMade}:{api:Api; clinics:Clin
     <div className="visitRow"><span>คลินิก</span><div className="visitClinics">{clinics.map(c=><button key={c.key} className={c.key===svc?'on':''} aria-pressed={c.key===svc} onClick={()=>setSvc(c.key)}>
      <b>{c.letter}</b><span>{c.dept}</span><small>ชั้น {c.level}</small></button>)}</div></div>
     <div className="visitRow"><span>วันที่ <small className="muted">(จองล่วงหน้าได้ {p?.advanceDays ?? 14} วัน)</small></span>
-     <div className="segBtns">{days.map(d=><button key={d} className={d===date?'on':''} aria-pressed={d===date} onClick={()=>setDate(d)}>{dayOf(d)}</button>)}</div></div>
+     {days===null ? <p className="cmdNote">กำลังโหลด…</p> : days.length ? <div className="segBtns">{days.map(d=><button key={d} className={d===date?'on':''} aria-pressed={d===date} onClick={()=>setDate(d)}>{dayOf(d)}</button>)}</div>
+      : <p className="cmdNote">คลินิกนี้ยังไม่มีวันที่เปิดให้จอง หรือเต็มทุกวัน · ผู้ดูแลระบบสร้างช่วงเวลาได้ที่ ตั้งค่า → การจองล่วงหน้า</p>}</div>
     <div className="visitRow"><span>ช่วงเวลา</span>
      {slots===null ? <p className="cmdNote">กำลังโหลด…</p> : slots.length ? <div className="segBtns">{slots.map(s=><button key={s.id} className={s.id===slotId?'on':''} aria-pressed={s.id===slotId} onClick={()=>setSlotId(s.id)}>
       {timeOf(s.startsAt)}–{timeOf(s.endsAt)} <small>ว่าง {s.remaining}</small></button>)}</div> : <p className="cmdNote">ไม่มีช่วงที่ยังว่างในวันนี้ · ลองวันอื่น</p>}</div>

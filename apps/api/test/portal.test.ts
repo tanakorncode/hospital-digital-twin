@@ -45,6 +45,7 @@ test('patients see only open services and book for themselves; a retried tap boo
   assert.deepEqual(ctl.bookingServices('1.1.1.1', p1).services.map((s) => s.serviceCode), [MED], 'closed services are not offered');
   const slots = ctl.bookingSlots('1.1.1.1', MED, '2026-11-03', p1).slots;
   assert.equal(slots.length, 2);
+  assert.ok(ctl.bookingDays('1.1.1.1', MED, p1).days.includes('2026-11-03'), 'the day picker offers days with places');
   assert.ok(!('capacity' in slots[0]), 'patients see places left, not the capacity');
   assert.equal(await codeOf(() => ctl.book('1.1.1.1', { slotId: slots[0].id }, p1, undefined)), 'VALIDATION_ERROR', 'needs an Idempotency-Key');
   const k = key();
@@ -76,6 +77,8 @@ test('appointments: patients see theirs, may move to the same doctor only, and t
   const choices = ctl.appointmentSlots('1.1.1.1', a.id, '2026-11-05', p1).slots;
   assert.ok(choices.length > 0 && choices.every((s) => s.providerName === 'นพ.สมชาย'), 'the other doctor is not offered');
   assert.equal(await codeOf(() => ctl.appointmentSlots('1.1.1.1', a.id, '2026-11-05', p2)), 'RESOURCE_NOT_FOUND');
+  assert.ok(ctl.appointmentDays('1.1.1.1', a.id, p1).days.includes('2026-11-05'));
+  assert.equal(await codeOf(() => ctl.appointmentDays('1.1.1.1', a.id, p2)), 'RESOURCE_NOT_FOUND', 'not theirs');
   const otherDoctor = api.appts.slots(MED, '2026-11-05').find((s) => s.providerCode === 'D002')!;
   assert.equal(await codeOf(() => ctl.rescheduleAppointment('1.1.1.1', a.id, { slotId: otherDoctor.id }, p1)), 'POLICY_REJECTED');
   const r = ctl.rescheduleAppointment('1.1.1.1', a.id, { slotId: choices[0].id, reason: 'ติดงาน' }, p1);

@@ -159,6 +159,21 @@ export class AppointmentService implements OnModuleInit, OnModuleDestroy {
     const now = this.now(), limit = this.limit(p);
     return this.slots(clinic, date, provider).filter((s) => s.status === 'OPEN' && s.remaining > 0 && new Date(s.startsAt) > now && new Date(s.startsAt) <= limit);
   }
+  // The days with a place left (optionally with one doctor) — pickers offer only these.
+  openDays(clinic: unknown, provider?: unknown, except?: { startsAt: string; providerCode: string }): string[] {
+    const p = typeof clinic === 'string' ? this.policy(clinic) : undefined;
+    if (!p?.enabled) return [];
+    const pc = typeof provider === 'string' && provider ? provider : null;
+    const rows = this.store.db.prepare(`SELECT s.starts_at, p.provider_code FROM appointment_slots s JOIN provider_schedules p ON p.id = s.schedule_id
+      WHERE p.clinic_code = ? AND p.status = 'OPEN' AND s.status = 'OPEN' AND s.reserved_count < s.capacity AND s.starts_at > ? AND s.starts_at <= ? AND (? IS NULL OR p.provider_code = ?)
+      ORDER BY s.starts_at`).all(p.clinicCode, this.now().toISOString(), this.limit(p).toISOString(), pc, pc) as { starts_at: string; provider_code: string }[];
+    return [...new Set(rows.filter((r) => !except || r.starts_at !== except.startsAt || r.provider_code !== except.providerCode).map((r) => localDate(new Date(r.starts_at))))];
+  }
+  // The days a patient may move their own appointment to (same rules as movableSlots).
+  movableDays(id: unknown, profileId: string): string[] {
+    const a = this.mine(id, { kind: 'patient', profileId }), p = this.policy(a.clinicCode);
+    return this.openDays(a.clinicCode, p?.patientSelectsProvider ? undefined : a.providerCode, { startsAt: a.startsAt, providerCode: a.providerCode });
+  }
   private limit(p: ApptPolicy) { const l = new Date(this.now().getTime()); l.setDate(l.getDate() + p.advanceDays); l.setHours(23, 59, 59, 999); return l; }
 
   // Close (no new appointments), reopen, or cancel a whole session (the doctor is away): its appointments are cancelled

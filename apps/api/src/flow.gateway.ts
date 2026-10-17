@@ -559,6 +559,18 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
       return { ok: true, session: r.session, cancelled: r.cancelled.length, movedVisits: r.movedVisits.length };
     });
   }
+  // Days with a place left — the pickers offer only these (no empty weekends / holidays).
+  @SubscribeMessage('booking:days')
+  bookingDays(@ConnectedSocket() client: Socket, @MessageBody() body: { serviceCode?: unknown }) {
+    if (!userOf(client)) return SIGN_IN;
+    return { ok: true, days: this.booking.openDays(body?.serviceCode) };
+  }
+  @SubscribeMessage('appt:days')
+  apptDays(@ConnectedSocket() client: Socket, @MessageBody() body: { clinicCode?: unknown; providerCode?: unknown; except?: unknown }) {
+    if (!userOf(client)) return SIGN_IN;
+    const a = typeof body?.except === 'string' ? this.appts.get(body.except) : undefined;
+    return { ok: true, days: this.appts.openDays(body?.clinicCode, body?.providerCode, a && { startsAt: a.startsAt, providerCode: a.providerCode }) };
+  }
   @SubscribeMessage('appt:slots')
   apptSlots(@ConnectedSocket() client: Socket, @MessageBody() body: { clinicCode?: unknown; date?: unknown; providerCode?: unknown; bookable?: boolean }) {
     if (!userOf(client)) return SIGN_IN;

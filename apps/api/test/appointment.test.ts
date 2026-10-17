@@ -179,3 +179,11 @@ test('staff find appointments by day, code or HN (HN searches audited without th
   assert.ok(!JSON.stringify(api.audit.list({ targetType: 'patient-search' })).includes('424242'));
   assert.ok(api.emitted.some((e) => e.event === 'appointment:changed' && e.to === 'staff'));
 });
+
+test('days on offer: only those with a doctor session and a place left, per doctor if asked', () => {
+  const { api, staff } = setup();
+  const days = (body: Record<string, unknown>) => (api.gateway.apptDays(staff, { clinicCode: MED, ...body }) as { days: string[] }).days;
+  assert.deepEqual(days({}), ['2026-11-03', '2026-11-04', '2026-11-05']);
+  assert.deepEqual(days({ providerCode: 'D002' }), ['2026-11-03']);
+  assert.deepEqual((api.gateway.apptDays(staff, { clinicCode: EYE }) as { days: string[] }).days, [], 'no sessions');
+});

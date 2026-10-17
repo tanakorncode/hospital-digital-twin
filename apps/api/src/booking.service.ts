@@ -143,6 +143,17 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
     return this.slots(serviceCode, date).filter((s) => s.status === 'OPEN' && s.remaining > 0 && new Date(s.startsAt) > now && new Date(s.startsAt) <= limit);
   }
 
+  // The days that still have a place a patient can book (open, not started, inside the window) — pickers offer only
+  // these, so a day without slots (a weekend, a holiday) is never offered.
+  openDays(serviceCode: unknown): string[] {
+    const p = typeof serviceCode === 'string' ? this.policy(serviceCode) : undefined;
+    if (!p?.enabled) return [];
+    const now = this.now(), limit = new Date(now); limit.setDate(limit.getDate() + p.advanceDays); limit.setHours(23, 59, 59, 999);
+    const rows = this.store.db.prepare(`SELECT starts_at FROM booking_slots WHERE service_code = ? AND status = 'OPEN' AND reserved_count < capacity AND starts_at > ? AND starts_at <= ? ORDER BY starts_at`)
+      .all(p.serviceCode, now.toISOString(), limit.toISOString()) as { starts_at: string }[];
+    return [...new Set(rows.map((r) => localDate(new Date(r.starts_at))))];
+  }
+
   // Close (no new bookings, existing kept), reopen, change the number of places — or cancel the slot (e.g. the clinic
   // is not running that day): every booking in it is cancelled with the reason given.
   setSlot(slotId: unknown, change: { status?: unknown; capacity?: unknown; reason?: unknown }, by: string): { slot: Slot; cancelled: Booking[] } {

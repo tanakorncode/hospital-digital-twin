@@ -242,6 +242,13 @@ function ApptPicker({api,clinics,policies,move,onClose,onDone}:{api:Api; clinics
  const sig = `${move?.id ?? hn.trim()}|${slotId}`, key = k.sig===sig ? k.key : '';
  useEffect(()=>{ if (k.sig!==sig) setK({sig,key:actionKey()}); },[sig,k.sig]);
  const p = policies.find(x=>x.clinicCode===clinic);
+ // Days with a free time in this clinic: ‹ › jump between them, so empty weekends and full days are skipped.
+ const [days,setDays] = useState<string[]>([]);
+ useEffect(()=>{ let live = true;
+  void api<{ok:boolean; days?:string[]}>('appt:days',{clinicCode:clinic,except:move?.id}).then(r=>{ if (!live) return; const d = r.ok ? r.days ?? [] : []; setDays(d);
+   if (!move) setDate(x=>d.includes(x) ? x : d[0] ?? x); });
+  return ()=>{ live = false; }; },[api,clinic,move]);
+ const prevDay = [...days].reverse().find(d=>d<date), nextDay = days.find(d=>d>date);
  useEffect(()=>{ let live = true; setSlots(null); setSlotId('');
   void api<{ok:boolean; slots?:Slot[]}>('appt:slots',{clinicCode:clinic,date,bookable:true}).then(r=>{ if (live) setSlots(r.ok ? r.slots ?? [] : []); });
   return ()=>{ live = false; }; },[api,clinic,date]);
@@ -273,7 +280,7 @@ function ApptPicker({api,clinics,policies,move,onClose,onDone}:{api:Api; clinics
      <b>{c.letter}</b><span>{c.dept}</span><small>ชั้น {c.level}</small></button>)}</div></div>}
     <div className="visitRow"><span>วันที่ <small className="muted">(นัดล่วงหน้าได้ {p?.advanceDays ?? 90} วัน)</small></span>
      <span className="apptDate"><input type="date" value={date} min={today()} max={addDays(today(),p?.advanceDays ?? 90)} onChange={e=>setDate(e.target.value)}/>
-      <span>{dayOf(date)}</span><button className="btn ghost sm" onClick={()=>setDate(addDays(date,-1))}>‹ วันก่อน</button><button className="btn ghost sm" onClick={()=>setDate(addDays(date,1))}>วันถัดไป ›</button></span></div>
+      <span>{dayOf(date)}</span><button className="btn ghost sm" disabled={!prevDay} onClick={()=>prevDay && setDate(prevDay)}>‹ วันว่างก่อนหน้า</button><button className="btn ghost sm" disabled={!nextDay} onClick={()=>nextDay && setDate(nextDay)}>วันว่างถัดไป ›</button></span></div>
     <div className="visitRow"><span>แพทย์และเวลา</span>
      {slots===null ? <p className="cmdNote">กำลังโหลด…</p> : byDoctor.length ? byDoctor.map(([doc,list])=><div key={doc} className="apptDoc"><b>{doc}</b>
       <div className="segBtns">{list.map(s=>{ const current = !!move && s.startsAt===move.startsAt && s.providerName===move.providerName;

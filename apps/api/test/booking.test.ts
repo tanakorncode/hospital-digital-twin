@@ -215,3 +215,12 @@ test('staff find bookings by day, by code or by HN; an HN search is audited with
   assert.ok(api.emitted.some((e) => e.event === 'booking:changed' && e.to === 'staff'), 'screens refresh; nothing goes to public screens');
   assert.ok(!api.emitted.some((e) => e.event === 'booking:changed' && !e.to));
 });
+
+test('pickers are offered only days with a place left — no empty weekends, no full days', () => {
+  const { api, staff, slot, book } = setup({ capacity: 1 });
+  const days = () => (api.gateway.bookingDays(staff, { serviceCode: MED }) as { days: string[] }).days;
+  assert.deepEqual(days(), ['2026-11-02', '2026-11-03', '2026-11-04', '2026-11-05', '2026-11-06'], 'Mon–Fri only');
+  for (const [i, t] of ['09:00', '10:00', '11:00'].entries()) assert.equal(book(`65-00010${i}`, slot(MED, '2026-11-04', t).id).ok, true);
+  assert.equal(days().includes('2026-11-04'), false, 'a full day is not offered');
+  assert.deepEqual((api.gateway.bookingDays(staff, { serviceCode: 'opd-3-0' }) as { days: string[] }).days, [], 'a clinic without booking');
+});

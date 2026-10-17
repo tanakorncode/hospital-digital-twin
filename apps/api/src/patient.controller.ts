@@ -22,7 +22,7 @@ import { VisitsService } from './visits.service';
 //   POST /api/v1/patient/logout
 // Linked patients only (stage 2.6):
 //   GET  /queue                              today's queue numbers (+ the link to the live queue page) and today's bookings/appointments
-//   GET  /booking/services, /booking/slots   what can be booked;  POST /bookings {slotId} (Idempotency-Key header)
+//   GET  /booking/services, /booking/days, /booking/slots   what can be booked;  POST /bookings {slotId} (Idempotency-Key header)
 //   GET  /bookings;  POST /bookings/:id/cancel {reason}
 //   GET  /appointments;  GET /appointments/:id/slots?date=;  POST /appointments/:id/cancel {reason}
 //   POST /appointments/:id/reschedule {slotId, reason}   moves at once, or files a request when the clinic approves moves
@@ -108,6 +108,12 @@ export class PatientController {
     this.features.require('generalBooking');
     return { ok: true, slots: this.booking.bookable(service, date).map(({ id, startsAt, endsAt, remaining }) => ({ id, startsAt, endsAt, remaining })) };
   }
+  @Get('booking/days')
+  bookingDays(@Ip() ip: string, @Query('service') service: string, @Headers('authorization') auth?: string) {
+    this.linked(ip, auth);
+    this.features.require('generalBooking');
+    return { ok: true, days: this.booking.openDays(service) };
+  }
   @Get('bookings')
   myBookings(@Ip() ip: string, @Headers('authorization') auth?: string) {
     const s = this.linked(ip, auth);
@@ -144,6 +150,11 @@ export class PatientController {
   appointmentSlots(@Ip() ip: string, @Param('id') id: string, @Query('date') date: string, @Headers('authorization') auth?: string) {
     const s = this.linked(ip, auth);
     return { ok: true, slots: this.appts.movableSlots(id, date, s.profileId).map(({ id: sid, startsAt, endsAt, remaining, providerName }) => ({ id: sid, startsAt, endsAt, remaining, providerName })) };
+  }
+  @Get('appointments/:id/days')
+  appointmentDays(@Ip() ip: string, @Param('id') id: string, @Headers('authorization') auth?: string) {
+    const s = this.linked(ip, auth);
+    return { ok: true, days: this.appts.movableDays(id, s.profileId) };
   }
   @Post('appointments/:id/cancel')
   @HttpCode(200)
