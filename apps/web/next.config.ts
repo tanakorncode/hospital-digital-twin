@@ -12,5 +12,15 @@ const nextConfig: NextConfig = {
   allowedDevOrigins: ['*.ngrok-free.dev', '*.ngrok-free.app', '*.ngrok.app', '*.ngrok.io'],
   // socket.io asks for "/sio/?…": keep the trailing slash instead of redirecting it away.
   skipTrailingSlashRedirect: true,
+  // Security headers for every page. The camera stays available to this site only (QR scanning at the console).
+  async headers() {
+    return [{ source: '/:path*', headers: [
+      { key: 'X-Content-Type-Options', value: 'nosniff' },
+      { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+      { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
+      { key: 'Content-Security-Policy', value: "frame-ancestors 'self'; object-src 'none'; base-uri 'self'" },
+      { key: 'Permissions-Policy', value: 'camera=(self), microphone=(), geolocation=(), payment=()' },
+    ] }];
+  },
 };
 export default nextConfig;

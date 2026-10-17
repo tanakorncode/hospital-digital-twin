@@ -19,19 +19,19 @@ test('only signed-in staff can issue a patient link; it is random and stable unt
 test('links resolve to their patient; guesses and old-style links do not', () => {
   const api = makeApi();
   const t = api.tickets.issue('p-0010', 'test');
-  assert.equal((api.gateway.resolveTicket({ token: t.token }) as T).ticket?.patientId, 'p-0010');
-  assert.equal((api.gateway.resolveTicket({ token: 'A'.repeat(22) }) as T).ok, false);
-  assert.equal((api.gateway.resolveTicket({ token: '1se4cp2' }) as T).ok, false);
+  assert.equal((api.gateway.resolveTicket(fakeSocket(), { token: t.token }) as T).ticket?.patientId, 'p-0010');
+  assert.equal((api.gateway.resolveTicket(fakeSocket(), { token: 'A'.repeat(22) }) as T).ok, false);
+  assert.equal((api.gateway.resolveTicket(fakeSocket(), { token: '1se4cp2' }) as T).ok, false);
 });
 
 test('family links are separate, read-only and cannot be re-shared', () => {
   const api = makeApi();
   const t = api.tickets.issue('p-0010', 'test');
-  const fam = api.gateway.familyTicket({ token: t.token }) as T;
+  const fam = api.gateway.familyTicket(fakeSocket(), { token: t.token }) as T;
   assert.equal(fam.ticket!.kind, 'family');
   assert.notEqual(fam.ticket!.token, t.token);
   assert.ok(fam.ticket!.expiresAt <= t.expiresAt, 'never outlives the patient link');
-  assert.equal((api.gateway.familyTicket({ token: fam.ticket!.token }) as T).ok, false);
+  assert.equal((api.gateway.familyTicket(fakeSocket(), { token: fam.ticket!.token }) as T).ok, false);
 });
 
 test('a help request must come from the patient’s own link', () => {
@@ -64,4 +64,12 @@ test('expired links are refused', () => {
   const r = api.tickets.check(t.token);
   assert.equal(r.ok, false);
   assert.equal((r as { code: string }).code, 'expired');
+});
+
+test('public lookups are rate-limited per connection', () => {
+  const api = makeApi(), pub = fakeSocket(), t = api.tickets.issue('p-0010', 'test');
+  let refused = 0;
+  for (let i = 0; i < 25; i++) if (!(api.gateway.resolveTicket(pub, { token: t.token }) as T).ok) refused++;
+  assert.equal(refused, 5, '20 per minute, then refused');
+  assert.ok((api.gateway.resolveTicket(fakeSocket(), { token: t.token }) as T).ok, 'other connections are not affected');
 });

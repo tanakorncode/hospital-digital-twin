@@ -53,7 +53,7 @@ export default function TvPage() {
           return <div key={room.id} className={'tvRoom'+(calling?' calling':'')}><span>ห้อง {room.number}</span>
             {calling ? <b className="tvCall">เชิญ {calling.p.queue}</b> : serving ? <b>{serving.p.queue}</b> : <em>{paused ? 'พักชั่วคราว' : duty && duty.status!=='active' ? dutyLabel[duty.status] : '—'}</em>}</div>;
         })}
-        <div className="tvNext"><span>คิวถัดไป</span>{waiting.slice(0,4).map(s=><b key={s.p.id}>{s.p.queue}</b>)}{!waiting.length && <em>ไม่มีคิวรอ</em>}</div>
+        <div className="tvNext"><span>คิวถัดไป</span>{waiting.slice(0,8).map(s=><b key={s.p.id}>{s.p.queue}</b>)}{!waiting.length && <em>ไม่มีคิวรอ</em>}</div>
         <small>รอ {waiting.length} คน</small>
       </section>;
     })}</div>

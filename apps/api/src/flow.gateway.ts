@@ -20,6 +20,15 @@ const rank: Record<Role, number> = { staff: 1, supervisor: 2, admin: 3 };
 const may = (u: User | null, role: Role) => !!u && rank[u.role] >= rank[role];
 const userOf = (c: Socket) => (c.data.user ?? null) as User | null;
 const DENIED = { ok: false, reason: 'ไม่มีสิทธิ์ทำรายการนี้' };
+// Per-connection limits (sliding window): staff consoles act often; public screens only look things up.
+const LIMITS = { command: [120, 10_000], public: [20, 60_000], login: [10, 60_000] } as const;
+const SLOW = { ok: false, reason: 'ทำรายการถี่เกินไป กรุณารอสักครู่' };
+function overLimit(c: Socket, kind: keyof typeof LIMITS) {
+  const [max, windowMs] = LIMITS[kind], now = Date.now();
+  const hits = ((c.data[`rl:${kind}`] as number[] | undefined) ?? []).filter((t) => now - t < windowMs);
+  hits.push(now); c.data[`rl:${kind}`] = hits;
+  return hits.length > max;
+}
 const SIGN_IN = { ok: false, reason: 'กรุณาเข้าสู่ระบบก่อน', auth: true };
 
 @WebSocketGateway({ namespace: '/hospital', cors: { origin: allowOrigin } })
@@ -49,6 +58,7 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
   // ---- sign-in -----------------------------------------------------------------------------------------------
   @SubscribeMessage('auth:login')
   login(@ConnectedSocket() client: Socket, @MessageBody() body: { username?: string; password?: string }) {
+    if (overLimit(client, 'login')) return SLOW;
     const from = String(client.handshake.headers['x-forwarded-for'] ?? client.handshake.address ?? '');
     const res = this.auth.login(body?.username ?? '', body?.password ?? '', from);
     if (!res.ok) return res;
@@ -83,17 +93,20 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
     return { ok: true, ticket: this.tickets.issue(body.patientId, me.name, !!body.renew) };
   }
   @SubscribeMessage('ticket:resolve')
-  resolveTicket(@MessageBody() body: { token?: string }) {
+  resolveTicket(@ConnectedSocket() client: Socket, @MessageBody() body: { token?: string }) {
+    if (overLimit(client, 'public')) return SLOW;
     return this.tickets.check(body?.token);
   }
   @SubscribeMessage('ticket:family')
-  familyTicket(@MessageBody() body: { token?: string; hours?: number }) {
+  familyTicket(@ConnectedSocket() client: Socket, @MessageBody() body: { token?: string; hours?: number }) {
+    if (overLimit(client, 'public')) return SLOW;
     return this.tickets.family(body?.token ?? '', Number(body?.hours ?? 12));
   }
 
   // The patient asks for LINE notifications from their own page (a code to send to the hospital's OA).
   @SubscribeMessage('line:link')
-  lineLink(@MessageBody() body: { token?: string; queue?: string }) {
+  lineLink(@ConnectedSocket() client: Socket, @MessageBody() body: { token?: string; queue?: string }) {
+    if (overLimit(client, 'public')) return SLOW;
     return this.line.startLink(body?.token ?? '', body?.queue ?? '');
   }
 
@@ -107,6 +120,7 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
   @SubscribeMessage('queue:command')
   queueCommand(@ConnectedSocket() client: Socket, @MessageBody() cmd: QueueCommand) {
     const me = userOf(client);
+    if (overLimit(client, me ? 'command' : 'public')) return SLOW;
     if (cmd?.action === 'report') { // a patient's help request: no account, but it must come from that patient's own link
       const t = this.tickets.check((cmd as QueueCommand & { ticket?: string }).ticket);
       if (!t.ok) return { ok: false, reason: t.reason };
