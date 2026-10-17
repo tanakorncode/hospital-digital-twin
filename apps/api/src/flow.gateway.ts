@@ -41,6 +41,11 @@ function overLimit(c: Socket, kind: keyof typeof LIMITS) {
   return hits.length > max;
 }
 const SIGN_IN = { ...fail('AUTH_REQUIRED', 'กรุณาเข้าสู่ระบบก่อน'), auth: true };
+// Clinic scope (spec §14.2): staff and supervisors may be limited to some clinics — they then find, book, move, cancel
+// and check in only for those. No list = every clinic; administrators always cover every clinic. 'er' = emergency room.
+export const covers = (u: User, clinic: string | undefined) => u.role === 'admin' || !u.clinics?.length || (!!clinic && u.clinics.includes(clinic));
+const OUTSIDE = () => new AppError('FORBIDDEN', 'รายการนี้อยู่นอกแผนกที่คุณรับผิดชอบ');
+function mustCover(u: User, clinic: string | undefined) { if (clinic !== undefined && !covers(u, clinic)) throw OUTSIDE(); }
 const actor = (u: User) => ({ actorType: 'staff' as const, actorId: `user:${u.id}` });
 // Signed-in staff sockets share this room. Everyone else (TV boards, patient pages, anyone who opens a socket) gets the
 // queue log without staff names — screens for the public only need numbers, places and states.
@@ -69,6 +74,7 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
     // The session token travels in the socket handshake (works over WebSocket and over the polling relay).
     const user = this.auth.resolve(client.handshake.auth?.token);
     client.data.user = user;
+    client.data.token = client.handshake.auth?.token;
     if (user) void client.join(STAFF_ROOM);
     client.emit('auth:me', user);
     client.emit('features', this.featureList());
@@ -103,6 +109,7 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
     const res = this.auth.login(body?.username ?? '', body?.password ?? '', from);
     if (!res.ok) return res;
     client.data.user = res.user;
+    client.data.token = res.token;
     void client.join(STAFF_ROOM);
     this.sendLog(client); // now with the names the public stream leaves out
     client.emit('queue:settings', this.queue.getSettings());
@@ -111,7 +118,9 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
   @SubscribeMessage('auth:logout')
   logout(@ConnectedSocket() client: Socket) {
     this.auth.logout(client.handshake.auth?.token);
+    if (client.data.token !== client.handshake.auth?.token) this.auth.logout(client.data.token);
     client.data.user = null;
+    client.data.token = undefined;
     void client.leave(STAFF_ROOM);
     return { ok: true };
   }
@@ -127,8 +136,22 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
     if (!res.ok) return res;
     const b = body ?? {};
     this.audit.record({ ...actor(me!), action: b.id ? 'user.update' : 'user.create', targetType: 'user', targetId: String(res.user.id),
-      meta: { role: res.user.role, active: res.user.active, signInReset: !!(b.id && b.password) } });
+      meta: { role: res.user.role, active: res.user.active, signInReset: !!(b.id && b.password), clinics: res.user.clinics.length } });
+    if (b.id) this.refreshUser(res.user.id);
     return { ok: true, user: res.user, users: this.auth.list() };
+  }
+  // A changed account takes effect on the screens already open: new role / clinics at once; suspended or signed out
+  // (password reset) → the screen is signed out.
+  private refreshUser(id: number) {
+    const sockets = (this.server as unknown as { sockets?: Map<string, Socket> }).sockets;
+    if (!(sockets instanceof Map)) return;
+    for (const s of sockets.values()) {
+      if (userOf(s)?.id !== id) continue;
+      const fresh = this.auth.resolve(s.data.token);
+      s.data.user = fresh;
+      if (!fresh) void s.leave(STAFF_ROOM);
+      s.emit('auth:me', fresh);
+    }
   }
 
   // ---- Phase 2 switches and the audit trail (administrators) ------------------------------------------------------
@@ -239,6 +262,7 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
       const { key, hn, ...input } = (body ?? {}) as EnterInput & { key?: unknown; hn?: unknown };
       const withHn = typeof hn === 'string' && hn.trim() !== '';
       const { result, replayed } = this.idempotency.run(`visit:enter:user:${me.id}`, key, { ...input, hn: withHn ? hn : undefined }, () => {
+        mustCover(me, input.flow === 'er' ? 'er' : typeof input.clinicKey === 'string' ? input.clinicKey : undefined);
         const profileId = withHn ? this.booking.profileForHN(hn) : undefined;
         const v = this.visits.enter(input, undefined, { profileId }).visit;
         if (profileId) this.notify.checkedIn(v, profileId, v.flow === 'er' ? 'ห้องฉุกเฉิน' : `พื้นที่รอ ${v.dept}`);
@@ -352,7 +376,7 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
       this.features.require('generalBooking');
       const { key, ...input } = body ?? {};
       const { result, replayed } = this.idempotency.run(`booking:create:user:${me.id}`, key, input, () =>
-        { const profile = this.booking.profileForHN(input.hn), b = this.booking.book(profile, input.slotId, 'STAFF', `user:${me.id}`); this.notify.bookingConfirmed(b, profile); return b; });
+        { mustCover(me, this.booking.slotService(input.slotId)); const profile = this.booking.profileForHN(input.hn), b = this.booking.book(profile, input.slotId, 'STAFF', `user:${me.id}`); this.notify.bookingConfirmed(b, profile); return b; });
       this.notify.kick();
       if (!replayed) {
         this.audit.record({ ...actor(me), action: 'booking.create', targetType: 'booking', targetId: result.id, meta: { channel: 'STAFF', serviceCode: result.serviceCode } });
@@ -367,6 +391,7 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
     const me = userOf(client);
     if (!me) return SIGN_IN;
     return attempt(() => {
+      mustCover(me, this.booking.get(body?.bookingId)?.serviceCode);
       const r = this.notify.tx(() => { const x = this.booking.cancel(body?.bookingId, body?.reason, { kind: 'staff', id: me.id, name: me.name, canOverride: may(me, 'supervisor') && this.features.on('staffOverrides') });
         if (x.changed) this.notify.bookingCancelled(x.booking, this.booking.profileOf(x.booking.id)); return x; });
       this.notify.kick();
@@ -383,7 +408,7 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
     if (!me) return SIGN_IN;
     if (overLimit(client, 'command')) return SLOW;
     return attempt(() => {
-      const list = this.booking.list(body ?? {});
+      const list = this.booking.list(body ?? {}).filter((b) => covers(me, b.serviceCode));
       // Looking a patient up by HN is access to personal data: kept in the trail (without the HN itself).
       if (typeof body?.hn === 'string' && body.hn.trim()) this.audit.record({ ...actor(me), action: 'booking.search.hn', targetType: 'patient-search', meta: { results: list.length } });
       return { ok: true, bookings: list };
@@ -402,7 +427,7 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
     return attempt(() => {
       if (this.queue.getSettings().dataMode !== 'live') throw new AppError('POLICY_REJECTED', 'ระบบอยู่ในโหมดสาธิต — เช็กอินเข้าคิวจริงได้เมื่อเปิดโหมดผู้ป่วยจริง');
       const channel = body?.channel === 'KIOSK' ? 'KIOSK' : 'COUNTER';
-      const r = this.notify.tx(() => { const x = this.checkin.checkIn(body?.code, { channel, at: body?.at, by: `user:${me.id}`, prefix: body?.prefix });
+      const r = this.notify.tx(() => { const x = this.checkin.checkIn(body?.code, { channel, at: body?.at, by: `user:${me.id}`, prefix: body?.prefix, allow: (c) => covers(me, c) });
         const profile = this.visits.profileOf(x.visit.id);
         if (!x.already && profile) { this.notify.checkedIn(x.visit, profile, `พื้นที่รอ ${x.visit.dept}`); if (x.source.kind === 'APPOINTMENT') this.notify.cancel('appointment', x.source.id, 'APPT_REMINDER'); }
         return x; });
@@ -496,7 +521,7 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
       this.features.require('appointments');
       const { key, ...input } = body ?? {};
       const { result, replayed } = this.idempotency.run(`appointment:create:user:${me.id}`, key, input, () =>
-        { const profile = this.booking.profileForHN(input.hn), a = this.appts.create(profile, input.slotId, 'STAFF', `user:${me.id}`); this.notify.appointmentMade(a, profile); return a; });
+        { mustCover(me, this.appts.slotClinic(input.slotId)); const profile = this.booking.profileForHN(input.hn), a = this.appts.create(profile, input.slotId, 'STAFF', `user:${me.id}`); this.notify.appointmentMade(a, profile); return a; });
       this.notify.kick();
       if (!replayed) { this.audit.record({ ...actor(me), action: 'appointment.create', targetType: 'appointment', targetId: result.id, meta: { clinic: result.clinicCode } }); this.apptChanged(); }
       return { ok: true, appointment: result };
@@ -507,6 +532,7 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
     const me = userOf(client);
     if (!me) return SIGN_IN;
     return attempt(() => {
+      mustCover(me, this.appts.get(body?.appointmentId)?.clinicCode);
       const r = this.notify.tx(() => { const x = this.appts.cancel(body?.appointmentId, body?.reason, this.staffActor(me));
         if (x.changed) this.notify.appointmentCancelled(x.appointment, this.appts.profileOf(x.appointment.id)!, true); return x; });
       this.notify.kick();
@@ -523,6 +549,7 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
       this.features.require('appointments');
       const { key, ...input } = body ?? {};
       const before = this.appts.get(input.appointmentId);
+      mustCover(me, before?.clinicCode);
       const { result, replayed } = this.idempotency.run(`appointment:reschedule:user:${me.id}`, key, input, () => {
         const a = this.appts.reschedule(input.appointmentId, input.slotId, this.staffActor(me)); this.notify.appointmentMoved(a, this.appts.profileOf(a.id)!, true); return a; });
       this.notify.kick();
@@ -532,14 +559,16 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
   }
   @SubscribeMessage('appt:requests')
   apptRequests(@ConnectedSocket() client: Socket, @MessageBody() body: { status?: unknown }) {
-    if (!userOf(client)) return SIGN_IN;
-    return attempt(() => ({ ok: true, requests: this.appts.requests(body?.status) }));
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    return attempt(() => ({ ok: true, requests: this.appts.requests(body?.status).filter((r) => covers(me, r.appointment.clinicCode)) }));
   }
   @SubscribeMessage('appt:decide')
   decideAppt(@ConnectedSocket() client: Socket, @MessageBody() body: { requestId?: unknown; approve?: unknown; note?: unknown }) {
     const me = userOf(client);
     if (!me) return SIGN_IN;
     return attempt(() => {
+      mustCover(me, this.appts.requestClinic(body?.requestId));
       const r = this.notify.tx(() => { const x = this.appts.decide(body?.requestId, body?.approve, body?.note, this.staffActor(me)), profile = this.appts.profileOf(x.appointment.id)!;
         if (x.status === 'APPROVED') this.notify.appointmentMoved(this.appts.get(x.appointment.id)!, profile, true);
         else if (x.status === 'REJECTED') this.notify.moveRejected(x.appointment, profile, x.id, x.decisionNote);
@@ -556,6 +585,7 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
     if (!me) return SIGN_IN;
     if (!may(me, 'supervisor')) return { ...DENIED, reason: 'เฉพาะหัวหน้างานบันทึกไม่มาตามนัดได้' };
     return attempt(() => {
+      mustCover(me, this.appts.get(body?.appointmentId)?.clinicCode);
       const a = this.notify.tx(() => { const x = this.appts.markNoShow(body?.appointmentId, body?.reason, `user:${me.id}`); this.notify.cancel('appointment', x.id); return x; });
       this.audit.record({ ...actor(me), action: 'appointment.noshow', targetType: 'appointment', targetId: a.id, reason: a.noShowReason });
       this.apptChanged();
@@ -568,7 +598,7 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
     if (!me) return SIGN_IN;
     if (overLimit(client, 'command')) return SLOW;
     return attempt(() => {
-      const list = this.appts.list(body ?? {});
+      const list = this.appts.list(body ?? {}).filter((a) => covers(me, a.clinicCode));
       if (typeof body?.hn === 'string' && body.hn.trim()) this.audit.record({ ...actor(me), action: 'appointment.search.hn', targetType: 'patient-search', meta: { results: list.length } });
       return { ok: true, appointments: list };
     });

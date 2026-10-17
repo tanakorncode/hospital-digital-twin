@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CalendarCheck, CalendarPlus, CheckCircle2, LogIn, RefreshCw, Search, X } from 'lucide-react';
 import { CheckInCard, type CheckInResult } from '../CheckInCard';
 import { opdClinics, type Clinic } from '../../lib/patients';
-import { actionKey, type QueueSync } from '../../lib/queue';
+import { actionKey, covers, type AuthUser, type QueueSync } from '../../lib/queue';
 
 // General booking (Phase 2): administrators set the rules and the time slots per clinic; staff book for patients at
 // the counter or on the phone (the path for people without LINE) and cancel on request. The server checks
@@ -129,8 +129,8 @@ function SlotList({api,rev,clinics,onDone}:{api:Api; rev:number; clinics:Clinic[
 
 // ---- Queue page → การจอง (staff) ------------------------------------------------------------------------------------
 const cancelReasons = ['ผู้ป่วยขอยกเลิก','ผู้ป่วยขอเปลี่ยนวัน','จองผิด'];
-export function BookingTab({api,rev,features}:{api:Api; rev:number; features:QueueSync['features']}) {
- const clinics = useMemo(()=>opdClinics(),[]);
+export function BookingTab({api,rev,user,features}:{api:Api; rev:number; user?:AuthUser|null; features:QueueSync['features']}) {
+ const clinics = useMemo(()=>opdClinics().filter(c=>covers(user,c.key)),[user]);
  const {policies} = usePolicies(api,rev);
  const open = clinics.filter(c=>policies.some(p=>p.serviceCode===c.key && p.enabled));
  const [date,setDate] = useState(today);

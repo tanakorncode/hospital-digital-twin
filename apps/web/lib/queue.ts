@@ -382,11 +382,14 @@ const settingsKey = 'hdt.queueSettings';
 const loadSettings = ():QueueSettings => { try { const v = JSON.parse(localStorage.getItem(settingsKey) ?? 'null'); return v ? mergeSettings(DEFAULT_SETTINGS,v) : DEFAULT_SETTINGS; } catch { return DEFAULT_SETTINGS; } };
 // ---- Staff accounts (the API checks every action; the screens only hide what a role cannot do) ----
 export type Role = 'admin'|'supervisor'|'staff';
-export type AuthUser = {id:number; username:string; name:string; role:Role; active:boolean; lastLogin?:string};
+// clinics: the clinics a staff member / supervisor works for (clinic keys, 'er' = emergency room); empty = every clinic.
+export type AuthUser = {id:number; username:string; name:string; role:Role; active:boolean; lastLogin?:string; clinics?:string[]};
+// Same rule as the server (apps/api/src/flow.gateway.ts `covers`): administrators and accounts without a list cover all.
+export const covers = (u:AuthUser|null|undefined, clinic:string) => !u || u.role==='admin' || !u.clinics?.length || u.clinics.includes(clinic);
 export const roleText:Record<Role,string> = {admin:'ผู้ดูแลระบบ',supervisor:'หัวหน้างาน',staff:'เจ้าหน้าที่'};
 const roleRank:Record<Role,number> = {staff:1,supervisor:2,admin:3};
 export const canDo = (u:AuthUser|null|undefined, role:Role) => !!u && roleRank[u.role]>=roleRank[role];
-export type UserInput = {id?:number; username?:string; name?:string; role?:Role; active?:boolean; password?:string};
+export type UserInput = {id?:number; username?:string; name?:string; role?:Role; active?:boolean; password?:string; clinics?:string[]};
 type Res = {ok:boolean; reason?:string; auth?:boolean};
 const sessionKey = 'hdt.session';
 const loadToken = () => { try { return localStorage.getItem(sessionKey) ?? ''; } catch { return ''; } };

@@ -26,13 +26,14 @@ export class CheckInService {
   constructor(private readonly store: DbService, private readonly booking: BookingService, private readonly visits: VisitsService, private readonly appts: AppointmentService) {}
 
   // at: the minute of the day the screens run on (as for every queue action); `prefix`: the clinic's queue letter, used
-  // only when the clinic's rules do not name one yet.
-  checkIn(code: unknown, opts: { channel: Channel; at: unknown; by: string; prefix?: unknown }): CheckInResult {
+  // only when the clinic's rules do not name one yet. `allow`: the clinics the staff member may check in for.
+  checkIn(code: unknown, opts: { channel: Channel; at: unknown; by: string; prefix?: unknown; allow?: (clinic: string) => boolean }): CheckInResult {
     const text = typeof code === 'string' ? code.trim().toUpperCase().replace(/[\s-]/g, '') : '';
     if (!CODE_RE.test(text)) throw new AppError('VALIDATION_ERROR', 'รหัสไม่ถูกต้อง (BK หรือ AP ตามด้วย 6 ตัว)');
     return this.store.tx(() => {
       const f = text.startsWith('BK') ? this.findBooking(text) : this.findAppointment(text);
       if (!f) throw new AppError('RESOURCE_NOT_FOUND', 'ไม่พบรหัสนี้ กรุณาตรวจสอบอีกครั้ง หรือติดต่อเคาน์เตอร์');
+      if (opts.allow && !opts.allow(f.clinicCode)) throw new AppError('FORBIDDEN', `รหัสนี้เป็นของ ${f.serviceName} ซึ่งอยู่นอกแผนกที่คุณรับผิดชอบ — ส่งผู้ป่วยไปเคาน์เตอร์ของแผนกนั้น`);
       const source: SourceInfo = { kind: f.kind, id: f.id, code: f.code, serviceName: f.serviceName, startsAt: f.startsAt, endsAt: f.endsAt, providerName: f.providerName };
       // Already checked in: the same queue number again.
       const done = this.store.db.prepare('SELECT visit_id, late FROM check_in_records WHERE source_type = ? AND source_id = ?').get(f.kind, f.id) as { visit_id: string; late: number } | undefined;

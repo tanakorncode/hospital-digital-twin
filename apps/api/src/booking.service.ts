@@ -260,6 +260,10 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
   ownedBy(bookingId: unknown, profileId: string) {
     return typeof bookingId === 'string' && (this.store.db.prepare('SELECT 1 FROM bookings WHERE id = ? AND patient_profile_id = ?').get(bookingId, profileId) !== undefined);
   }
+  // The service a slot belongs to (for checking a staff member's clinics before booking into it).
+  slotService(slotId: unknown) {
+    return typeof slotId === 'string' ? (this.store.db.prepare('SELECT service_code AS c FROM booking_slots WHERE id = ?').get(slotId) as { c: string } | undefined)?.c : undefined;
+  }
   // Staff lists: one day (optionally one service), or one booking by its code, or a patient's bookings by HN.
   list(f: { date?: unknown; serviceCode?: unknown; code?: unknown; hn?: unknown }): Booking[] {
     if (typeof f.code === 'string' && f.code.trim()) {

@@ -35,12 +35,12 @@ export default function QueuePage({patients,minute,timeNote,onOpenPatient,queue,
   <div className="pageHead"><h2>ติดตามคิว</h2><span className="pageTime">{timeNote}</span>
    <span className={'syncBadge'+(queue.online?' on':'')}>{queue.online?'ซิงก์กับระบบคิวกลาง':'ออฟไลน์ · บันทึกเฉพาะเครื่องนี้'}</span>
    {isLive(queue.settings) && <span className="syncBadge live">ผู้ป่วยจริง</span>}
-   {visitControl(queue) && <EnterVisitButton visits={visitControl(queue)!} minute={minute} disabled={!queue.canAct} patients={patients} QrButton={QrButton}/>}
+   {visitControl(queue) && <EnterVisitButton visits={visitControl(queue)!} user={queue.user} minute={minute} disabled={!queue.canAct} patients={patients} QrButton={QrButton}/>}
    <div className="pageTabs" role="tablist">{tabs.filter(([id])=>!['booking','appts','line'].includes(id) || bookingOk).map(([id,label,Icon])=><button key={id} role="tab" aria-selected={tab===id} className={tab===id?'on':''} onClick={()=>setTab(id)}><Icon size={15}/>{label}</button>)}</div>
   </div>
   {serviceNote(m) && <OffHours m={m} queue={queue}/>}
   {tab==='station' ? <StationConsole patients={patients} minute={minute} queue={queue} onOpen={onOpenPatient} assist={assist} onOpenSettings={onOpenSettings}/>
-   : tab==='booking' && bookingOk ? <BookingTab api={queue.api!} rev={queue.bookingRev ?? 0} features={queue.features!}/>
+   : tab==='booking' && bookingOk ? <BookingTab api={queue.api!} rev={queue.bookingRev ?? 0} user={queue.user} features={queue.features!}/>
    : tab==='line' && bookingOk ? <LineLinkTab api={queue.api!} features={queue.features!} Scanner={CameraScanner}/>
    : tab==='appts' && bookingOk ? <ApptTab api={queue.api!} rev={queue.apptRev ?? 0} user={queue.user} features={queue.features!}/>
    : tab==='overview' ? <OverviewTab patients={patients} m={m} onOpen={onOpenPatient} queue={queue} assist={assist} onOpenSettings={onOpenSettings} onOpenPlace={onOpenPlace}/>

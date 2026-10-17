@@ -339,6 +339,13 @@ export class AppointmentService implements OnModuleInit, OnModuleDestroy {
     return this.bookable(a.clinicCode, date, p?.patientSelectsProvider ? undefined : a.providerCode)
       .filter((s) => s.startsAt !== a.startsAt || s.providerCode !== a.providerCode);
   }
+  // The clinic a slot / a request to move belongs to (for checking a staff member's clinics).
+  slotClinic(slotId: unknown) {
+    return typeof slotId === 'string' ? (this.store.db.prepare('SELECT p.clinic_code AS c FROM appointment_slots s JOIN provider_schedules p ON p.id = s.schedule_id WHERE s.id = ?').get(slotId) as { c: string } | undefined)?.c : undefined;
+  }
+  requestClinic(requestId: unknown) {
+    return typeof requestId === 'string' ? (this.store.db.prepare('SELECT a.clinic_code AS c FROM appointment_reschedule_requests r JOIN appointments a ON a.id = r.appointment_id WHERE r.id = ?').get(requestId) as { c: string } | undefined)?.c : undefined;
+  }
   requests(status: unknown = 'PENDING'): RescheduleRequest[] {
     const st = typeof status === 'string' ? status : 'PENDING';
     return (this.store.db.prepare(`SELECT id FROM appointment_reschedule_requests WHERE status = ? ORDER BY created_at LIMIT 200`).all(st) as { id: string }[]).map((r) => this.request(r.id)!);

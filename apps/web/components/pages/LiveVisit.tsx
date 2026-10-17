@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Ban, CheckCircle2, Forward, UserPlus, X } from 'lucide-react';
 import { PriorityTag } from '../PriorityIcon';
 import { clinicOpen, opdClinics, stepText, triageLevels, type Patient, type PatientState, type StepKind } from '../../lib/patients';
-import { actionKey, priorityKeys, priorityText, type QueueSync, type VisitInput } from '../../lib/queue';
+import { actionKey, covers, priorityKeys, priorityText, type AuthUser, type QueueSync, type VisitInput } from '../../lib/queue';
 
 // Real patients (live data mode): taking a patient into the queue, sending them on after a step, and cancelling a
 // visit made by mistake. The queue number comes from the server; nothing personal is entered here — no name, no HN.
@@ -18,18 +18,20 @@ function useActionKey(payload:unknown) {
  return {key:k.sig===sig ? k.key : '', renew:()=>setK({sig,key:actionKey()})};
 }
 
-export function EnterVisitButton({visits,minute,disabled,QrButton,patients}:{visits:VisitControl;minute:number;disabled?:boolean;patients:Patient[];
+export function EnterVisitButton({visits,user,minute,disabled,QrButton,patients}:{visits:VisitControl;user?:AuthUser|null;minute:number;disabled?:boolean;patients:Patient[];
  QrButton:(props:{p:Patient;label?:string})=>React.ReactNode}) {
  const [open,setOpen] = useState(false);
  return <>
   <button className="btn" disabled={disabled} onClick={()=>setOpen(true)}><UserPlus size={15}/> รับผู้ป่วยเข้าคิว</button>
-  {open && <EnterVisitDialog visits={visits} minute={minute} patients={patients} QrButton={QrButton} onClose={()=>setOpen(false)}/>}
+  {open && <EnterVisitDialog visits={visits} user={user} minute={minute} patients={patients} QrButton={QrButton} onClose={()=>setOpen(false)}/>}
  </>;
 }
 
-function EnterVisitDialog({visits,minute,patients,QrButton,onClose}:{visits:VisitControl;minute:number;patients:Patient[];QrButton:(props:{p:Patient;label?:string})=>React.ReactNode;onClose:()=>void}) {
- const clinics = useMemo(()=>opdClinics().filter(clinicOpen),[]);
- const [flow,setFlow] = useState<'opd'|'er'>('opd');
+function EnterVisitDialog({visits,user,minute,patients,QrButton,onClose}:{visits:VisitControl;user?:AuthUser|null;minute:number;patients:Patient[];QrButton:(props:{p:Patient;label?:string})=>React.ReactNode;onClose:()=>void}) {
+ // Only the clinics this account works for (the server checks the same).
+ const clinics = useMemo(()=>opdClinics().filter(c=>clinicOpen(c) && covers(user,c.key)),[user]);
+ const erOk = covers(user,'er'), opdOk = clinics.length>0;
+ const [flow,setFlow] = useState<'opd'|'er'>(opdOk || !erOk ? 'opd' : 'er');
  const [clinicKey,setClinicKey] = useState(clinics[0]?.key ?? '');
  const [priority,setPriority] = useState<VisitInput['priority']>();
  const [triage,setTriage] = useState<number|undefined>();
@@ -65,8 +67,8 @@ function EnterVisitDialog({visits,minute,patients,QrButton,onClose}:{visits:Visi
     <div className="qrActs"><QrButton p={p} label="แสดง QR บนบัตรคิว"/><button className="btn" onClick={another}><UserPlus size={14}/> รับคนถัดไป</button></div>
    </div> : <>
     <div className="visitRow"><span>ประเภท</span><div className="segBtns">
-     <button className={flow==='opd'?'on':''} aria-pressed={flow==='opd'} onClick={()=>setFlow('opd')}>ผู้ป่วยนอก (OPD)</button>
-     <button className={flow==='er'?'on':''} aria-pressed={flow==='er'} onClick={()=>setFlow('er')}>ห้องฉุกเฉิน</button></div></div>
+     {opdOk && <button className={flow==='opd'?'on':''} aria-pressed={flow==='opd'} onClick={()=>setFlow('opd')}>ผู้ป่วยนอก (OPD)</button>}
+     {erOk && <button className={flow==='er'?'on':''} aria-pressed={flow==='er'} onClick={()=>setFlow('er')}>ห้องฉุกเฉิน</button>}</div></div>
     {flow==='opd' ? <div className="visitRow"><span>คลินิก</span>
      <div className="visitClinics">{clinics.map(x=><button key={x.key} className={x.key===clinicKey?'on':''} aria-pressed={x.key===clinicKey} onClick={()=>setClinicKey(x.key)}>
       <b>{x.letter}</b><span>{x.dept}</span><small>ชั้น {x.level}</small></button>)}</div></div>

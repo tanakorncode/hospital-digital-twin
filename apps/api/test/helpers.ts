@@ -39,12 +39,15 @@ export function makeApi() {
   const gateway = new FlowGateway(new FlowService(), new LiveFeedService(), queue, auth, tickets, line, audit, features, visits, idempotency, booking, checkin, appts, identity, notify, wayfinding);
   // Broadcasts: `to` = only that room (staff), `except` = everyone else (public screens), neither = everyone.
   const emitted: { event: string; data: unknown; to?: string; except?: string }[] = [];
+  // `sockets`: the connected screens (signIn adds its socket), so account changes can reach screens already open.
+  const sockets = new Map<string, unknown>();
   (gateway as unknown as { server: unknown }).server = {
+    sockets,
     emit: (event: string, data: unknown) => emitted.push({ event, data }),
     to: (room: string) => ({ emit: (event: string, data: unknown) => emitted.push({ event, data, to: room }) }),
     except: (room: string) => ({ emit: (event: string, data: unknown) => emitted.push({ event, data, except: room }) }),
   };
-  return { db, auth, queue, tickets, line, audit, features, idempotency, visits, booking, appts, checkin, identity, notify, wayfinding, gateway, emitted };
+  return { db, auth, queue, tickets, line, audit, features, idempotency, visits, booking, appts, checkin, identity, notify, wayfinding, gateway, emitted, sockets };
 }
 // A socket as the gateway sees it, optionally signed in with a session token.
 export function fakeSocket(token = '') {
@@ -57,6 +60,7 @@ export function signIn(api: ReturnType<typeof makeApi>, username: string, passwo
   if (!r.ok) throw new Error(r.reason);
   const s = fakeSocket(r.token);
   api.gateway.handleConnection(s);
+  api.sockets.set(`s${api.sockets.size}`, s);
   return s;
 }
 // The patient's REST controller (LINE pages) wired to a test API.

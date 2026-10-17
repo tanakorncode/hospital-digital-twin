@@ -7,7 +7,9 @@ import { DbService } from './db.service';
 // Staff accounts and sessions. Passwords: scrypt with a per-user salt. Sessions: random tokens, only their SHA-256
 // is stored, valid for SESSION_HOURS (default 12 — one shift). The public screens (TV, patient page) need no login.
 export type Role = 'admin' | 'supervisor' | 'staff';
-export type User = { id: number; username: string; name: string; role: Role; active: boolean; lastLogin?: string };
+// clinics: the clinics a staff member / supervisor works for (queue clinic keys, 'er' = emergency room); empty = all.
+// Administrators always cover every clinic.
+export type User = { id: number; username: string; name: string; role: Role; active: boolean; lastLogin?: string; clinics: string[] };
 export const ROLES: Role[] = ['admin', 'supervisor', 'staff'];
 const SESSION_HOURS = Number(process.env.SESSION_HOURS ?? 12);
 const MAX_FAILS = 5, FAIL_WINDOW_MS = 5 * 60_000;
@@ -21,7 +23,8 @@ const checkPassword = (password: string, stored: string) => {
 };
 const sha = (s: string) => createHash('sha256').update(s).digest('hex');
 type Row = { id: number; username: string; name: string; role: Role; pass_hash: string; active: number; last_login: string | null };
-const toUser = (r: Row): User => ({ id: r.id, username: r.username, name: r.name, role: r.role, active: !!r.active, lastLogin: r.last_login ?? undefined });
+export const CLINIC_KEY_RE = /^(opd-\d-\d{1,2}|er)$/;
+const MAX_CLINICS = 40;
 
 @Injectable()
 export class AuthService implements OnModuleInit {
@@ -59,7 +62,7 @@ export class AuthService implements OnModuleInit {
     this.store.db.prepare('INSERT INTO sessions (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)')
       .run(sha(token), row.id, at.toISOString(), new Date(at.getTime() + SESSION_HOURS * 3600_000).toISOString());
     this.store.db.prepare('UPDATE users SET last_login = ? WHERE id = ?').run(at.toISOString(), row.id);
-    return { ok: true, token, user: toUser({ ...row, last_login: at.toISOString() }) };
+    return { ok: true, token, user: this.toUser({ ...row, last_login: at.toISOString() }) };
   }
 
   // The signed-in user for a session token, or null (expired, unknown, or the account was suspended).
@@ -67,26 +70,30 @@ export class AuthService implements OnModuleInit {
     if (typeof token !== 'string' || !token || token.length > 100) return null;
     const row = this.store.db.prepare(`SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.expires_at > ? AND u.active = 1`)
       .get(sha(token), new Date().toISOString()) as Row | undefined;
-    return row ? toUser(row) : null;
+    return row ? this.toUser(row) : null;
   }
   logout(token: unknown) {
     if (typeof token === 'string') this.store.db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(sha(token));
   }
 
   list(): User[] {
-    return (this.store.db.prepare('SELECT * FROM users ORDER BY active DESC, role, name').all() as Row[]).map(toUser);
+    return (this.store.db.prepare('SELECT * FROM users ORDER BY active DESC, role, name').all() as Row[]).map((r) => this.toUser(r));
   }
   // Create (no id) or update a user. Password: required for a new user, optional (reset) for an existing one.
-  save(input: { id?: number; username?: string; name?: string; role?: Role; active?: boolean; password?: string }, by: User): { ok: true; user: User } | { ok: false; reason: string } {
+  save(input: { id?: number; username?: string; name?: string; role?: Role; active?: boolean; password?: string; clinics?: unknown }, by: User): { ok: true; user: User } | { ok: false; reason: string } {
     const name = input.name?.trim(), username = input.username?.trim();
     if (name !== undefined && (!name || name.length > 60)) return { ok: false, reason: 'ชื่อต้องยาว 1–60 ตัวอักษร' };
     if (input.role !== undefined && !ROLES.includes(input.role)) return { ok: false, reason: 'สิทธิ์ไม่ถูกต้อง' };
     if (input.password !== undefined && (typeof input.password !== 'string' || input.password.length < 8 || input.password.length > 200)) return { ok: false, reason: 'รหัสผ่านต้องยาวอย่างน้อย 8 ตัวอักษร' };
+    const clinics = input.clinics === undefined ? undefined : Array.isArray(input.clinics) ? [...new Set(input.clinics)] : null;
+    if (clinics === null || (clinics && (clinics.length > MAX_CLINICS || clinics.some((c) => typeof c !== 'string' || !CLINIC_KEY_RE.test(c))))) return { ok: false, reason: 'แผนกที่รับผิดชอบไม่ถูกต้อง' };
     if (!input.id) {
       if (!username || !/^[a-zA-Z0-9._-]{3,40}$/.test(username)) return { ok: false, reason: 'ชื่อผู้ใช้ 3–40 ตัว ใช้ a–z 0–9 . _ - ได้' };
       if (!name || !input.role || !input.password) return { ok: false, reason: 'กรอกชื่อ สิทธิ์ และรหัสผ่านให้ครบ' };
       if (this.store.db.prepare('SELECT 1 FROM users WHERE username = ?').get(username)) return { ok: false, reason: 'มีชื่อผู้ใช้นี้แล้ว' };
-      return { ok: true, user: this.create({ username, name, role: input.role, password: input.password }) };
+      const u = this.create({ username, name, role: input.role, password: input.password });
+      if (clinics) this.setClinics(u.id, clinics as string[]);
+      return { ok: true, user: this.get(u.id)! };
     }
     const row = this.store.db.prepare('SELECT * FROM users WHERE id = ?').get(input.id) as Row | undefined;
     if (!row) return { ok: false, reason: 'ไม่พบผู้ใช้' };
@@ -102,12 +109,28 @@ export class AuthService implements OnModuleInit {
       if (row.id !== by.id) this.store.db.prepare('DELETE FROM sessions WHERE user_id = ?').run(row.id);
     }
     if (input.active === false) this.store.db.prepare('DELETE FROM sessions WHERE user_id = ?').run(row.id);
-    return { ok: true, user: toUser(this.store.db.prepare('SELECT * FROM users WHERE id = ?').get(row.id) as Row) };
+    if (clinics) this.setClinics(row.id, clinics as string[]);
+    return { ok: true, user: this.get(row.id)! };
   }
 
+  get(id: number): User | undefined {
+    const r = this.store.db.prepare('SELECT * FROM users WHERE id = ?').get(id) as Row | undefined;
+    return r ? this.toUser(r) : undefined;
+  }
+  private setClinics(id: number, clinics: string[]) {
+    this.store.tx(() => {
+      this.store.db.prepare('DELETE FROM user_clinics WHERE user_id = ?').run(id);
+      const add = this.store.db.prepare('INSERT INTO user_clinics (user_id, clinic_key) VALUES (?, ?)');
+      for (const c of clinics) add.run(id, c);
+    });
+  }
+  private toUser(r: Row): User {
+    const clinics = r.role === 'admin' ? [] : (this.store.db.prepare('SELECT clinic_key AS k FROM user_clinics WHERE user_id = ? ORDER BY clinic_key').all(r.id) as { k: string }[]).map((x) => x.k);
+    return { id: r.id, username: r.username, name: r.name, role: r.role, active: !!r.active, lastLogin: r.last_login ?? undefined, clinics };
+  }
   private create(u: { username: string; name: string; role: Role; password: string }): User {
     const r = this.store.db.prepare('INSERT INTO users (username, name, role, pass_hash, active, created_at) VALUES (?, ?, ?, ?, 1, ?)')
       .run(u.username, u.name, u.role, hashPassword(u.password), new Date().toISOString());
-    return toUser(this.store.db.prepare('SELECT * FROM users WHERE id = ?').get(Number(r.lastInsertRowid)) as Row);
+    return this.get(Number(r.lastInsertRowid))!;
   }
 }

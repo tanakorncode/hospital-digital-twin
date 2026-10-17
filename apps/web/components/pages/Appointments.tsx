@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CalendarClock, CalendarPlus, Check, CheckCircle2, LogIn, MoveRight, RefreshCw, Search, X } from 'lucide-react';
 import { opdClinics, type Clinic } from '../../lib/patients';
-import { actionKey, canDo, type AuthUser, type QueueSync } from '../../lib/queue';
+import { actionKey, canDo, covers, type AuthUser, type QueueSync } from '../../lib/queue';
 import { CheckInCard, type CheckInResult } from '../CheckInCard';
 import { NumPick, addDays, dayOf, timeOf, today, weekdayNames } from './Booking';
 
@@ -123,7 +123,7 @@ function SessionList({api,rev,clinics,say}:{api:Api; rev:number; clinics:Clinic[
 const cancelReasons = ['ผู้ป่วยขอยกเลิก','แพทย์สั่งเลื่อน/ยกเลิก','นัดผิด'];
 const noShowReasons = ['โทรติดต่อแล้วไม่มา','ติดต่อไม่ได้'];
 export function ApptTab({api,rev,user,features}:{api:Api; rev:number; user?:AuthUser|null; features:QueueSync['features']}) {
- const clinics = useMemo(()=>opdClinics(),[]);
+ const clinics = useMemo(()=>opdClinics().filter(c=>covers(user,c.key)),[user]);
  const {policies} = usePolicies(api,rev);
  const open = clinics.filter(c=>policies.some(p=>p.clinicCode===c.key && p.enabled));
  const [date,setDate] = useState(today);

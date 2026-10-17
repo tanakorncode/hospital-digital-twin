@@ -425,6 +425,17 @@ function AddDept({depts,clinics,onAdd,onCancel}:{depts:CustomDept[];clinics:Clin
 // ---- Staff accounts (administrators only) -------------------------------------------------------------------
 const roleHint:Record<Role,string> = {admin:'ทุกอย่าง รวมการตั้งค่าทั้งโรงพยาบาลและบัญชีผู้ใช้',supervisor:'งานคิว + ปรับการตั้งค่ารายแผนก/รายห้อง',staff:'งานคิวที่จุดบริการ (เรียก พัก ย้าย ปิดงาน)'};
 const ROLE_LIST:Role[] = ['staff','supervisor','admin'];
+// Which clinics an account works for: bookings, appointments, check-in and walk-ins are limited to these (checked on
+// the server). None ticked = every clinic — for registration, the kiosk account and anyone covering the whole hospital.
+const clinicLabel = (k:string) => k==='er' ? 'ห้องฉุกเฉิน' : opdClinics().find(c=>c.key===k)?.dept ?? k;
+const scopeText = (u:AuthUser) => u.role==='admin' || !u.clinics?.length ? 'ทุกแผนก' : u.clinics.length<=2 ? u.clinics.map(clinicLabel).join(', ') : `${u.clinics.length} แผนก`;
+function ClinicScope({value,onChange}:{value:string[];onChange:(v:string[])=>void}) {
+ const options = useMemo(()=>[...opdClinics().map(c=>({key:c.key,label:c.dept,sub:`ชั้น ${c.level}`})),{key:'er',label:'ห้องฉุกเฉิน',sub:'ER'}],[]);
+ const flip = (k:string) => onChange(value.includes(k) ? value.filter(x=>x!==k) : [...value,k]);
+ return <div className="addField"><span>แผนกที่รับผิดชอบ <small className="muted">{value.length ? `${value.length} แผนก — จอง นัด เช็กอิน และรับผู้ป่วยได้เฉพาะแผนกเหล่านี้` : 'ไม่เลือก = ทุกแผนก (เช่น เวชระเบียน เคาน์เตอร์กลาง บัญชีตู้เช็กอิน)'}</small></span>
+  <div className="scopePick">{options.map(o=><label key={o.key} className={value.includes(o.key)?'on':''}><input type="checkbox" checked={value.includes(o.key)} onChange={()=>flip(o.key)}/><b>{o.label}</b><small>{o.sub}</small></label>)}
+   {value.length>0 && <button type="button" className="btn ghost sm" onClick={()=>onChange([])}>ล้าง (ทุกแผนก)</button>}</div></div>;
+}
 function UsersPane({me,listUsers,saveUser}:{me:AuthUser;listUsers:QueueSync['listUsers'];saveUser:QueueSync['saveUser']}) {
  const [users,setUsers] = useState<AuthUser[]>([]);
  const [msg,setMsg] = useState<{text:string;bad?:boolean}|null>(null);
@@ -432,7 +443,8 @@ function UsersPane({me,listUsers,saveUser}:{me:AuthUser;listUsers:QueueSync['lis
  useEffect(()=>{ void listUsers().then(r=>{ if (r.ok && r.users) setUsers(r.users); else setMsg({text:r.reason ?? 'โหลดรายชื่อไม่สำเร็จ',bad:true}); }); },[listUsers]);
  const submit = async () => {
   if (!edit) return;
-  const body:UserInput = edit.isNew ? {username:edit.username,name:edit.name,role:edit.role,password:edit.password} : {id:edit.id,name:edit.name,role:edit.role,active:edit.active,...(edit.password?{password:edit.password}:{})};
+  const clinics = edit.role==='admin' ? [] : edit.clinics ?? [];
+  const body:UserInput = edit.isNew ? {username:edit.username,name:edit.name,role:edit.role,password:edit.password,clinics} : {id:edit.id,name:edit.name,role:edit.role,active:edit.active,clinics,...(edit.password?{password:edit.password}:{})};
   const r = await saveUser(body);
   if (r.ok && r.users) { setUsers(r.users); setEdit(null); setMsg({text:edit.isNew?`สร้างบัญชี ${edit.username} แล้ว`:edit.password?'บันทึกแล้ว · รหัสผ่านใหม่มีผล ผู้ใช้ต้องเข้าสู่ระบบใหม่':'บันทึกแล้ว'}); }
   else setMsg({text:r.reason ?? 'บันทึกไม่สำเร็จ',bad:true});
@@ -452,12 +464,13 @@ function UsersPane({me,listUsers,saveUser}:{me:AuthUser;listUsers:QueueSync['lis
     <label className="addField"><span>{edit.isNew?'รหัสผ่าน':'ตั้งรหัสผ่านใหม่ (เว้นว่างถ้าไม่เปลี่ยน)'}</span><input type="password" value={edit.password ?? ''} autoComplete="new-password" placeholder="อย่างน้อย 8 ตัวอักษร" onChange={e=>setEdit({...edit,password:e.target.value})}/></label>
    </div>
    <div className="addField"><span>สิทธิ์</span><div className="floorPick">{ROLE_LIST.map(r=><button key={r} type="button" className={edit.role===r?'on':''} onClick={()=>setEdit({...edit,role:r})}><b>{roleText[r]}</b><small>{roleHint[r]}</small></button>)}</div></div>
+   {edit.role!=='admin' && <ClinicScope value={edit.clinics ?? []} onChange={clinics=>setEdit({...edit,clinics})}/>}
    <div className="addActions"><button className="btn ghost" onClick={()=>setEdit(null)}>ยกเลิก</button><button className="btn" onClick={()=>void submit()}>{edit.isNew?'สร้างบัญชี':'บันทึก'}</button></div>
   </div>}
   <div className="usersList">{users.map(u=><div key={u.id} className={'userRow'+(u.active?'':' off')}>
    <span className={'userAva r-'+u.role}><UserCog size={15}/></span>
-   <div className="userInfo"><b>{u.name}{u.id===me.id && <em className="tagNew">คุณ</em>}{!u.active && <em className="tagOff">ระงับ</em>}</b><small>@{u.username} · {roleText[u.role]} · เข้าใช้ล่าสุด {fmt(u.lastLogin)}</small></div>
-   <button className="btn ghost sm" onClick={()=>setEdit({id:u.id,name:u.name,role:u.role,active:u.active,password:''})}><KeyRound size={14}/> แก้ไข</button>
+   <div className="userInfo"><b>{u.name}{u.id===me.id && <em className="tagNew">คุณ</em>}{!u.active && <em className="tagOff">ระงับ</em>}</b><small>@{u.username} · {roleText[u.role]} · {scopeText(u)} · เข้าใช้ล่าสุด {fmt(u.lastLogin)}</small></div>
+   <button className="btn ghost sm" onClick={()=>setEdit({id:u.id,name:u.name,role:u.role,active:u.active,password:'',clinics:u.clinics ?? []})}><KeyRound size={14}/> แก้ไข</button>
    {u.id!==me.id && <label className="switch small" title={u.active?'ระงับบัญชี':'เปิดใช้บัญชี'}><input type="checkbox" checked={u.active} onChange={()=>void toggleActive(u)}/><span/><small>{u.active?'ใช้งาน':'ระงับ'}</small></label>}
   </div>)}</div>
  </section>;

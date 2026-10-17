@@ -354,4 +354,17 @@ export const MIGRATIONS: Migration[] = [
         updated_by TEXT);
     `,
   },
+  {
+    version: 9,
+    name: 'staff clinic scope',
+    sql: `
+      -- Which clinics a staff member or supervisor works for (Phase 2 spec §14.2 "scope staff access by department").
+      -- No rows = every clinic, as before. Administrators always cover every clinic. Keys are the queue's clinic keys
+      -- (opd-<floor>-<zone>) and 'er' for the emergency room.
+      CREATE TABLE user_clinics (
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        clinic_key TEXT NOT NULL,
+        PRIMARY KEY (user_id, clinic_key));
+    `,
+  },
 ];
