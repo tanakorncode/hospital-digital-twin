@@ -378,4 +378,51 @@ export const MIGRATIONS: Migration[] = [
       ALTER TABLE visits ADD COLUMN exam_room TEXT;
     `,
   },
+  {
+    version: 11,
+    name: 'digital reception',
+    sql: `
+      -- Digital Reception kiosks (/reception). A kiosk is a public device: it signs in with its own credential (only the
+      -- hash is kept; shown once when made or rotated), never with a staff account. at_code: the wayfinding place it
+      -- stands at (where routes start). Revoked = refused at once.
+      CREATE TABLE kiosk_devices (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        at_code TEXT,
+        secret_hash TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE','REVOKED')),
+        created_at TEXT NOT NULL,
+        created_by TEXT,
+        rotated_at TEXT,
+        last_seen_at TEXT);
+
+      -- What a kiosk may say: approved answers only. Editing an answer makes a new draft version that must be approved
+      -- again. topic: faq (general questions), steps (how a visit works), hours, emergency (approved wording only).
+      CREATE TABLE reception_answers (
+        id TEXT PRIMARY KEY,
+        topic TEXT NOT NULL CHECK (topic IN ('faq','steps','hours','emergency')),
+        question_th TEXT NOT NULL,
+        keywords TEXT NOT NULL,
+        answer_th TEXT NOT NULL,
+        destination_code TEXT,
+        owner TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'DRAFT' CHECK (status IN ('DRAFT','APPROVED','RETIRED')),
+        version INTEGER NOT NULL DEFAULT 1,
+        effective_from TEXT,
+        effective_until TEXT,
+        approved_by TEXT,
+        approved_at TEXT,
+        updated_at TEXT NOT NULL,
+        updated_by TEXT);
+
+      -- Use of the kiosks, as daily counts only: no text that anyone typed, no session, nothing about a person.
+      CREATE TABLE reception_usage (
+        day TEXT NOT NULL,
+        kiosk_id TEXT NOT NULL,
+        event TEXT NOT NULL,
+        intent TEXT NOT NULL DEFAULT '',
+        count INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (day, kiosk_id, event, intent));
+    `,
+  },
 ];

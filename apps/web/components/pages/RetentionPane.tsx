@@ -8,7 +8,7 @@ import type { QueueSync } from '../../lib/queue';
 // now. Records still in use (confirmed bookings/appointments, active LINE links, messages waiting, today's queue) are
 // never removed. The server runs the clean-up every 6 hours (apps/api/src/retention.service.ts).
 type Api = QueueSync['api'];
-type Cat = 'bookings'|'appointments'|'queue'|'lineLinks'|'notifications'|'audit';
+type Cat = 'bookings'|'appointments'|'queue'|'lineLinks'|'notifications'|'reception'|'audit';
 type Retention = Record<Cat,number>;
 type Run = {at:string; removed:Record<string,number>};
 const cats:[Cat,string,string][] = [
@@ -17,6 +17,7 @@ const cats:[Cat,string,string][] = [
  ['queue','ประวัติคิวรายวัน','เลขคิว ขั้นตอน ลิงก์ QR บัตรคิว ของวันที่ผ่านมา'],
  ['lineLinks','การเชื่อม LINE ที่สิ้นสุดแล้ว','การเชื่อมที่ยกเลิกแล้ว (ที่ยังใช้อยู่ไม่ถูกลบ)'],
  ['notifications','ข้อความที่ส่งแล้ว','ส่งแล้ว/ไม่สำเร็จ/ยกเลิก (ที่รอส่งไม่ถูกลบ)'],
+ ['reception','ยอดใช้งานตู้ต้อนรับ','จำนวนครั้งต่อวัน (ไม่มีข้อความที่ผู้ใช้พิมพ์)'],
  ['audit','บันทึกการใช้งาน (audit)','ต้องเก็บนานไม่น้อยกว่าหมวดอื่นที่ตั้งไว้'],
 ];
 const presets = [0,90,180,365,730,1825];
@@ -26,7 +27,7 @@ const removedText:Record<string,string> = {bookings:'การจอง','bookin
  'doctor sessions':'ตารางแพทย์','requests to move':'คำขอเลื่อนนัด','queue log':'บันทึกคิว',visits:'ผู้ป่วยในคิว','queue numbers':'ตัวนับเลขคิว','walk-in check-ins':'เช็กอินหน้างาน',
  'queue-slip links':'ลิงก์บัตรคิว','ended LINE links':'การเชื่อม LINE ที่สิ้นสุด','message attempts':'ประวัติการส่ง',messages:'ข้อความ','audit entries':'บันทึกการใช้งาน',
  'patient records':'ระเบียนผู้ป่วย (HN) ที่ไม่มีรายการเหลือ','retry keys':'คีย์กันกดซ้ำ','staff sessions':'การเข้าระบบเจ้าหน้าที่ที่หมดอายุ','patient sessions':'การเข้าระบบผู้ป่วยที่หมดอายุ',
- 'link codes':'รหัสเชื่อมบัญชีที่หมดอายุ','LINE codes':'รหัส LINE ที่หมดอายุ','LINE queue subscriptions':'การรับแจ้งเตือนคิวที่หมดอายุ'};
+ 'kiosk use counts':'ยอดใช้งานตู้ต้อนรับ','link codes':'รหัสเชื่อมบัญชีที่หมดอายุ','LINE codes':'รหัส LINE ที่หมดอายุ','LINE queue subscriptions':'การรับแจ้งเตือนคิวที่หมดอายุ'};
 const list = (r:Record<string,number>) => Object.entries(r).map(([k,n])=>`${removedText[k] ?? k} ${n.toLocaleString('th-TH')}`).join(' · ');
 const when = (iso:string) => new Date(iso).toLocaleString('th-TH',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
 

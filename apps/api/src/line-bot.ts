@@ -1,3 +1,4 @@
+import { normalize, placeIn, whereTh } from './intent-rules';
 import type { Destination } from './wayfinding.service';
 
 // What the hospital's LINE OA says back, and its rich menu (stage 2.x follow-up to the Phase 2 plan, items 9.1–9.2).
@@ -22,12 +23,12 @@ const HELP = 'พิมพ์ได้เช่น "คิว" "จองคิ�
 
 // One message in → one answer. `places`: the hospital's public wayfinding places.
 export function answer(raw: string, places: Destination[]): Answer {
-  const text = raw.trim().replace(/\s+/g, ' ');
-  // "Where is …": the longest place name found in the message.
-  const place = [...places].sort((a, b) => b.nameTh.length - a.nameTh.length).find((p) => text.includes(p.nameTh));
+  const text = normalize(raw);
+  // "Where is …": the longest place name found in the message (rules shared with the reception kiosks).
+  const place = placeIn(text, places);
   if (place) {
     const link = base() ? `\nดูเส้นทาง: ${base()}/wayfinding?to=${encodeURIComponent(place.code)}` : '';
-    const where = `${place.nameTh} อยู่ที่${place.buildingId === 'opd' ? 'อาคารผู้ป่วยนอก (OPD)' : place.buildingId === 'er' ? 'อาคารฉุกเฉิน' : place.buildingId === 'diagnostics' ? 'อาคารศูนย์การแพทย์' : place.buildingId === 'inpatient' ? 'อาคารผู้ป่วยใน' : 'อาคาร ' + place.buildingId} ชั้น ${place.level}`;
+    const where = `${place.nameTh} อยู่ที่${whereTh(place)}`;
     return { text: `📍 ${where}${place.landmarkTh ? `\n${place.landmarkTh}` : ''}${link}`, quick: menu() };
   }
   if (/(อยู่ไหน|อยู่ตรงไหน|ไปยังไง|ไปทางไหน|ทางไป|แผนที่|หาไม่เจอ)/.test(text)) return go('map', '🗺️ ค้นหาจุดบริการและเส้นทางได้ในเมนู "แผนที่" · ในโรงพยาบาลสแกนป้าย QR ตามจุดต่าง ๆ ได้');

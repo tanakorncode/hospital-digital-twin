@@ -21,6 +21,9 @@ import { WayfindingService } from '../src/wayfinding.service';
 import { VisitsService } from '../src/visits.service';
 import { RetentionService } from '../src/retention.service';
 import { ReportService } from '../src/report.service';
+import { KioskDeviceService } from '../src/kiosk-device.service';
+import { ReceptionService } from '../src/reception.service';
+import { ReceptionController } from '../src/reception.controller';
 
 Logger.overrideLogger(false); // keep test output clean
 
@@ -39,7 +42,8 @@ export function makeApi() {
   const notify = new NotificationService(db, features, identity, visits), wayfinding = new WayfindingService(db);
   const queue = new QueueService(db, visits), tickets = new TicketsService(db), line = new LineService(db, tickets, notify, wayfinding, features);
   const retention = new RetentionService(db, audit);
-  const gateway = new FlowGateway(new FlowService(), new LiveFeedService(), queue, auth, tickets, line, audit, features, visits, idempotency, booking, checkin, appts, identity, notify, wayfinding, retention, new ReportService(db));
+  const kiosks = new KioskDeviceService(db), reception = new ReceptionService(db, wayfinding, queue);
+  const gateway = new FlowGateway(new FlowService(), new LiveFeedService(), queue, auth, tickets, line, audit, features, visits, idempotency, booking, checkin, appts, identity, notify, wayfinding, retention, new ReportService(db), kiosks, reception);
   // Broadcasts: `to` = only that room (staff), `except` = everyone else (public screens), neither = everyone.
   const emitted: { event: string; data: unknown; to?: string; except?: string }[] = [];
   // `sockets`: the connected screens (signIn adds its socket), so account changes can reach screens already open.
@@ -50,7 +54,7 @@ export function makeApi() {
     to: (room: string) => ({ emit: (event: string, data: unknown) => emitted.push({ event, data, to: room }) }),
     except: (room: string) => ({ emit: (event: string, data: unknown) => emitted.push({ event, data, except: room }) }),
   };
-  return { db, auth, queue, tickets, line, audit, features, idempotency, visits, booking, appts, checkin, identity, notify, wayfinding, gateway, emitted, sockets, retention };
+  return { db, auth, queue, tickets, line, audit, features, idempotency, visits, booking, appts, checkin, identity, notify, wayfinding, gateway, emitted, sockets, retention, kiosks, reception };
 }
 // A socket as the gateway sees it, optionally signed in with a session token.
 export function fakeSocket(token = '') {
@@ -69,3 +73,5 @@ export function signIn(api: ReturnType<typeof makeApi>, username: string, passwo
 // The patient's REST controller (LINE pages) wired to a test API.
 export const patientController = (api: ReturnType<typeof makeApi>) =>
   new PatientController(api.identity, api.features, api.audit, api.booking, api.appts, api.visits, api.tickets, api.idempotency, api.gateway, api.notify);
+// The Digital Reception REST controller wired to a test API.
+export const receptionController = (api: ReturnType<typeof makeApi>) => new ReceptionController(api.kiosks, api.reception, api.features);

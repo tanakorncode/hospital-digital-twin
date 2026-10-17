@@ -10,10 +10,10 @@ import { AppError } from './errors';
 //    decides). Only finished records go: a booking or appointment that is still CONFIRMED, an active LINE link, a
 //    message still waiting to be sent, or today's queue are never touched, whatever the setting.
 // A patient record (HN) left with nothing pointing at it is removed with the last record that used it.
-export type Category = 'bookings' | 'appointments' | 'queue' | 'lineLinks' | 'notifications' | 'audit';
+export type Category = 'bookings' | 'appointments' | 'queue' | 'lineLinks' | 'notifications' | 'reception' | 'audit';
 export type Retention = Record<Category, number>;
-export const CATEGORIES: Category[] = ['bookings', 'appointments', 'queue', 'lineLinks', 'notifications', 'audit'];
-export const KEEP_FOREVER: Retention = { bookings: 0, appointments: 0, queue: 0, lineLinks: 0, notifications: 0, audit: 0 };
+export const CATEGORIES: Category[] = ['bookings', 'appointments', 'queue', 'lineLinks', 'notifications', 'reception', 'audit'];
+export const KEEP_FOREVER: Retention = { bookings: 0, appointments: 0, queue: 0, lineLinks: 0, notifications: 0, reception: 0, audit: 0 };
 const MIN_DAYS = 30, MAX_DAYS = 3650;
 export type RunResult = { at: string; dryRun: boolean; removed: Record<string, number> };
 const DAY = 86_400_000;
@@ -59,6 +59,10 @@ const RULES: Record<Category, Step[]> = {
       del: `DELETE FROM notification_logs WHERE job_id IN (SELECT id FROM notification_jobs WHERE status IN ('SENT','FAILED','CANCELLED','SKIPPED') AND updated_at < ?)`, args: (c) => [c] },
     { name: 'messages', count: `SELECT COUNT(*) AS n FROM notification_jobs WHERE status IN ('SENT','FAILED','CANCELLED','SKIPPED') AND updated_at < ?`,
       del: `DELETE FROM notification_jobs WHERE status IN ('SENT','FAILED','CANCELLED','SKIPPED') AND updated_at < ?`, args: (c) => [c] },
+  ],
+  // Digital Reception: daily counts of kiosk use (no text, nothing about a person).
+  reception: [
+    { name: 'kiosk use counts', count: 'SELECT COUNT(*) AS n FROM reception_usage WHERE day < ?', del: 'DELETE FROM reception_usage WHERE day < ?', args: (d) => [d] },
   ],
   audit: [
     { name: 'audit entries', count: 'SELECT COUNT(*) AS n FROM audit_log WHERE created_at < ?', del: 'DELETE FROM audit_log WHERE created_at < ?', args: (c) => [c] },
@@ -114,7 +118,7 @@ export class RetentionService implements OnModuleInit, OnModuleDestroy {
     this.store.tx(() => {
       for (const c of CATEGORIES) {
         if (!s[c]) continue;
-        const at = new Date(now.getTime() - s[c] * DAY), cut = c === 'queue' ? at.toLocaleDateString('sv-SE') : at.toISOString();
+        const at = new Date(now.getTime() - s[c] * DAY), cut = c === 'queue' || c === 'reception' ? at.toLocaleDateString('sv-SE') : at.toISOString();
         for (const step of RULES[c]) exec(step.del, step.count, step.args(cut), step.name);
       }
       if (!opts.dryRun) this.housekeeping(now, add);

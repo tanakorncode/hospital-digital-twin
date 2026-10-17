@@ -107,3 +107,18 @@ recorded as skipped.
 - Settings → **LINE OA**: what is set up (yes/no), try the bot without LINE, and the 6-button rich menu — drawn in the
   browser, downloadable, and **ติดตั้งเมนูใน LINE** installs it as everyone's default (needs `LINE_CHANNEL_ACCESS_TOKEN` and
   `LINE_LIFF_ID`). Installing again replaces the system's previous menu; menus made by hand in the OA Manager are left alone.
+
+## Digital Reception kiosks (optional)
+Touch-screen receptionist at `/reception` (Release A — no AI, no camera, no microphone). Separate from the check-in kiosk `/kiosk`.
+1. Settings → **QR นำทาง**: the places visitors look for (the kiosk answers "…อยู่ไหน" and draws the route from these).
+2. Settings → **ตู้ต้อนรับ**: switch on, **ลงทะเบียนตู้** (name + the place it stands at) → copy the kiosk code shown **once**.
+3. On the kiosk: open `https://<domain>/reception` full screen (browser kiosk mode), paste the code once. It stays in that
+   browser. To enter a new code: hold the bottom-right corner for 5 seconds.
+4. Settings → **ตู้ต้อนรับ** → answers: write (draft) → **อนุมัติ**. Kiosks say only approved answers inside their dates; without
+   any, they still answer places and the OPD hours from the queue settings. Clinical and personal questions always go to staff.
+5. "เรียกเจ้าหน้าที่" (and emergency wording) shows on every signed-in staff console (ติดตามคิว) with the kiosk and its place.
+- Voice: answers are read with a **Thai voice installed on the kiosk** (`speechSynthesis` voices with `localService`); cloud
+  voices are never used. No local Thai voice = captions only. `RECEPTION_SPEECH=off` in `apps/api/.env` turns speech off everywhere.
+- Lost or moved kiosk: **ออกรหัสใหม่** (old code stops at once) or **ยกเลิกตู้**.
+- Nothing visitors type is stored; Settings → ตู้ต้อนรับ shows daily counts by kind of question only.
+

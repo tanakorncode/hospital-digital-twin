@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DbService } from './db.service';
 import { AppError } from './errors';
+import { buildingTh } from './intent-rules';
 
 // Wayfinding: the public places patients look for (a department, the pharmacy, the cashier, the lifts…), each with a
 // stable code that QR signs carry (/wayfinding?at=CODE: "you are here"; ?to=CODE: "how do I get there").
@@ -16,6 +17,24 @@ const toDest = (r: Row): Destination => ({ code: r.code, nameTh: r.name_th, buil
 export const CODE_RE = /^[A-Z0-9][A-Z0-9-]{1,31}$/;
 const bad = (reason: string) => new AppError('VALIDATION_ERROR', reason);
 const text = (v: unknown, max: number) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null);
+
+// Steps from a place (where a kiosk stands, or the main entrance) to a place — the same rules as the web page's
+// directions() (apps/web/lib/wayfinding.ts): building → floor (lifts named first) → the place's own landmark. Building
+// and floor level only: turn-by-turn needs the hospital's corridor map, which is not in the system yet.
+export function routeSteps(from: Destination | undefined, to: Destination): string[] {
+  const steps: string[] = [];
+  if (from && from.code === to.code) return ['คุณอยู่ที่นี่แล้ว'];
+  const start = from ?? { buildingId: 'opd', level: 1 };
+  if (!from) steps.push('เริ่มจากทางเข้าหลัก อาคารผู้ป่วยนอก (OPD) ชั้น 1');
+  if (start.buildingId !== to.buildingId) {
+    if (start.level !== 1) steps.push(`ใช้ลิฟต์หรือบันไดลงไปชั้น 1 ของ${buildingTh(start.buildingId)}`);
+    steps.push(`ออกไปทาง${buildingTh(to.buildingId)} ตามป้ายบอกทาง`);
+    if (to.level !== 1) steps.push(`ขึ้นลิฟต์หรือบันไดไปชั้น ${to.level}`);
+  } else if (start.level !== to.level) steps.push(`${to.level > start.level ? 'ขึ้น' : 'ลง'}ลิฟต์หรือบันไดไปชั้น ${to.level}`);
+  else steps.push('อยู่ชั้นเดียวกัน เดินตามทางเดินกลาง');
+  steps.push(`${to.nameTh}${to.landmarkTh ? ` · ${to.landmarkTh}` : ''}`);
+  return steps;
+}
 
 @Injectable()
 export class WayfindingService {

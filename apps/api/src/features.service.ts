@@ -5,12 +5,13 @@ import { AppError } from './errors';
 // Phase 2 switches, each on its own so one part can be piloted (or switched off in an incident) without the others.
 // All start off: a running Phase 1 installation behaves exactly as before until an administrator turns one on.
 // Turning a switch off hides the feature and refuses its commands; records already made are kept.
-export const PHASE2_FLAGS = ['accountLinking', 'generalBooking', 'appointments', 'notifications', 'wayfinding', 'staffOverrides'] as const;
+// reception: the Digital Reception kiosks (/reception) — touch FAQ and wayfinding, no LLM.
+export const PHASE2_FLAGS = ['accountLinking', 'generalBooking', 'appointments', 'notifications', 'wayfinding', 'staffOverrides', 'reception'] as const;
 export type Phase2Flag = (typeof PHASE2_FLAGS)[number];
 export type Phase2Flags = Record<Phase2Flag, boolean>;
 export const flagText: Record<Phase2Flag, string> = {
   accountLinking: 'เชื่อมบัญชี LINE กับผู้ป่วย', generalBooking: 'จองคิวล่วงหน้า', appointments: 'นัดแพทย์',
-  notifications: 'แจ้งเตือนการจองและนัด', wayfinding: 'QR นำทาง', staffOverrides: 'เจ้าหน้าที่แก้ไขแทนผู้ป่วย',
+  notifications: 'แจ้งเตือนการจองและนัด', wayfinding: 'QR นำทาง', staffOverrides: 'เจ้าหน้าที่แก้ไขแทนผู้ป่วย', reception: 'ตู้ต้อนรับดิจิทัล',
 };
 const KEY = 'features.phase2';
 const OFF = Object.fromEntries(PHASE2_FLAGS.map((f) => [f, false])) as Phase2Flags;

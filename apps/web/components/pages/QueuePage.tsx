@@ -7,7 +7,7 @@ import { ApptTab } from './Appointments';
 import { LineLinkTab } from './LineLink';
 import dynamic from 'next/dynamic';
 import QRCode from 'qrcode';
-import { ArrowLeftRight, CalendarCheck, CalendarClock, Camera, Link2, Coffee, Copy, Hand, Lock, LockOpen, MapPin, QrCode, Sparkles, CheckCircle2, ChevronDown, ChevronRight, ClipboardList, ExternalLink, HeartPulse, LayoutList, List, Map as MapIcon, Megaphone, Pause, PhoneCall, Pill, Play, Repeat, ScanLine, Settings2, Siren, SkipForward, Stethoscope, TestTube, UserCheck, Volume2, VolumeX, Wallet, X } from 'lucide-react';
+import { ArrowLeftRight, BellRing, CalendarCheck, CalendarClock, Camera, Link2, Coffee, Copy, Hand, Lock, LockOpen, MapPin, QrCode, Sparkles, CheckCircle2, ChevronDown, ChevronRight, ClipboardList, ExternalLink, HeartPulse, LayoutList, List, Map as MapIcon, Megaphone, Pause, PhoneCall, Pill, Play, Repeat, ScanLine, Settings2, Siren, SkipForward, Stethoscope, TestTube, UserCheck, Volume2, VolumeX, Wallet, X } from 'lucide-react';
 import { LONG_WAIT, NO_SHOW, fmtDur, fmtMin, maskHN, opdClinics, patientAt, patientToken, placeText, statusColor, statusText, stepText, triageLevels, type Patient, type PatientState, type PatientStatus, type StepKind } from '../../lib/patients';
 import { erBoard, serviceNote } from '../../lib/ops';
 import { DEFAULT_POLICY, SYSTEM_BY, actionText, openReports, groupName, moveNote, sameZone, allStations, everyStation, announce, capFor, healthText, modeText, rulesFor, scopeName, suggestionText, type AssistView, type Suggestion, groupOf, openStations, priorityOf, stationById, stationDoctor, stationQueue, stepGroup, type PriorityPolicy, type QueueCommand, type QueueEvent, type QueueSettings, type SettingsPatch, type Station, type AuthUser, type QueueSync, useTicket, canDo, isLive } from '../../lib/queue';
@@ -20,11 +20,20 @@ const FloorScene = dynamic(()=>import('../HospitalScene').then(m=>m.FloorScene),
 type Tab = 'station'|'overview'|'er'|'booking'|'appts'|'line';
 const tabs:[Tab,string,typeof Siren][] = [['station','ช่องบริการของฉัน',PhoneCall],['overview','ภาพรวมคิว',LayoutList],['er','ห้องฉุกเฉิน',Siren],['booking','การจอง',CalendarCheck],['appts','นัดหมาย',CalendarClock],['line','เชื่อม LINE',Link2]];
 export type QueueControl = {events:QueueEvent[]; online:boolean; user?:AuthUser|null; resolveTicket?:QueueSync['resolveTicket']; send:(c:QueueCommand)=>Promise<{ok:boolean;reason?:string}>; canAct:boolean; onNow:()=>void; settings:QueueSettings;
- saveSettings?:(patch:SettingsPatch, audit:{at:number; scope:string; summary:string; by?:string})=>Promise<{ok:boolean;reason?:string}>} & Partial<VisitControl> & Partial<Pick<QueueSync,'api'|'bookingRev'|'apptRev'|'features'>>;
+ saveSettings?:(patch:SettingsPatch, audit:{at:number; scope:string; summary:string; by?:string})=>Promise<{ok:boolean;reason?:string}>} & Partial<VisitControl> & Partial<Pick<QueueSync,'api'|'bookingRev'|'apptRev'|'features'|'kioskHelp'>>;
 // Live data mode, signed-in staff on a connected screen: real patients can be taken in and sent on.
 const visitControl = (q:QueueControl):VisitControl|undefined => isLive(q.settings) && q.online && canDo(q.user,'staff') && q.enterVisit && q.addVisitStep && q.cancelVisit
  ? {enterVisit:q.enterVisit,addVisitStep:q.addVisitStep,cancelVisit:q.cancelVisit} : undefined;
 
+// A Digital Reception kiosk asked for a member of staff: which kiosk and where — nothing about the visitor. Any member
+// of staff takes it (it disappears from every console).
+function KioskHelpBar({list,api}:{list:NonNullable<QueueControl['kioskHelp']>; api:NonNullable<QueueControl['api']>}) {
+ const [note,setNote] = useState('');
+ return <div className="kioskHelp" role="alert">{list.map(h=><div key={h.id} className={'kioskHelpRow'+(h.reason==='emergency'?' urgent':'')}>
+  <BellRing size={18}/><span><b>{h.reason==='emergency'?'ตู้ต้อนรับ: แจ้งเหตุฉุกเฉิน':'ตู้ต้อนรับขอเจ้าหน้าที่'}</b> · {h.kioskName}{h.whereTh ? ` · ${h.whereTh}` : ''} · {new Date(h.createdAt).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'})} น.</span>
+  <button className="btn sm" onClick={()=>void api<{ok:boolean; taken?:boolean}>('reception:help:ack',{id:h.id}).then(r=>setNote(r.ok && r.taken ? `รับเรื่อง ${h.kioskName} แล้ว — ไปที่ตู้ได้เลย` : 'มีคนรับเรื่องนี้แล้ว'))}>รับเรื่อง</button></div>)}
+  {note && <small>{note}</small>}</div>;
+}
 type OpenPlace = (buildingId:string, level:number, roomId?:string)=>void;
 export default function QueuePage({patients,minute,timeNote,onOpenPatient,queue,assist,onOpenSettings,onOpenPlace}:{patients:Patient[];minute:number;timeNote:string;onOpenPatient:(id:string)=>void;queue:QueueControl;assist:AssistView;onOpenSettings:(group:string|null)=>void;onOpenPlace:OpenPlace}) {
  const [tab,setTab] = useState<Tab>('station');
@@ -39,6 +48,7 @@ export default function QueuePage({patients,minute,timeNote,onOpenPatient,queue,
    <div className="pageTabs" role="tablist">{tabs.filter(([id])=>!['booking','appts','line'].includes(id) || bookingOk).map(([id,label,Icon])=><button key={id} role="tab" aria-selected={tab===id} className={tab===id?'on':''} onClick={()=>setTab(id)}><Icon size={15}/>{label}</button>)}</div>
   </div>
   {serviceNote(m) && <OffHours m={m} queue={queue}/>}
+  {canDo(queue.user,'staff') && queue.api && !!queue.kioskHelp?.length && <KioskHelpBar list={queue.kioskHelp} api={queue.api}/>}
   {tab==='station' ? <StationConsole patients={patients} minute={minute} queue={queue} onOpen={onOpenPatient} assist={assist} onOpenSettings={onOpenSettings}/>
    : tab==='booking' && bookingOk ? <BookingTab api={queue.api!} rev={queue.bookingRev ?? 0} user={queue.user} features={queue.features!}/>
    : tab==='line' && bookingOk ? <LineLinkTab api={queue.api!} features={queue.features!} Scanner={CameraScanner}/>

@@ -405,9 +405,12 @@ export type QueueSync = {events:QueueEvent[]; online:boolean; send:(cmd:QueueCom
   visits:LiveVisit[]; enterVisit:(v:VisitInput, key:string)=>Promise<VisitRes>; addVisitStep:(visitId:string, kind:StepKind, at:number, key:string)=>Promise<VisitRes>;
   cancelVisit:(visitId:string, reason:string)=>Promise<VisitRes>;
   // Phase 2 screens (booking …): any API command, and a counter that moves when bookings change somewhere.
-  api:<T extends Res = Res & Record<string,unknown>>(event:string, body:unknown)=>Promise<T & {code?:string}>; bookingRev:number; apptRev:number};
+  api:<T extends Res = Res & Record<string,unknown>>(event:string, body:unknown)=>Promise<T & {code?:string}>; bookingRev:number; apptRev:number;
+  // Digital Reception kiosks asking for a member of staff (signed-in staff only).
+  kioskHelp:KioskHelp[]};
+export type KioskHelp = {id:string; kioskId:string; kioskName:string; whereTh?:string; reason:'asked'|'emergency'; createdAt:string};
 // What the API has switched on: LINE notifications (needs the hospital's OA settings) and the Phase 2 switches.
-export type Phase2Flag = 'accountLinking'|'generalBooking'|'appointments'|'notifications'|'wayfinding'|'staffOverrides';
+export type Phase2Flag = 'accountLinking'|'generalBooking'|'appointments'|'notifications'|'wayfinding'|'staffOverrides'|'reception';
 export type Features = {line:boolean; phase2:Partial<Record<Phase2Flag,boolean>>};
 // hn: optional, after the ID card was checked — links the visit to the patient's record (their LINE sees it). Never shown.
 export type VisitInput = {flow:'opd'|'er'; clinicKey?:string; dept?:string; prefix?:string; priority?:Priority['key']; triage?:number; at:number; hn?:string};
@@ -447,6 +450,7 @@ export function useQueueEvents():QueueSync {
   const [user,setUser] = useState<AuthUser|null>(null);
   const [authReady,setAuthReady] = useState(false);
   const [features,setFeatures] = useState<Features>({line:false,phase2:{}});
+  const [kioskHelp,setKioskHelp] = useState<KioskHelp[]>([]);
   const [bookingRev,setBookingRev] = useState(0);
   const [apptRev,setApptRev] = useState(0);
   const [visits,setVisits] = useState<LiveVisit[]>([]);
@@ -459,6 +463,7 @@ export function useQueueEvents():QueueSync {
     s.on('connect',()=>setOnline(true));
     s.on('auth:me',(u:AuthUser|null)=>{ setUser(u); setAuthReady(true); if (!u) { try { localStorage.removeItem(sessionKey); } catch { /* ignore */ } } });
     s.on('features',(f:{line?:boolean; phase2?:Features['phase2']})=>setFeatures({line:!!f?.line,phase2:f?.phase2 ?? {}}));
+    s.on('reception:help',(list:KioskHelp[])=>setKioskHelp(Array.isArray(list) ? list : []));
     s.on('booking:changed',()=>setBookingRev(r=>r+1));
     s.on('appointment:changed',()=>setApptRev(r=>r+1));
     s.on('disconnect',()=>setOnline(false));
@@ -512,7 +517,7 @@ export function useQueueEvents():QueueSync {
   const addVisitStep = useCallback((visitId:string, kind:StepKind, at:number, key:string)=>request<VisitRes>('visit:step',{visitId,kind,at,key}),[request]);
   const cancelVisit = useCallback((visitId:string, reason:string)=>request<VisitRes>('visit:cancel',{visitId,reason}),[request]);
   const api = useCallback(<T extends Res>(event:string, body:unknown)=>request<T & {code?:string}>(event,body),[request]) as QueueSync['api'];
-  return {events,online,send,settings,saveSettings,user,authReady,login,logout,listUsers,saveUser,resolveTicket,familyTicket,features,lineLink,visits,enterVisit,addVisitStep,cancelVisit,api,bookingRev,apptRev};
+  return {events,online,send,settings,saveSettings,user,authReady,login,logout,listUsers,saveUser,resolveTicket,familyTicket,features,lineLink,visits,enterVisit,addVisitStep,cancelVisit,api,bookingRev,apptRev,kioskHelp};
 }
 
 // Thai announcement, read character by character so queue numbers are unambiguous.

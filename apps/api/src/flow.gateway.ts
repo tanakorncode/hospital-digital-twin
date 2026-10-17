@@ -22,6 +22,8 @@ import { VisitsService, type EnterInput } from './visits.service';
 import { RetentionService } from './retention.service';
 import { metrics } from './metrics';
 import { ReportService } from './report.service';
+import { KioskDeviceService } from './kiosk-device.service';
+import { ReceptionService } from './reception.service';
 
 // Who may do what. Public screens (TV boards, the patient's QR page) connect without signing in: they receive the
 // queue log, may look up a patient link ('ticket:resolve'), make a family link from a patient link, and send the
@@ -66,7 +68,11 @@ function attempt<T>(fn: () => T) {
 export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
   @WebSocketServer() server!: Server;
   private unsubscribe?: () => void;
-  constructor(private readonly flowService: FlowService, private readonly liveFeed: LiveFeedService, private readonly queue: QueueService, private readonly auth: AuthService, private readonly tickets: TicketsService, private readonly line: LineService, private readonly audit: AuditService, private readonly features: FeaturesService, private readonly visits: VisitsService, private readonly idempotency: IdempotencyService, private readonly booking: BookingService, private readonly checkin: CheckInService, private readonly appts: AppointmentService, private readonly identity: PatientIdentityService, private readonly notify: NotificationService, private readonly wayfinding: WayfindingService, private readonly retention: RetentionService, private readonly report: ReportService) {}
+  constructor(private readonly flowService: FlowService, private readonly liveFeed: LiveFeedService, private readonly queue: QueueService, private readonly auth: AuthService, private readonly tickets: TicketsService, private readonly line: LineService, private readonly audit: AuditService, private readonly features: FeaturesService, private readonly visits: VisitsService, private readonly idempotency: IdempotencyService, private readonly booking: BookingService, private readonly checkin: CheckInService, private readonly appts: AppointmentService, private readonly identity: PatientIdentityService, private readonly notify: NotificationService, private readonly wayfinding: WayfindingService, private readonly retention: RetentionService, private readonly report: ReportService,
+    private readonly kiosks: KioskDeviceService, private readonly reception: ReceptionService) {
+    // A kiosk asks for a member of staff: every staff console sees the open requests (kiosk and place only).
+    reception.onHelp((open) => this.server.to(STAFF_ROOM).emit('reception:help', open));
+  }
   // Every connected dashboard receives each live snapshot ('live:update').
   afterInit() {
     this.unsubscribe = this.liveFeed.subscribe((snap) => this.server.emit('live:update', snap));
@@ -79,7 +85,7 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
     const user = this.auth.resolve(client.handshake.auth?.token);
     client.data.user = user;
     client.data.token = client.handshake.auth?.token;
-    if (user) void client.join(STAFF_ROOM);
+    if (user) { void client.join(STAFF_ROOM); client.emit('reception:help', this.reception.openHelp()); }
     client.emit('auth:me', user);
     client.emit('features', this.featureList());
     client.emit('flow:snapshot', this.flowService.snapshot());
@@ -116,6 +122,7 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
     client.data.token = res.token;
     void client.join(STAFF_ROOM);
     this.sendLog(client); // now with the names the public stream leaves out
+    client.emit('reception:help', this.reception.openHelp());
     client.emit('queue:settings', this.queue.getSettings());
     return res;
   }
@@ -223,6 +230,89 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
     if (!me) return SIGN_IN;
     if (!may(me, 'admin')) return DENIED;
     return { ok: true, metrics: metrics.snapshot() };
+  }
+
+  // ---- Digital Reception (administrators): kiosks, approved answers, use; staff: take on a kiosk's call ----------------
+  @SubscribeMessage('reception:kiosks')
+  receptionKiosks(@ConnectedSocket() client: Socket) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (!may(me, 'admin')) return DENIED;
+    return { ok: true, kiosks: this.kiosks.list(), enabled: this.features.on('reception') };
+  }
+  // New kiosk / rename / move. The credential comes back once (new kiosk or rotation) — it is never stored in clear.
+  @SubscribeMessage('reception:kiosk:save')
+  saveKiosk(@ConnectedSocket() client: Socket, @MessageBody() body: { id?: unknown; name?: unknown; atCode?: unknown }) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (!may(me, 'admin')) return DENIED;
+    return attempt(() => {
+      const r = this.kiosks.save(body ?? {}, `user:${me.id}`);
+      this.audit.record({ ...actor(me), action: body?.id ? 'reception.kiosk.update' : 'reception.kiosk.create', targetType: 'kiosk', targetId: r.device.id, meta: { at: r.device.atCode ?? null } });
+      return { ok: true, ...r };
+    });
+  }
+  @SubscribeMessage('reception:kiosk:rotate')
+  rotateKiosk(@ConnectedSocket() client: Socket, @MessageBody() body: { id?: unknown }) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (!may(me, 'admin')) return DENIED;
+    return attempt(() => { const r = this.kiosks.rotate(body?.id); this.audit.record({ ...actor(me), action: 'reception.kiosk.rotate', targetType: 'kiosk', targetId: r.device.id }); return { ok: true, ...r }; });
+  }
+  @SubscribeMessage('reception:kiosk:revoke')
+  revokeKiosk(@ConnectedSocket() client: Socket, @MessageBody() body: { id?: unknown }) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (!may(me, 'admin')) return DENIED;
+    return attempt(() => { const d = this.kiosks.revoke(body?.id); this.audit.record({ ...actor(me), action: 'reception.kiosk.revoke', targetType: 'kiosk', targetId: d.id }); return { ok: true, device: d }; });
+  }
+  @SubscribeMessage('reception:answers')
+  receptionAnswers(@ConnectedSocket() client: Socket) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (!may(me, 'admin')) return DENIED;
+    return { ok: true, answers: this.reception.answers() };
+  }
+  // An edit is a new draft: kiosks keep saying nothing about it until it is approved.
+  @SubscribeMessage('reception:answer:save')
+  saveAnswer(@ConnectedSocket() client: Socket, @MessageBody() body: Record<string, unknown>) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (!may(me, 'admin')) return DENIED;
+    return attempt(() => { const a = this.reception.saveAnswer(body ?? {}, `user:${me.id}`);
+      this.audit.record({ ...actor(me), action: 'reception.answer.save', targetType: 'reception-answer', targetId: a.id, meta: { topic: a.topic, version: a.version } }); return { ok: true, answer: a }; });
+  }
+  @SubscribeMessage('reception:answer:approve')
+  approveAnswer(@ConnectedSocket() client: Socket, @MessageBody() body: { id?: unknown }) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (!may(me, 'admin')) return DENIED;
+    return attempt(() => { const a = this.reception.approve(body?.id, `user:${me.id}`);
+      this.audit.record({ ...actor(me), action: 'reception.answer.approve', targetType: 'reception-answer', targetId: a.id, meta: { version: a.version } }); return { ok: true, answer: a }; });
+  }
+  @SubscribeMessage('reception:answer:retire')
+  retireAnswer(@ConnectedSocket() client: Socket, @MessageBody() body: { id?: unknown }) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (!may(me, 'admin')) return DENIED;
+    return attempt(() => { const a = this.reception.retire(body?.id, `user:${me.id}`);
+      this.audit.record({ ...actor(me), action: 'reception.answer.retire', targetType: 'reception-answer', targetId: a.id }); return { ok: true, answer: a }; });
+  }
+  @SubscribeMessage('reception:usage')
+  receptionUsage(@ConnectedSocket() client: Socket, @MessageBody() body: { days?: unknown }) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (!may(me, 'admin')) return DENIED;
+    return { ok: true, ...this.reception.usage(body?.days) };
+  }
+  // Any member of staff can take on a kiosk's call; it disappears from every console.
+  @SubscribeMessage('reception:help:ack')
+  ackKioskHelp(@ConnectedSocket() client: Socket, @MessageBody() body: { id?: unknown }) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    const r = this.reception.ack(body?.id);
+    if (r) this.audit.record({ ...actor(me), action: 'reception.help.ack', targetType: 'kiosk', targetId: r.kioskId, meta: { reason: r.reason } });
+    return { ok: true, taken: !!r };
   }
 
   // ---- patient links (/q/<token>) ------------------------------------------------------------------------------
