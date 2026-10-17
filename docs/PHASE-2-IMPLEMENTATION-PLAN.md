@@ -389,3 +389,12 @@ check-in (Kiosk สแกน / เจ้าหน้าที่ / LIFF + ตำ
 `apps/api/scripts/backup.mjs`, `apps/web/lib/{patients,queue}.ts` (บางส่วน), `apps/web/app/tv/page.tsx`, `apps/web/app/q/[token]/page.tsx`, `apps/web/components/{HospitalDashboard,LoginScreen}.tsx`, `apps/web/components/pages/QueuePage.tsx` (บางส่วน)
 
 คำสั่งที่รัน: `pnpm typecheck` (ผ่าน), `pnpm test` (46/46 ผ่าน), ตรวจ API ของ `node:sqlite` บน Node v24.21.0
+
+---
+
+## หลังเฟส 2 — งานต่อเนื่อง (2026-10-18)
+| งาน | ไฟล์ | หมายเหตุ |
+|---|---|---|
+| รับผู้ป่วยหน้างานพร้อม HN (ไม่บังคับ) | `flow.gateway.ts` `visit:enter`, `components/pages/LiveVisit.tsx` | ต้องติ๊กตรวจบัตรก่อน · ผู้ป่วยที่เชื่อม LINE เห็นคิวใน "คิวของฉัน" และได้แจ้งเตือน · HN ไม่ไปกับ visit |
+| แชตบอท LINE + rich menu (แผนเดิมข้อ 9.1–9.2 ที่ยังค้าง) | `apps/api/src/line-bot.ts`, `line.service.ts`, `components/pages/LineOaPane.tsx`, `app/liff/page.tsx` | ตอบคิว/จอง/นัด/เชื่อมบัญชี/ติดต่อ/"…อยู่ไหน" ด้วยปุ่มเปิดหน้าผู้ป่วย (ไม่ค้นข้อมูลใคร) · ข้อความต้อนรับ · เมนู 3×2 วาดในเบราว์เซอร์ ติดตั้งผ่าน API ของ LINE · หน้า LIFF เปิดตรงหน้าที่ปุ่มขอ (`?view=`) · ตั้งค่า → LINE OA |
+| Tests | `test/portal.test.ts`, `test/linebot.test.ts` | +6 ข้อ |

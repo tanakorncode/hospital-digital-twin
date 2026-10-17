@@ -1476,6 +1476,7 @@ kbd{margin-left:6px;padding:1px 6px;border-radius:5px;background:#ffffff33;borde
 .setIco.i-notify{background:linear-gradient(135deg,#86efac,#15803d);--sh:#15803d40}
 .setIco.i-wayfinding{background:linear-gradient(135deg,#7dd3fc,#0369a1);--sh:#0369a140}
 .setIco.i-audit{background:linear-gradient(135deg,#d4d4d8,#52525b);--sh:#52525b40}
+.setIco.i-lineoa{background:linear-gradient(135deg,#6ee7b7,#06c755);--sh:#06c75540}
 .setIco.i-data{background:linear-gradient(135deg,#6ee7b7,#047857);--sh:#04785740}
 .setPane{position:relative;display:flex;flex-direction:column;gap:12px;min-width:0}
 .setToast{margin:0;padding:10px 14px;border-radius:12px;background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46;font-size:13.5px;font-weight:600}
@@ -2175,3 +2176,20 @@ kbd{margin-left:6px;padding:1px 6px;border-radius:5px;background:#ffffff33;borde
 a.liffChoice{text-decoration:none;padding:10px 16px}
 .visitHn{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .visitHn input{padding:9px 10px;border:1px solid #d5e0ec;border-radius:9px;font:inherit;font-size:15px;max-width:220px}
+
+/* ---- Settings → LINE OA ---- */
+.oaChecks{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:8px}
+.oaChecks span{display:grid;grid-template-columns:auto 1fr;column-gap:8px;align-items:center;padding:8px 10px;border-radius:10px;background:#f5f7fa;color:#94a3b8}
+.oaChecks span b{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:#4d6074}
+.oaChecks span small{grid-column:2;font-size:12px;color:#60738a}
+.oaChecks span.on{background:#ecfdf5;color:#047857}
+.oaChat{display:flex;flex-direction:column;gap:10px;padding:12px;border-radius:14px;background:#8cabd9;max-width:560px}
+.oaTurn{display:flex;flex-direction:column;gap:6px}
+.oaMe{align-self:flex-end;margin:0;padding:8px 12px;border-radius:16px 16px 4px 16px;background:#06c755;color:#fff;max-width:80%;font-size:14px}
+.oaBot{align-self:flex-start;margin:0;padding:8px 12px;border-radius:16px 16px 16px 4px;background:#fff;color:#10233b;max-width:85%;font-size:14px;white-space:pre-line}
+.oaQuick{display:flex;gap:6px;flex-wrap:wrap}
+.oaQuick span{padding:4px 10px;border-radius:14px;background:#fff;border:1px solid #06c755;color:#06a548;font-size:12.5px;font-weight:600}
+.oaInput{display:flex;gap:6px}
+.oaInput input{flex:1;padding:8px 10px;border:0;border-radius:10px;font:inherit;font-size:14px}
+.oaChat .segBtns button{min-height:32px;font-size:12.5px;background:#ffffffd9}
+.oaMenu{width:100%;max-width:640px;height:auto;border-radius:10px;border:1px solid #dbe4ee}

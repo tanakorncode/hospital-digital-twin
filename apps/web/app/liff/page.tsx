@@ -14,6 +14,8 @@ import { loadSession, patientApi, saveSession } from '../../lib/patient-api';
 type Liff = { init:(o:{liffId:string})=>Promise<void>; isLoggedIn:()=>boolean; login:()=>void; getIDToken:()=>string|null; isInClient:()=>boolean };
 type Me = {linked:false} | {linked:true; hn:string; linkedAt:string};
 type View = 'queue'|'book'|'appts'|'map';
+// A rich-menu button opens /liff?view=… straight on that screen (LIFF keeps the query through its sign-in).
+const startView = ():View|null => { const v = typeof window==='undefined' ? null : new URLSearchParams(window.location.search).get('view'); return v==='queue'||v==='book'||v==='appts'||v==='map' ? v : null; };
 type Stage = {kind:'loading'} | {kind:'error'; text:string} | {kind:'dev'} | {kind:'ready'; me:Me};
 const SDK = 'https://static.line-scdn.net/liff/edge/2/sdk.js';
 
@@ -64,7 +66,7 @@ export default function LiffPage() {
   {stage.kind==='error' && <section className="liffCard"><h1>เปิดไม่สำเร็จ</h1><p>{stage.text}</p><button className="liffBtn" onClick={()=>window.location.reload()}>ลองใหม่</button></section>}
   {stage.kind==='dev' && <DevSignIn onSignIn={signIn}/>}
   {stage.kind==='ready' && (stage.me.linked
-   ? <Home me={stage.me} onUnlinked={refresh}/>
+   ? <Home me={stage.me} onUnlinked={refresh} initial={startView()}/>
    : <LinkFlow enabled={linking} onLinked={refresh}/>)}
  </main>;
 }
@@ -123,17 +125,17 @@ function LinkFlow({enabled,onLinked}:{enabled:boolean; onLinked:()=>Promise<void
   <small className="liffNote">ไม่สะดวกใช้ LINE? ยังใช้บริการที่เคาน์เตอร์ได้ตามปกติทุกอย่าง</small></section>;
 }
 
-function Home({me,onUnlinked}:{me:Extract<Me,{linked:true}>; onUnlinked:()=>Promise<void>}) {
+function Home({me,onUnlinked,initial}:{me:Extract<Me,{linked:true}>; onUnlinked:()=>Promise<void>; initial:View|null}) {
  const [justLinked] = useState(()=>Date.now()-new Date(me.linkedAt).getTime()<5*60_000);
  const [confirm,setConfirm] = useState(false);
- const [view,setView] = useState<View|null>(null);
+ const [view,setView] = useState<View|null>(initial);
  // The phone's back button closes a screen instead of leaving the page.
  useEffect(()=>{ const back = ()=>setView(null); window.addEventListener('popstate',back); return ()=>window.removeEventListener('popstate',back); },[]);
  const open = (v:View) => { window.history.pushState({view:v},''); setView(v); window.scrollTo(0,0); };
  const unlink = async () => { const r = await patientApi('POST','/link/unlink'); if (r.ok) await onUnlinked(); };
  const tiles:[View,typeof ListOrdered,string,string][] = [['queue',ListOrdered,'คิวของฉัน','ดูลำดับและเวลารอ'],['book',CalendarCheck,'จองคิว','จองล่วงหน้า'],['appts',CalendarClock,'นัดหมาย','ดู · ขอเลื่อน · ยกเลิก'],['map',MapIcon,'แผนที่','ทางไปจุดบริการ']];
  if (view) { const t = tiles.find(x=>x[0]===view)!;
-  return <><div className="liffBar"><button className="liffBack" onClick={()=>window.history.back()}><ChevronLeft size={24}/> เมนู</button><h1>{t[2]}</h1></div>
+  return <><div className="liffBar"><button className="liffBack" onClick={()=>{ if ((window.history.state as {view?:View}|null)?.view) window.history.back(); else setView(null); }}><ChevronLeft size={24}/> เมนู</button><h1>{t[2]}</h1></div>
    {view==='queue' ? <MyQueue/> : view==='book' ? <BookQueue/> : view==='appts' ? <Appointments/> : <HospitalMap/>}</>; }
  return <>
   {justLinked && <section className="liffCard ok"><CheckCircle2 size={32}/><h1>เชื่อมบัญชีเรียบร้อย</h1></section>}

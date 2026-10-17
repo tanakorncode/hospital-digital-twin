@@ -98,3 +98,12 @@ clinic or doctor. They are sent by a worker inside the API from a durable queue:
 (5 attempts, backoff), with LINE's retry key so a retry is never delivered twice. Failed ones are listed on the same
 page with **ส่งใหม่**. Needs `LINE_CHANNEL_ACCESS_TOKEN` (see *LINE Official Account* above); without it messages are
 recorded as skipped.
+
+## LINE chatbot and rich menu (optional)
+- The webhook answers patients' messages: "คิว", "จองคิว", "นัด/เลื่อนนัด", "เชื่อมบัญชี", "ติดต่อเจ้าหน้าที่" and "…อยู่ไหน"
+  (from the wayfinding places: floor, landmark, route link). Personal things are buttons that open the patient's own LIFF
+  pages — the bot never looks anyone up. New friends get a welcome message.
+- `apps/api/.env`: `PUBLIC_URL` (the hospital's address, for links) and `HOSPITAL_CONTACT` (the answer to "ติดต่อเจ้าหน้าที่").
+- Settings → **LINE OA**: what is set up (yes/no), try the bot without LINE, and the 6-button rich menu — drawn in the
+  browser, downloadable, and **ติดตั้งเมนูใน LINE** installs it as everyone's default (needs `LINE_CHANNEL_ACCESS_TOKEN` and
+  `LINE_LIFF_ID`). Installing again replaces the system's previous menu; menus made by hand in the OA Manager are left alone.
