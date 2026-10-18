@@ -13,7 +13,7 @@ const SERIES = {now:'#2a78d6',scenario:'#eb6834'};
 const rampColor = (v:number, max:number) => v<=0 ? 'var(--viz-empty)' : RAMP[Math.min(RAMP.length-1,Math.floor(v/max*RAMP.length))];
 
 // One floating tooltip for all charts on the page.
-function useTooltip() {
+export function useTooltip() {
  const [tip,setTip] = useState<{x:number;y:number;body:ReactNode}|null>(null);
  const host = useRef<HTMLDivElement>(null);
  const show = (e:RMouseEvent, body:ReactNode) => { const r = host.current?.getBoundingClientRect(); if (r) setTip({x:e.clientX-r.left+12,y:e.clientY-r.top+12,body}); };

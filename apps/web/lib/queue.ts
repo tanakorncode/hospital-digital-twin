@@ -267,6 +267,15 @@ export function basePatients(s:QueueSettings, visits:LiveVisit[], events:QueueEv
 export const modeText:Record<AssistMode,string> = {off:'ปิด',suggest:'แนะนำ',auto:'อัตโนมัติ'};
 export const rulesFor = (s:QueueSettings, group:string):QueueRules => ({...s.system,...(s.groups[group] ?? {})});
 export const capFor = (s:QueueSettings, st:Station) => s.stations[st.id]?.cap ?? rulesFor(s,st.group).cap; // 0 = no cap
+// Every station with a cap against it, whatever the assistant does: over it, near it (from NEAR_CAP of it), fine.
+// The cap turns no one away — it is the level at which queues are spread.
+export const NEAR_CAP = 0.8;
+export type CapLevel = {st:Station; load:number; cap:number; level:'over'|'near'|'ok'};
+export function capLevels(settings:QueueSettings, loads:Map<string,PatientState[]>):CapLevel[] {
+  return allStations().flatMap(st=>{ const cap = capFor(settings,st); if (cap<=0) return [];
+    const load = loads.get(st.id)?.length ?? 0;
+    return [{st,load,cap,level:load>cap ? 'over' as const : load>=Math.ceil(cap*NEAR_CAP) ? 'near' as const : 'ok' as const}]; });
+}
 // Same merge on the API and offline: null clears an override (back to the inherited value).
 export function mergeSettings(s:QueueSettings, patch:SettingsPatch):QueueSettings {
   const out:QueueSettings = {system:{...s.system,...(patch.system ?? {})},groups:{...s.groups},stations:{...s.stations},hours:s.hours,demoOffset:s.demoOffset,layout:s.layout,dataMode:s.dataMode,updatedAt:s.updatedAt,updatedBy:s.updatedBy};
@@ -337,7 +346,8 @@ export function stationHealth(st:Station, minute:number, events:QueueEvent[], ru
 }
 export type Suggestion = {key:string; kind:'paused'|'stalled'|'slow'|'away'|'cap'|'imbalance'; group:string; from:Station; to:Station; moves:PatientState[]; reason:string};
 // stranded: a station that should hand its queue over but has no healthy station in its group to take it.
-export type AssistView = {loads:Map<string,PatientState[]>; health:Map<string,StationHealth>; suggestions:Suggestion[]; lockedStuck:Map<string,PatientState[]>; full:Set<string>; stranded:Map<string,number>};
+// caps: every station's queue against its cap (near / over), also where the assistant cannot move anyone.
+export type AssistView = {loads:Map<string,PatientState[]>; health:Map<string,StationHealth>; suggestions:Suggestion[]; lockedStuck:Map<string,PatientState[]>; full:Set<string>; stranded:Map<string,number>; caps:CapLevel[]};
 const recentlyMoved = (events:QueueEvent[], s:PatientState, minute:number) =>
   events.some(e=>e.action==='transfer' && e.patientId===s.p.id && e.step===s.index && minute-e.at<15);
 // Who is effectively waiting for each station: patients sent or booked to it, and its share of the simulator's plan.
@@ -389,7 +399,7 @@ export function queueAssist(patients:Patient[], minute:number, events:QueueEvent
         suggestions.push({key:`imbalance:${hi.st.id}:${lo.st.id}:${list.map(m=>m.p.id).join(',')}`,kind:'imbalance',group:g.id,from:hi.st,to:lo.st,moves:list,reason:`${hi.st.label} รอ ${hi.n} คน · ${lo.st.label} รอ ${lo.n} คน`}); }
     }
   }
-  return {loads,health,suggestions,lockedStuck,full,stranded};
+  return {loads,health,suggestions,lockedStuck,full,stranded,caps:capLevels(settings,loads)};
 }
 export const suggestionText:Record<Suggestion['kind'],string> = {paused:'ช่องพักชั่วคราว',stalled:'ไม่มีการตอบรับ',slow:'ให้บริการช้ากว่าปกติ',away:'แพทย์ไม่อยู่',cap:'คิวเกินเพดาน',imbalance:'คิวไม่สมดุล'};
 

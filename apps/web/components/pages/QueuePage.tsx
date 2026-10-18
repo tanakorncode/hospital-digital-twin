@@ -10,7 +10,7 @@ import QRCode from 'qrcode';
 import { ArrowLeftRight, BellRing, CalendarCheck, CalendarClock, Camera, Link2, Coffee, Copy, Hand, Lock, LockOpen, MapPin, QrCode, Sparkles, CheckCircle2, ChevronDown, ChevronRight, ClipboardList, ExternalLink, HeartPulse, LayoutList, List, Map as MapIcon, Megaphone, Pause, PhoneCall, Pill, Play, Repeat, ScanLine, Settings2, Siren, SkipForward, Stethoscope, TestTube, UserCheck, Volume2, VolumeX, Wallet, X } from 'lucide-react';
 import { LONG_WAIT, NO_SHOW, fmtDur, fmtMin, maskHN, opdClinics, servicePlace, patientAt, patientToken, placeText, statusColor, statusText, stepText, triageLevels, type Patient, type PatientState, type PatientStatus, type StepKind } from '../../lib/patients';
 import { erBoard, serviceNote } from '../../lib/ops';
-import { DEFAULT_POLICY, SYSTEM_BY, actionText, openReports, groupName, moveNote, sameZone, allStations, everyStation, announce, capFor, healthText, modeText, rulesFor, scopeName, suggestionText, type AssistView, type Suggestion, groupOf, openStations, priorityOf, stationById, stationDoctor, stationQueue, stepGroup, coversGroup, type PriorityPolicy, type QueueCommand, type QueueEvent, type QueueSettings, type SettingsPatch, type Station, type AuthUser, type QueueSync, useTicket, canDo, isLive } from '../../lib/queue';
+import { DEFAULT_POLICY, SYSTEM_BY, actionText, openReports, groupName, moveNote, sameZone, allStations, everyStation, announce, capFor, NEAR_CAP, queueGroups, type CapLevel, healthText, modeText, rulesFor, scopeName, suggestionText, type AssistView, type Suggestion, groupOf, openStations, priorityOf, stationById, stationDoctor, stationQueue, stepGroup, coversGroup, type PriorityPolicy, type QueueCommand, type QueueEvent, type QueueSettings, type SettingsPatch, type Station, type AuthUser, type QueueSync, useTicket, canDo, isLive } from '../../lib/queue';
 
 import { DEFAULT_HOURS, bandIndex, buildings, floorRooms, layoutRevision, roomArea, placeName, waitingSeats, deptArea } from '../../lib/scene-data';
 import { buildingShort, erDepartment, fGroup, pointsOf } from '../../lib/facility';
@@ -282,7 +282,7 @@ function StationConsole({patients,minute,queue,onOpen,assist,onOpenSettings}:{pa
     <small className="muted">ระหว่างพัก ระบบไม่ส่งคิวใหม่มาที่ช่องนี้ · คิวที่รอช่องนี้{rules.mode==='auto'?'จะถูกย้ายไปช่องอื่นให้':rules.mode==='suggest'?'จะมีข้อเสนอให้ย้าย':' ยังอยู่ที่เดิม (ตัวช่วยปิดอยู่)'} ยกเว้นคิวที่ล็อก</small></div>}
    {paused && <p className="pausedBar"><Coffee size={16}/> {health!.text} · ไม่รับคิวใหม่{stuck.length?` · คิวที่ล็อกไว้กับช่องนี้ ${stuck.length} คิวยังรออยู่`:''}<button className="btn" disabled={disabled} onClick={()=>void resume()}>กลับมาให้บริการ</button></p>}
    <div className="stStats">
-    <div className={cap>0 && myLoad>cap?'over':''} title="คิวที่ระบบจัดให้จุดนี้ (รวมคิวที่ย้ายมาและคิวนัดหมอเจ้าของไข้) เทียบกับเพดาน"><small>จัดให้จุดนี้</small><b>{myLoad}{cap>0 && <em> / {cap}</em>}</b></div>
+    <div className={cap>0 && myLoad>cap?'over':cap>0 && myLoad>=Math.ceil(cap*NEAR_CAP)?'near':''} title="คิวที่ระบบจัดให้จุดนี้ (รวมคิวที่ย้ายมาและคิวนัดหมอเจ้าของไข้) เทียบกับเพดาน · เพดานไม่ได้ห้ามรับ เป็นเกณฑ์ให้ตัวช่วยเกลี่ยคิว"><small>จัดให้จุดนี้{cap>0 && myLoad>cap ? ' · เกินเพดาน' : cap>0 && myLoad>=Math.ceil(cap*NEAR_CAP) ? ' · ใกล้เพดาน' : ''}</small><b>{myLoad}{cap>0 && <em> / {cap}</em>}</b></div>
     <div><small>รอเรียก (ทั้งกลุ่ม)</small><b>{q?.waiting.length ?? 0}</b></div>
     <div><small>เสร็จวันนี้</small><b>{today.done.length}</b></div>
     <div><small>เฉลี่ยต่อคน</small><b>{today.avg!==undefined?today.avg:'–'}<em> นาที</em></b></div>
@@ -906,15 +906,21 @@ function AssistPanel({assist,queue,m,patients,onOpenSettings}:{assist:AssistView
  const [open,setOpen] = useState(false);
  useEffect(()=>{ setOpen(loadPref('hdt.assistOpen','0')==='1'); },[]);
  const toggle = () => setOpen(o=>{ savePref('hdt.assistOpen',o?'0':'1'); return !o; });
- const issues = problems.length+stranded.length+assist.full.size;
+ // Near the cap: said early, before the queue spills. Over it where the assistant moves no one (alone in its group, the
+ // assistant off, nothing movable) — groups where every station is over are said as "คิวเต็ม".
+ const nearCap = assist.caps.filter(c=>c.level==='near').sort((a,b)=>b.load/b.cap-a.load/a.cap);
+ const overLone = assist.caps.filter(c=>c.level==='over' && !assist.full.has(c.st.group) && !assist.suggestions.some(x=>x.from.id===c.st.id));
+ const overWhy = (c:CapLevel) => rulesFor(queue.settings,c.st.group).mode==='off' ? 'ตัวช่วยปิดอยู่' : (queueGroups().find(g=>g.id===c.st.group)?.stations.length ?? 0)<2 ? 'ไม่มีช่องอื่นในกลุ่มให้ย้าย' : 'คิวที่เกินย้ายไม่ได้ (ล็อก/เพิ่งเรียก)';
+ const issues = problems.length+stranded.length+assist.full.size+overLone.length;
  return <div className={'assistBar'+(open?' open':'')}>
   <div className="abHead">
    <button className="abToggle" onClick={toggle} aria-expanded={open}>{open?<ChevronDown size={15}/>:<ChevronRight size={15}/>}<Sparkles size={15}/> ตัวช่วยกระจายคิว</button>
    {reports.length>0 && <button className="abCount help" onClick={()=>!open && toggle()}>ผู้ป่วยแจ้ง {reports.length}</button>}
    {pending.length>0 && <button className="abCount sg" onClick={()=>!open && toggle()}>{pending.length} ข้อเสนอ</button>}
    {issues>0 && <button className="abCount warn" onClick={()=>!open && toggle()}>{issues} จุดต้องดู</button>}
+   {nearCap.length>0 && <button className="abCount near" onClick={()=>!open && toggle()}>ใกล้เพดาน {nearCap.length}</button>}
    {sys.length>0 && <button className="abCount" onClick={()=>!open && toggle()}>ระบบย้ายแล้ว {sys.reduce((n)=>n+1,0)}</button>}
-   {!pending.length && !issues && !sys.length && !reports.length && <span className="muted">ทุกจุดทันงาน</span>}
+   {!pending.length && !issues && !sys.length && !reports.length && !nearCap.length && <span className="muted">ทุกจุดทันงาน</span>}
    {autoSoon.length>0 && <span className="muted">กำลังย้ายอัตโนมัติ {autoSoon.reduce((n,x)=>n+x.moves.length,0)} คิว</span>}
    {note && <span className="abNote">{note}</span>}
    <button className="linkBtn dark abSet" onClick={()=>onOpenSettings(null)}>ตั้งค่า</button>
@@ -927,6 +933,8 @@ function AssistPanel({assist,queue,m,patients,onOpenSettings}:{assist:AssistView
     <button className="btn sm" disabled={!queue.canAct} onClick={()=>void apply(x)}>ย้าย</button>
     <button className="iconBtn xs" aria-label="ไม่ต้อง" title="ไม่ต้อง" onClick={()=>setDismissed(d=>new Set(d).add(x.key))}><X size={13}/></button></div>)}
    {[...assist.full].map(g=><div key={g} className="aLine warn"><span className="aText"><em>คิวเต็ม</em><b>{groupName(g)}</b> ทุกช่องเกินเพดาน</span><button className="linkBtn dark" onClick={()=>onOpenSettings(g)}>ปรับเพดาน</button></div>)}
+   {overLone.map(c=><div key={c.st.id} className="aLine warn"><span className="aText"><em>เกินเพดาน</em><b>{c.st.label}</b> รอ {c.load}/{c.cap} · {overWhy(c)}</span><button className="linkBtn dark" onClick={()=>onOpenSettings(c.st.group)}>ปรับเพดาน</button></div>)}
+   {nearCap.length>0 && <div className="aLine near"><span className="aText"><em>ใกล้เพดาน</em>{nearCap.slice(0,6).map(c=>`${c.st.label} ${c.load}/${c.cap}`).join(' · ')}{nearCap.length>6 ? ` และอีก ${nearCap.length-6} จุด` : ''}</span></div>}
    {stranded.map(([id,n])=>{ const st = stationById(id)!; return <div key={id} className="aLine warn"><span className="aText"><em>ไม่มีที่รับแทน</em><b>{st.label}</b> {assist.health.get(id)?.text} · {n} คิว <small>ติ๊กในตารางเพื่อส่งข้ามแผนก</small></span></div>; })}
    {problems.filter(st=>!assist.stranded.has(st.id)).map(st=>{ const h = assist.health.get(st.id)!; return <div key={st.id} className="aLine"><span className="aText"><em className={h.state}>{healthText[h.state]}</em><b>{st.label}</b> {h.text}</span></div>; })}
    {sys.slice(0,8).map(e=><div key={e.id} className="aLine done"><span className="aText" title={e.reason}><em>ระบบย้าย</em><b>{byId.get(e.patientId ?? '')?.queue}</b> {stationById(e.station)?.label} → {stationById(e.target)?.label} · {fmtMin(e.at)}</span></div>)}

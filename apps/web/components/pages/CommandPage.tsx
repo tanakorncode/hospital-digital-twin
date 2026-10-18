@@ -90,7 +90,7 @@ function useSize<T extends HTMLElement>() {
  return [ref,size] as const;
 }
 const niceMax = (v:number) => { const step = v<=20?5:v<=60?10:v<=150?25:50; return Math.max(step,Math.ceil(v/step)*step); };
-function FcChart({points,now,height,mini}:{points:FcPoint[];now:number;height:number;mini?:boolean}) {
+export function FcChart({points,now,height,mini}:{points:FcPoint[];now:number;height:number;mini?:boolean}) {
  const [box,size] = useSize<HTMLDivElement>();
  const [hover,setHover] = useState<FcPoint|null>(null);
  const W = Math.max(120,size.w), H = Math.max(height,mini?height:size.h || height);

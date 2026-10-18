@@ -1,7 +1,7 @@
 'use client';
 import dynamic from 'next/dynamic';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
-import { Bell, MapPin, Tags, Route as RouteIcon, RotateCcw, FastForward, Building2, ChartColumn, ClipboardList, Clock, Droplet, House, Layers, ListOrdered, LocateFixed, Minus, Pill, Plus, Radiation, Search, Settings, Stethoscope, Thermometer, Users, UsersRound, Wallet, Hospital, LayoutGrid, Play, Pause, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, X, Ticket, UserRound, Accessibility, type LucideIcon, BrainCircuit } from 'lucide-react';
+import { Bell, LayoutDashboard, MapPin, Tags, Route as RouteIcon, RotateCcw, FastForward, Building2, ChartColumn, ClipboardList, Clock, Droplet, House, Layers, ListOrdered, LocateFixed, Minus, Pill, Plus, Radiation, Search, Settings, Stethoscope, Thermometer, Users, UsersRound, Wallet, Hospital, LayoutGrid, Play, Pause, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, X, Ticket, UserRound, Accessibility, type LucideIcon, BrainCircuit } from 'lucide-react';
 import { duty } from '../lib/doctor-duty';
 const dayOfDuty = (d:string) => new Date(`${d}T12:00:00`).toLocaleDateString('th-TH',{weekday:'long',day:'numeric',month:'short'});
 import { findDepts, findDoctors, isOff, type DeptPlace, kiosks, kioskStatusLabel, type Kiosk, DENSITY_HIGH, DENSITY_LOW, doctorName, dutyLabel, findRoom, floorDutyAt, roomDutyAt, HOURS, HOUR_END, HOUR_START, REF_HOUR, buildingDensityAt, buildingStatsAt, buildings, buildingStats, clampHour, crowdFactor, demoFlows, densityColor, densityLevel, floorDepartments, fmtHour, isRealMode, setRealCounts, hourlySeries, parkingLots, peakWindow, personTypes, roads, scopeAt, servicePointAt, servicePoints, type PersonType, type Scope, type ServicePoint } from '../lib/scene-data';
@@ -15,6 +15,7 @@ import type { LabelKind, PickedPerson, SceneApi, SceneMode, SceneView } from './
 import QRCode from 'qrcode';
 import QueuePage from './pages/QueuePage';
 import StatsPage from './pages/StatsPage';
+import OverviewBoard from './pages/OverviewBoard';
 import SettingsPage from './pages/SettingsPage';
 import CommandPage from './pages/CommandPage';
 import CapacityPage from './pages/CapacityPage';
@@ -22,7 +23,7 @@ import AlertsPage, { type Ack } from './pages/AlertsPage';
 import { alertsFor, defaultRules, serviceNote, servicePointsNow, type AlertRule } from '../lib/ops';
 
 const HospitalScene = dynamic(()=>import('./HospitalScene'),{ssr:false,loading:()=> <div className="loading">กำลังโหลดแผนผังโรงพยาบาล 3D…</div>});
-const navItems:[LucideIcon,string][] = [[House,'ภาพรวม'],[Building2,'ผังโรงพยาบาล'],[ListOrdered,'ติดตามคิว'],[BrainCircuit,'ศูนย์อัจฉริยะ'],[ChartColumn,'สถิติและรายงาน'],[Bell,'การแจ้งเตือน'],[Settings,'ตั้งค่า']];
+const navItems:[LucideIcon,string][] = [[House,'ภาพรวม'],[LayoutDashboard,'แดชบอร์ด'],[Building2,'ผังโรงพยาบาล'],[ListOrdered,'ติดตามคิว'],[BrainCircuit,'ศูนย์อัจฉริยะ'],[ChartColumn,'สถิติและรายงาน'],[Bell,'การแจ้งเตือน'],[Settings,'ตั้งค่า']];
 const views:[SceneView,string][] = [['campus','ภาพรวมทั้งโรงพยาบาล'],['building','อาคาร'],['floor','ชั้น'],['department','แผนก']];
 const serviceIcons:Record<string,LucideIcon> = {registration:ClipboardList,screening:Thermometer,clinic:Stethoscope,lab:Droplet,pharmacy:Pill,finance:Wallet,radiology:Radiation};
 const statusColor = (s:ServicePoint['status']) => s==='critical'?'#ef4444':s==='busy'?'#f5a524':'#22c58b';
@@ -246,7 +247,7 @@ export default function HospitalDashboard() {
  const nowMinute = Math.floor(((Date.now()/60000 - new Date().getTimezoneOffset() + clockOffset) % 1440 + 1440) % 1440);
  useMemo(()=>{ setRealCounts(liveData ? realCounts(patients,nowMinute,queueSync.events) : null); },[liveData,patients,nowMinute,queueSync.events]);
  // The simulated usual day, as the command centre's "usual" line in live data mode (made only when needed).
- const usualDay = useMemo(()=>liveData && activeNav==='ศูนย์อัจฉริยะ' ? generatePatients('demo-day') : [],[liveData,activeNav,world]); // eslint-disable-line react-hooks/exhaustive-deps
+ const usualDay = useMemo(()=>liveData && (activeNav==='ศูนย์อัจฉริยะ' || activeNav==='แดชบอร์ด') ? generatePatients('demo-day') : [],[liveData,activeNav,world]); // eslint-disable-line react-hooks/exhaustive-deps
  useEffect(()=>()=>setRealCounts(null),[]);
  const spec = buildings.find(b=>b.id===selected);
  const stats = spec ? buildingStatsAt(spec.id,hour) : undefined;
@@ -488,6 +489,8 @@ export default function HospitalDashboard() {
     queue={{...queueSync,canAct:following,onNow:()=>{ setPlaying(false); setFollowing(true); }}} assist={assist}
     onOpenSettings={g=>{ setSettingsFocus(g); setActiveNav('ตั้งค่า'); }} onOpenPlace={openPlaceOnMap}/>}
    {activeNav==='ศูนย์อัจฉริยะ' && <CommandPage base={liveData ? usualDay : basePatients} liveData={liveData} patients={patients} minute={minute} queue={{events:queueSync.events,send:queueSync.send,canAct:following}} assist={assist} timeNote={timeNote}/>}
+   {activeNav==='แดชบอร์ด' && <OverviewBoard patients={patients} base={liveData ? usualDay : basePatients} liveData={liveData} minute={minute} assist={assist} events={queueSync.events}
+    alerts={opsAlerts} acked={id=>!!acks[id]} timeNote={timeNote} onOpenPatient={openOnMap} go={setActiveNav}/>}
    {activeNav==='สถิติและรายงาน' && <StatsPage patients={patients} minute={minute} timeNote={timeNote} report={queueSync.online && queueSync.api ? {api:queueSync.api,user:queueSync.user} : undefined}/>}
    {activeNav==='การแจ้งเตือน' && <AlertsPage alerts={opsAlerts} rules={rules} onRules={saveRules} acks={acks} onAck={ackAlert} minute={minute} timeNote={timeNote} onOpenPatient={openOnMap}/>}
    {activeNav==='ผังโรงพยาบาล' && <CapacityPage patients={patients} minute={minute} timeNote={timeNote} onOpenPatient={openOnMap}/>}
