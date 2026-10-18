@@ -18,6 +18,7 @@ import { counterZones } from '../../lib/queue-screen';
 import FloorPlanSvg from '../FloorPlanSvg';
 import type { FloorUnit, SceneMode } from '../HospitalScene';
 import { Select } from '../Select';
+import { ModalPortal } from '../ModalPortal';
 const FloorScene = dynamic(()=>import('../HospitalScene').then(m=>m.FloorScene),{ssr:false,loading:()=><div className="loading">กำลังโหลดผัง…</div>});
 
 type Tab = 'station'|'overview'|'er'|'booking'|'appts'|'line';
@@ -78,7 +79,7 @@ function QrButton({p,label}:{p:Patient;label?:string}) {
  return <>
   <button className={label?'linkBtn dark':'iconBtn qrBtn'} title={`หน้าคิวของผู้ป่วย ${p.queue} (QR)`} aria-label={`หน้าคิวของผู้ป่วย ${p.queue}`} onClick={e=>{ e.stopPropagation(); setOpen(true); }}>
    {label ? label : <QrCode size={14}/>}</button>
-  {open && <div className="modalBack" onClick={e=>{ e.stopPropagation(); setOpen(false); }}>
+  {open && <ModalPortal><div className="modalBack" onClick={e=>{ e.stopPropagation(); setOpen(false); }}>
    <div className="qrDialog" role="dialog" aria-modal="true" aria-label={`QR คิว ${p.queue}`} onClick={e=>e.stopPropagation()}>
     <header><b>หน้าคิวของผู้ป่วย <span className="mvQueue">{p.queue}</span></b><button className="iconBtn" aria-label="ปิด" onClick={()=>setOpen(false)}><X size={16}/></button></header>
     {ticket.error ? <p className="loginError">{ticket.error}</p> : src ? <img src={src} alt={`QR หน้าสถานะคิว ${p.queue}`}/> : <div className="qrPh"/>}
@@ -90,7 +91,7 @@ function QrButton({p,label}:{p:Patient;label?:string}) {
      ? <div className="qrRenew"><span>บัตรหาย/ลิงก์รั่ว? ออก QR ใหม่แล้ว <b>ลิงก์เดิมและลิงก์ญาติจะใช้ไม่ได้ทันที</b></span>
         <button className="btn ghost sm" onClick={()=>setConfirmRenew(false)}>ยกเลิก</button><button className="btn sm" onClick={()=>{ setConfirmRenew(false); void ticket.renew(); }}>ออก QR ใหม่</button></div>
      : <button className="linkBtn dark qrRenewBtn" onClick={()=>setConfirmRenew(true)}>ออก QR ใหม่ (ยกเลิกลิงก์เดิม)</button>)}
-   </div></div>}
+   </div></div></ModalPortal>}
  </>;
 }
 
@@ -462,7 +463,7 @@ function MoveDialog({s:one,list,from,atFrom=true,patients,minute,openIds,assist,
    {secs.map(sec=>{ const rooms = list.filter(t=>t.section===sec);
     return <div key={sec} className="mvClinic"><span className="mvClinicName">{badge(rooms[0])}<span className="mvText"><b>{dept(rooms[0])}</b><small>คิวรวม {waitPill(waiting.get(rooms[0].group) ?? 0)}</small></span></span>
      <div className="mvRooms">{rooms.map(roomCard)}</div></div>; })}</div>; };
- return <div className="modalBack" onClick={onClose}>
+ return <ModalPortal><div className="modalBack" onClick={onClose}>
   <div className="moveDialog" role="dialog" aria-modal="true" aria-label={`ย้ายหรือส่งต่อ ${label}`} onClick={e=>e.stopPropagation()}>
    <header><div><h3>ย้าย / ส่งต่อคิว <span className="mvQueue">{label}</span></h3>
     <small className="muted">{many.length>1 ? <>{many.map(x=>x.p.queue).join(', ')} · {groupName(from.group)}</> : <>จาก {from.label} · {s.p.dept} · {maskHN(s.p.hn)}</>}</small></div><button className="iconBtn" aria-label="ปิด" onClick={onClose}><X size={18}/></button></header>
@@ -485,7 +486,7 @@ function MoveDialog({s:one,list,from,atFrom=true,patients,minute,openIds,assist,
     <button className="btn" disabled={!tgt} onClick={()=>tgt && onMove(tgt.id,position,reason || undefined)}><ArrowLeftRight size={15}/> ย้าย {label}{tgt?` ไป ${tgtName}`:''}</button>
    </footer>
   </div>
- </div>;
+ </div></ModalPortal>;
 }
 
 // Station types staff think in. Each type has one identity colour + icon, used on the cards and the floor map.

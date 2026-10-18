@@ -6,6 +6,7 @@ import { opdClinics, type Clinic } from '../../lib/patients';
 import { actionKey, covers, type AuthUser, type QueueSync } from '../../lib/queue';
 import { Select } from '../Select';
 import { DatePicker } from '../DatePicker';
+import { ModalPortal } from '../ModalPortal';
 
 // General booking (Phase 2): administrators set the rules and the time slots per clinic; staff book for patients at
 // the counter or on the phone (the path for people without LINE) and cancel on request. The server checks
@@ -190,9 +191,9 @@ export function BookingTab({api,rev,user,features}:{api:Api; rev:number; user?:A
      ? <span className="slotCancel">{cancelReasons.map(r=><button key={r} className="btn ghost sm" onClick={()=>void cancel(b,r)}>{r}</button>)}<button className="iconBtn" aria-label="ไม่ยกเลิก" onClick={()=>setCancelFor(null)}><X size={14}/></button></span>
      : <button className="linkBtn danger" onClick={()=>setCancelFor(b.id)}>ยกเลิก</button>)}</td></tr>)}</tbody></table></div>
    : <p className="ncEmpty">{found ? 'ไม่พบการจอง' : 'ยังไม่มีการจองในวันนี้'}</p>}
-  {checked && <div className="modalBack" onClick={()=>setChecked(null)}><div className="moveDialog visitDialog" role="dialog" aria-modal="true" aria-label="ผลการเช็กอิน" onClick={e=>e.stopPropagation()}>
+  {checked && <ModalPortal><div className="modalBack" onClick={()=>setChecked(null)}><div className="moveDialog visitDialog" role="dialog" aria-modal="true" aria-label="ผลการเช็กอิน" onClick={e=>e.stopPropagation()}>
    <header><div><b>เช็กอิน {checked.source?.code}</b><small className="muted">ให้ผู้ป่วยสแกน QR หรือพิมพ์บัตรคิว</small></div><button className="iconBtn" aria-label="ปิด" onClick={()=>setChecked(null)}><X size={18}/></button></header>
-   <CheckInCard r={checked}/><footer><button className="btn ghost" onClick={()=>window.print()}>พิมพ์บัตรคิว</button><button className="btn" onClick={()=>setChecked(null)}>เสร็จ</button></footer></div></div>}
+   <CheckInCard r={checked}/><footer><button className="btn ghost" onClick={()=>window.print()}>พิมพ์บัตรคิว</button><button className="btn" onClick={()=>setChecked(null)}>เสร็จ</button></footer></div></div></ModalPortal>}
   {newOpen && <NewBooking api={api} clinics={open} policies={policies} onClose={()=>setNewOpen(false)}
    onMade={b=>{ setMsg({text:`จองแล้ว ${b.code} · ${b.serviceName} ${dayOf(b.startsAt)} ${timeOf(b.startsAt)}`}); setDate(new Date(b.startsAt).toLocaleDateString('sv-SE')); setFound(null); }}/>}
  </div>;
@@ -229,7 +230,7 @@ function NewBooking({api,clinics,policies,onClose,onMade}:{api:Api; clinics:Clin
   if (r.ok && r.booking) { setMade(r.booking); onMade(r.booking); } else setError(r.reason ?? 'จองไม่สำเร็จ');
  };
  const slot = slots?.find(s=>s.id===slotId);
- return <div className="modalBack" onClick={onClose}>
+ return <ModalPortal><div className="modalBack" onClick={onClose}>
   <div className="moveDialog visitDialog" role="dialog" aria-modal="true" aria-labelledby="bookTitle" onClick={e=>e.stopPropagation()}>
    <header><div><b id="bookTitle">จองคิวล่วงหน้าให้ผู้ป่วย</b><small className="muted">ตรวจบัตรประชาชนตามขั้นตอนเดิมก่อน · ระบบเก็บเฉพาะ HN</small></div>
     <button className="iconBtn" aria-label="ปิด" onClick={onClose}><X size={18}/></button></header>
@@ -251,5 +252,5 @@ function NewBooking({api,clinics,policies,onClose,onMade}:{api:Api; clinics:Clin
      <button className="btn" disabled={busy || !hn.trim() || !slot} onClick={()=>void submit()}>{busy?'กำลังจอง…':slot?`ยืนยันจอง ${timeOf(slot.startsAt)}`:'เลือกช่วงเวลา'}</button></footer>
    </>}
   </div>
- </div>;
+ </div></ModalPortal>;
 }

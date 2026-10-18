@@ -8,6 +8,7 @@ import { CheckInCard, type CheckInResult } from '../CheckInCard';
 import { NumPick, addDays, dayOf, timeOf, today, weekdayNames } from './Booking';
 import { Select } from '../Select';
 import { DatePicker } from '../DatePicker';
+import { ModalPortal } from '../ModalPortal';
 
 // Doctor appointments (Phase 2): administrators set each clinic's rules and the doctors' sessions; staff make, move
 // and cancel appointments for patients and decide on requests to move; supervisors record a no-show (after the time,
@@ -224,9 +225,9 @@ export function ApptTab({api,rev,user,features}:{api:Api; rev:number; user?:Auth
   {picker && <ApptPicker api={api} clinics={picker.mode==='move' ? clinics.filter(c=>c.key===picker.appt.clinicCode) : open} policies={policies}
    move={picker.mode==='move' ? picker.appt : undefined} onClose={()=>setPicker(null)}
    onDone={(text,day)=>{ setMsg({text}); if (day) setDate(day); setFound(null); void load(); }}/>}
-  {checked && <div className="modalBack" onClick={()=>setChecked(null)}><div className="moveDialog visitDialog" role="dialog" aria-modal="true" aria-label="ผลการเช็กอิน" onClick={e=>e.stopPropagation()}>
+  {checked && <ModalPortal><div className="modalBack" onClick={()=>setChecked(null)}><div className="moveDialog visitDialog" role="dialog" aria-modal="true" aria-label="ผลการเช็กอิน" onClick={e=>e.stopPropagation()}>
    <header><div><b>เช็กอิน {checked.source?.code}</b><small className="muted">ให้ผู้ป่วยสแกน QR หรือพิมพ์บัตรคิว</small></div><button className="iconBtn" aria-label="ปิด" onClick={()=>setChecked(null)}><X size={18}/></button></header>
-   <CheckInCard r={checked}/><footer><button className="btn ghost" onClick={()=>window.print()}>พิมพ์บัตรคิว</button><button className="btn" onClick={()=>setChecked(null)}>เสร็จ</button></footer></div></div>}
+   <CheckInCard r={checked}/><footer><button className="btn ghost" onClick={()=>window.print()}>พิมพ์บัตรคิว</button><button className="btn" onClick={()=>setChecked(null)}>เสร็จ</button></footer></div></div></ModalPortal>}
  </div>;
 }
 
@@ -268,7 +269,7 @@ function ApptPicker({api,clinics,policies,move,onClose,onDone}:{api:Api; clinics
   if (move) { onDone(`เลื่อนนัด ${a.code} เป็น ${when} แล้ว`,new Date(a.startsAt).toLocaleDateString('sv-SE')); onClose(); }
   else { setMade(a); onDone(`นัดแล้ว ${a.code} · ${when}`,new Date(a.startsAt).toLocaleDateString('sv-SE')); }
  };
- return <div className="modalBack" onClick={onClose}>
+ return <ModalPortal><div className="modalBack" onClick={onClose}>
   <div className="moveDialog visitDialog" role="dialog" aria-modal="true" aria-labelledby="apptTitle" onClick={e=>e.stopPropagation()}>
    <header><div><b id="apptTitle">{move ? `เลื่อนนัด ${move.code}` : 'นัดผู้ป่วยพบแพทย์'}</b>
     <small className="muted">{move ? `เดิม ${dayOf(move.startsAt)} ${timeOf(move.startsAt)} · ${move.providerName} — ที่เดิมจะคืนเมื่อได้ที่ใหม่แล้วเท่านั้น` : 'ตรวจบัตรประชาชนตามขั้นตอนเดิมก่อน · ระบบเก็บเฉพาะ HN'}</small></div>
@@ -293,5 +294,5 @@ function ApptPicker({api,clinics,policies,move,onClose,onDone}:{api:Api; clinics
      <button className="btn" disabled={busy || (!move && !hn.trim()) || !slot} onClick={()=>void submit()}>{busy?'กำลังบันทึก…':slot?`${move?'ยืนยันเลื่อนเป็น':'ยืนยันนัด'} ${timeOf(slot.startsAt)}`:'เลือกแพทย์และเวลา'}</button></footer>
    </>}
   </div>
- </div>;
+ </div></ModalPortal>;
 }

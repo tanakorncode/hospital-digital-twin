@@ -8,6 +8,7 @@ import type { QueueSync } from '../../lib/queue';
 import { Select } from '../Select';
 import { ConfirmDialog, type Confirm } from './ConfirmDialog';
 import { FloorPreview, Help } from './FacilityHelp';
+import { ModalPortal } from '../ModalPortal';
 
 // Settings → ผังโรงพยาบาล (docs/FACILITY-MODEL-DESIGN.md §7): the whole facility on one page — buildings, floors,
 // departments, service groups and their rooms / counters / beds. Two views of the same data: by department (units,
@@ -449,9 +450,9 @@ function FloorDetail({f,ctx}:{f:FFloor; ctx:Ctx}) {
 // ---- Dialogs --------------------------------------------------------------------------------------------------------
 function Dialog({title,detail,onClose,children,footer,wide}:{title:string; detail?:string; onClose:()=>void; children:ReactNode; footer:ReactNode; wide?:boolean}) {
   useEffect(()=>{ const k = (e:KeyboardEvent)=>{ if (e.key==='Escape') onClose(); }; window.addEventListener('keydown',k); return ()=>window.removeEventListener('keydown',k); },[onClose]);
-  return <div className="modalBack" onClick={onClose}><div className={'moveDialog facDialog'+(wide?' wide':'')} role="dialog" aria-modal="true" aria-label={title} onClick={e=>e.stopPropagation()}>
+  return <ModalPortal><div className="modalBack" onClick={onClose}><div className={'moveDialog facDialog'+(wide?' wide':'')} role="dialog" aria-modal="true" aria-label={title} onClick={e=>e.stopPropagation()}>
     <header><div><h3>{title}</h3>{detail && <small className="muted">{detail}</small>}</div><button className="iconBtn" aria-label="ปิด" onClick={onClose}><X size={18}/></button></header>
-    <div className="facDialogBody">{children}</div><footer>{footer}</footer></div></div>;
+    <div className="facDialogBody">{children}</div><footer>{footer}</footer></div></div></ModalPortal>;
 }
 
 function ImpactDialog({impact,data,onClose,onPublish,onShow}:{impact:Impact|null; data:Data; onClose:()=>void; onPublish:(note:string)=>Promise<boolean>; onShow:(id:string)=>void}) {

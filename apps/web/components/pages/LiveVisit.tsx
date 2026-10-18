@@ -5,6 +5,7 @@ import { PriorityTag } from '../PriorityIcon';
 import { clinicOpen, opdClinics, stepText, triageLevels, type Patient, type PatientState, type StepKind } from '../../lib/patients';
 import { actionKey, covers, priorityKeys, priorityText, type AuthUser, type QueueSync, type VisitInput } from '../../lib/queue';
 import { erDepartment } from '../../lib/facility';
+import { ModalPortal } from '../ModalPortal';
 
 // Real patients (live data mode): taking a patient into the queue, sending them on after a step, and cancelling a
 // visit made by mistake. The queue number comes from the server; nothing personal is entered here — no name, no HN.
@@ -58,7 +59,7 @@ function EnterVisitDialog({visits,user,minute,patients,QrButton,onClose}:{visits
  const another = () => { setMade(null); setPriority(undefined); setTriage(undefined); setHn(''); setIdChecked(false); renew(); };
  // The QR dialog works from a patient; the new one is on its way from the server — a stand-in is enough for the link.
  const p = made ? patients.find(x=>x.id===made.id) ?? ({id:made.id,queue:made.queue} as Patient) : undefined;
- return <div className="modalBack" onClick={onClose}>
+ return <ModalPortal><div className="modalBack" onClick={onClose}>
   <div className="moveDialog visitDialog" role="dialog" aria-modal="true" aria-labelledby="visitTitle" onClick={e=>e.stopPropagation()}>
    <header><div><b id="visitTitle">รับผู้ป่วยเข้าคิว</b><small className="muted">เลขคิวออกจากระบบกลาง · ไม่ต้องกรอกชื่อหรือ HN</small></div>
     <button className="iconBtn" aria-label="ปิด" onClick={onClose}><X size={18}/></button></header>
@@ -86,7 +87,7 @@ function EnterVisitDialog({visits,user,minute,patients,QrButton,onClose}:{visits
      <button className="btn" disabled={busy || (flow==='opd' && !c) || (!!hn.trim() && !idChecked)} onClick={()=>void submit()}>{busy?'กำลังออกเลขคิว…':'ออกเลขคิว'}</button></footer>
    </>}
   </div>
- </div>;
+ </div></ModalPortal>;
 }
 
 // After a step: where the doctor / staff send the patient next (added after the steps already ordered).

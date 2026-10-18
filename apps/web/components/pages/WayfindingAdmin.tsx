@@ -7,6 +7,7 @@ import { buildings, buildingStats } from '../../lib/scene-data';
 import type { QueueSync } from '../../lib/queue';
 import { directoryPlaces, signUrl, whereText, type Destination } from '../../lib/wayfinding';
 import { Select } from '../Select';
+import { ModalPortal } from '../ModalPortal';
 
 // Settings → QR นำทาง (administrators): the places patients look for, with stable codes; QR signs to print and hang.
 // A sign's QR is only this page's address and the place code — nothing else. Retire a place with where it moved to,
@@ -106,7 +107,7 @@ function RetireDialog({place,to,others,setTo,onCancel,onConfirm}:{place?:Destina
  useEffect(()=>{ const f = (e:KeyboardEvent)=>{ if (e.key==='Escape') onCancel(); }; window.addEventListener('keydown',f); return ()=>window.removeEventListener('keydown',f); },[onCancel]);
  if (!place) return null;
  const target = others.find(x=>x.code===to);
- return <div className="modalBack" onClick={onCancel}>
+ return <ModalPortal><div className="modalBack" onClick={onCancel}>
   <div className="moveDialog retireDialog" role="dialog" aria-modal="true" aria-labelledby="retireTitle" onClick={e=>e.stopPropagation()}>
    <header><div><b id="retireTitle">เลิกใช้ "{place.nameTh}"?</b><small className="muted">{place.code} · {whereText(place)}</small></div>
     <button className="iconBtn" aria-label="ปิด" onClick={onCancel}><X size={18}/></button></header>
@@ -119,6 +120,6 @@ function RetireDialog({place,to,others,setTo,onCancel,onConfirm}:{place?:Destina
     <Select value={to} onChange={setTo} options={[{value:'',label:'ไม่มีจุดแทน — ปิดเฉย ๆ'},...others.map(x=>({value:x.code,label:x.nameTh,sub:whereText(x)}))]}/></label>
    <footer><span className="muted">บันทึกในบันทึกการใช้งาน</span><button className="btn ghost" onClick={onCancel}>ยกเลิก</button><button className="btn danger" onClick={onConfirm}>เลิกใช้จุดนี้</button></footer>
   </div>
- </div>;
+ </div></ModalPortal>;
 }
 
