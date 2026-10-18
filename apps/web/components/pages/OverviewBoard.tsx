@@ -10,6 +10,7 @@ import { STEP_ORDER, bedBoard, erBoard, type Alert } from '../../lib/ops';
 import { buildingShort } from '../../lib/facility';
 import { FcChart } from './CommandPage';
 import { useTooltip } from './StatsPage';
+import { PageGuide } from './PageGuide';
 
 // แดชบอร์ด: the whole hospital on one page, live, without the map — how many are in, waiting and for how long; which
 // queues are near or over their cap; stations and doctors; the day's trend and forecast; per service, per step, per
@@ -87,6 +88,7 @@ export default function OverviewBoard({patients,base,liveData,minute,assist,even
   return <div className="page viz-root ovPage" ref={tt.host}>
     <div className="pageHead"><h2><LayoutDashboard size={20}/> แดชบอร์ดทั้งโรงพยาบาล</h2><span className="pageTime">{timeNote}</span>
       <small className="muted ovLive"><i/> อัปเดตเองทุกนาที</small></div>
+    <PageGuide id="แดชบอร์ด"/>
 
     <div className="tileRow ovTiles">
       <Tile icon={Users} label="ในโรงพยาบาลตอนนี้" value={d.now.length} unit="คน" sub={`OPD ${d.now.filter(s=>s.p.flow==='opd').length} · ER ${d.now.filter(s=>s.p.flow==='er').length}`}/>
@@ -109,7 +111,8 @@ export default function OverviewBoard({patients,base,liveData,minute,assist,even
       <Panel title="คนรอทั้งโรงพยาบาล · ย้อนหลัง 2 ชม. และคาดการณ์ 3 ชม." icon={Activity}
         right={<span className="cmdLegend"><i className="lgActual"/>จริง<i className="lgFc"/>คาดการณ์<i className="lgBand"/>ช่วงที่น่าจะเป็น<i className="lgPlan"/>ปกติของวันนี้</span>}>
         <FcChart points={fc.total} now={m} height={230}/>
-        {liveData && <p className="note">ผู้ป่วยจริง: เส้น "ปกติของวันนี้" ยังมาจากแบบจำลอง ปรับตามจำนวนที่มาจริงวันนี้ (×{scale.toFixed(2)})</p>}
+        <p className="note">{liveData && <>ผู้ป่วยจริง: เส้น "ปกติของวันนี้" ยังมาจากแบบจำลอง ปรับตามจำนวนที่มาจริงวันนี้ (×{scale.toFixed(2)}) · </>}
+          <button className="linkBtn dark ovMore" onClick={()=>go('ศูนย์อัจฉริยะ')}>คาดการณ์รายจุดบริการและคำแนะนำ → ศูนย์อัจฉริยะ</button></p>
       </Panel>
 
       <Panel title="ต้องดูตอนนี้" icon={ListChecks} right={<button className="linkBtn dark" onClick={()=>go('การแจ้งเตือน')}>การแจ้งเตือนทั้งหมด</button>}>

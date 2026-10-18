@@ -6,6 +6,7 @@ import { CLEANING_MIN, fmtDur, fmtMin, maskHN, stepText, type Patient } from '..
 import { capacityBoard, unitStateText, type CapFloor, type Unit } from '../../lib/ops';
 import type { FloorUnit } from '../HospitalScene';
 import { Select } from '../Select';
+import { PageGuide } from './PageGuide';
 
 // For staff coordinating across departments: which beds, exam rooms and stations are free right now,
 // building by building — the question that is usually answered by phoning around.
@@ -63,6 +64,7 @@ export default function CapacityPage({patients,minute,timeNote,onOpenPatient}:{p
 
  return <div className="page">
   <div className="pageHead"><h2>ผังโรงพยาบาล · เตียงและห้องว่าง</h2><span className="pageTime">{timeNote}</span></div>
+  <PageGuide id="ผังโรงพยาบาล"/>
   <div className="tileRow">
    <div className="tile"><small>เตียงหอผู้ป่วยว่าง</small><b>{sum(u=>u.state==='free',f=>f.area==='ward')}<em> เตียง</em></b><span className="muted">ทำความสะอาดอยู่ {sum(u=>u.state==='cleaning')} · ใช้เวลา {CLEANING_MIN} นาที</span></div>
    <div className="tile"><small>เตียง ER ว่าง</small><b>{sum(u=>u.state==='free',f=>f.area==='er')}<em> เตียง</em></b><span className={sum(u=>u.state==='boarding')?'warnText':'muted'}>ค้างรอเตียงหอผู้ป่วย {sum(u=>u.state==='boarding')} คน</span></div>

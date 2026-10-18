@@ -4,6 +4,7 @@ import { Accessibility, Activity, ArrowRightLeft, BrainCircuit, CalendarClock, C
 import { fmtMin, patientAt, type Patient } from '../../lib/patients';
 import { PORTER_TOPIC, helpRequests, porters, type AssistView, type QueueCommand, type QueueEvent } from '../../lib/queue';
 import { adviseStaffing, anomalies, forecast, handover, type AdviceKind, type FcPoint } from '../../lib/forecast';
+import { PageGuide } from './PageGuide';
 
 // AI command centre: forecast, staffing advice, anomalies, porter jobs and the shift handover — all computed from
 // counts per service and staff button presses. No patient is identified anywhere on this page.
@@ -12,13 +13,16 @@ const adviceIcon:Record<AdviceKind,typeof Sparkles> = {reassign:ArrowRightLeft,b
 const loadPref = (k:string, d:string) => { try { return localStorage.getItem(k) ?? d; } catch { return d; } };
 
 // liveData: `base` is the simulated usual day (no real history yet); it is scaled to today's real arrivals and said so.
-export default function CommandPage({base,patients,minute,queue,assist,timeNote,liveData=false}:{base:Patient[];patients:Patient[];minute:number;queue:Control;assist:AssistView;timeNote:string;liveData?:boolean}) {
+// What is happening now is on แดชบอร์ด (`go` there); this page is what comes next and what to do about it.
+export default function CommandPage({base,patients,minute,queue,assist,timeNote,liveData=false,go}:{base:Patient[];patients:Patient[];minute:number;queue:Control;assist:AssistView;timeNote:string;liveData?:boolean;go:(page:string)=>void}) {
  const m = Math.floor(minute);
  const scale = useMemo(()=>{ if (!liveData) return 1; const came = (ps:Patient[]) => ps.filter(p=>p.flow!=='ipd' && p.arrival<=m).length;
   return (came(patients)+3)/(came(base)+3); },[liveData,base,patients,m]);
  const fc = useMemo(()=>forecast(base,patients,m,undefined,undefined,undefined,undefined,undefined,undefined,scale),[base,patients,m,scale]);
  const advice = useMemo(()=>adviseStaffing(base,patients,m,fc),[base,patients,m,fc]);
- const found = useMemo(()=>anomalies(fc,assist,queue.events),[fc,assist,queue.events]);
+ const found = useMemo(()=>anomalies(fc,assist,queue.events),[fc,assist,queue.events]); // all of them go into the handover
+ // On this page only what the dashboard does not say: services running well above a usual day.
+ const unusual = fc.services.filter(s=>s.ratio>=1.5 && s.now>=5);
  const [ack,setAck] = useState<Set<string>>(new Set());
  const nowTotal = fc.total.find(p=>p.t===m), peak = fc.total.filter(p=>p.t>m).reduce((a,p)=>(p.fc ?? 0)>(a?.fc ?? -1)?p:a,undefined as FcPoint|undefined);
  const jobs = helpRequests(queue.events).filter(h=>h.report.reason===PORTER_TOPIC && !h.closed);
@@ -27,12 +31,13 @@ export default function CommandPage({base,patients,minute,queue,assist,timeNote,
    <div className="cmdTitle"><span className="cmdOrb"><BrainCircuit size={22}/></span><div><h2>ศูนย์อัจฉริยะ</h2><p>คาดการณ์ · แนะนำ · เฝ้าระวัง · ส่งเวร — {timeNote}</p></div>
     <span className="cmdPrivacy" title="ทุกการคำนวณบนหน้านี้ใช้จำนวนรวมต่อจุดบริการและเวลา ไม่มีชื่อ HN หรือข้อมูลการรักษา"><ShieldCheck size={15}/> ใช้ข้อมูลรวมเท่านั้น · ไม่มีข้อมูลรายบุคคล</span></div>
    <div className="cmdKpis">
-    <Kpi label="รออยู่ตอนนี้" value={Math.round(nowTotal?.actual ?? 0)} unit="คน" sub={`ปกติช่วงนี้ ~${Math.round(nowTotal?.plan ?? 0)}`} trend={(nowTotal?.actual ?? 0)-(nowTotal?.plan ?? 0)}/>
-    <Kpi label="คาดสูงสุด 3 ชม." value={peak ? `${Math.round(peak.lo ?? 0)}–${Math.round(peak.hi ?? 0)}` : '–'} unit="คน" sub={peak ? `ช่วง ${fmtMin(peak.t)} น.` : ''}/>
-    <Kpi label="จุดที่ต้องดู" value={found.length} unit="เรื่อง" sub={found[0]?.title ?? 'ทุกอย่างปกติ'} tone={found.some(f=>f.level==='critical')?'bad':found.length?'warn':'ok'}/>
+    <Kpi label="คาดสูงสุด 3 ชม." value={peak ? `${Math.round(peak.lo ?? 0)}–${Math.round(peak.hi ?? 0)}` : '–'} unit="คน" sub={peak ? `ช่วง ${fmtMin(peak.t)} น. · ตอนนี้ ${Math.round(nowTotal?.actual ?? 0)} คน` : ''}/>
+    <Kpi label="มากกว่าวันปกติ" value={unusual.length} unit="จุด" sub={unusual[0] ? `${unusual[0].name} ↑${Math.round((unusual[0].ratio-1)*100)}%` : 'ทุกจุดใกล้เคียงวันปกติ'} tone={unusual.some(u=>u.ratio>=2)?'bad':unusual.length?'warn':'ok'}/>
+    <Kpi label="คำแนะนำ" value={advice.filter(a=>!ack.has(a.id)).length} unit="ข้อ" sub={advice[0]?.title ?? 'ไม่มีจุดที่ต้องปรับ'} tone={advice.some(a=>!ack.has(a.id))?'warn':'ok'}/>
     <Kpi label="งานผู้ช่วย/เปลค้าง" value={jobs.length} unit="งาน" sub={`${porters.length-new Set(jobs.filter(j=>j.assigned).map(j=>j.assigned!.reason)).size} คนว่าง`} tone={jobs.some(j=>!j.assigned)?'warn':'ok'}/>
    </div>
   </header>
+  <PageGuide id="ศูนย์อัจฉริยะ"/>
 
   <div className="cmdGrid">
    <section className="cmdCard span2">
@@ -65,9 +70,10 @@ export default function CommandPage({base,patients,minute,queue,assist,timeNote,
    </section>
 
    <section className="cmdCard">
-    <div className="cmdHead"><h3><TriangleAlert size={16}/> เฝ้าระวังแบบเรียลไทม์</h3><small>{found.length} เรื่อง</small></div>
-    {found.length ? <ul className="anomList">{found.slice(0,8).map((a,i)=><li key={i} className={a.level}><i className="pulse"/><div><b>{a.title}</b><small>{a.detail}</small></div></li>)}</ul>
-     : <p className="cmdEmpty">ไม่พบความผิดปกติ</p>}
+    <div className="cmdHead"><h3><TriangleAlert size={16}/> มากกว่าวันปกติ</h3><small>{unusual.length} จุด</small></div>
+    {unusual.length ? <ul className="anomList">{unusual.slice(0,8).map(s=><li key={s.key} className={s.ratio>=2?'critical':'warn'}><i className="pulse"/><div><b>{s.name}: คิวมากกว่าปกติ {Math.round((s.ratio-1)*100)}%</b><small>ตอนนี้รอ {s.now} คน · ปกติช่วงนี้ ~{Math.round(s.planNow)} คน · คาดสูงสุด ~{Math.round(s.peak)} ช่วง {fmtMin(s.peakAt)}</small></div></li>)}</ul>
+     : <p className="cmdEmpty">ทุกจุดใกล้เคียงวันปกติ</p>}
+    <button className="linkBtn dark cmdToDash" onClick={()=>go('แดชบอร์ด')}>จุดติดขัด คิวเต็ม ผู้ป่วยขอความช่วยเหลือ ตู้ เตียง → แดชบอร์ด</button>
    </section>
 
    <PorterBoard jobs={jobs} patients={patients} m={m} queue={queue}/>

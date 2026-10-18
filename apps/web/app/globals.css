@@ -2960,3 +2960,5 @@ input.bare[type=search]::-webkit-search-cancel-button{display:none}
 .ovSys li b{color:#0f2340}
 .ovSys li.ok{border-left-color:#16a34a}.ovSys li.warn{border-left-color:#d97706;background:#fffbeb}.ovSys li.bad{border-left-color:#c92a2a;background:#fff5f4}.ovSys li.off{color:#94a3b8}
 .ovChip.bad{background:#ffe5e3;color:#c92a2a}.ovChip.warn{background:#fef3c7;color:#92400e}
+.cmdToDash{align-self:flex-start;font-size:12.5px;margin-top:auto}
+.cmdPage .setGuide{margin:0}

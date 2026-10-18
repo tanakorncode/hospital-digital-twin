@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { AlertTriangle, CheckCircle2, OctagonAlert, RotateCcw, Send } from 'lucide-react';
 import { defaultRules, type Alert, type AlertRule } from '../../lib/ops';
 import { fmtMin } from '../../lib/patients';
+import { PageGuide } from './PageGuide';
 
 export type Ack = {minute:number; at:string};
 const severityLabel = {critical:'วิกฤต',warning:'เฝ้าระวัง'};
@@ -30,6 +31,7 @@ export default function AlertsPage({alerts,rules,onRules,acks,onAck,minute,timeN
   </li>; };
  return <div className="page">
   <div className="pageHead"><h2>การแจ้งเตือน</h2><span className="pageTime">{timeNote}</span></div>
+  <PageGuide id="การแจ้งเตือน"/>
   <div className="pageCols">
    <section className="panel">
     <div className="panelHead"><h3>ต้องดำเนินการ ({open.length})</h3><small className="panelMeta">รวมเป็นรายการต่อจุด ไม่เตือนซ้ำรายคน</small></div>

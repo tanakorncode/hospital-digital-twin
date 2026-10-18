@@ -4,6 +4,7 @@ import { Download, Minus, Plus, RotateCcw, Table2 } from 'lucide-react';
 import { DEFAULT_CAPACITY, capacityText, opdClinics, stepText, type Capacity, type CapacityKey, type Patient } from '../../lib/patients';
 import { canDo, type AuthUser, type QueueSync } from '../../lib/queue';
 import { Phase2Report } from './Phase2Report';
+import { PageGuide } from './PageGuide';
 import { STAT_HOURS, STEP_ORDER, runScenario, summarize, toCsv, weekSummaries, type DaySummary } from '../../lib/ops';
 import { Select } from '../Select';
 
@@ -42,6 +43,7 @@ export default function StatsPage({patients,minute,timeNote,report}:{patients:Pa
  return <div className="page viz-root" ref={tt.host}>
   <div className="pageHead"><h2>สถิติและรายงาน</h2><span className="pageTime">{timeNote}</span>
    <button className="btn ghost" onClick={exportCsv}><Download size={14}/> ส่งออก CSV</button></div>
+  <PageGuide id="สถิติและรายงาน"/>
 
   {report?.user && canDo(report.user,'supervisor') && <Phase2Report api={report.api} user={report.user} tip={tt.show} hide={tt.hide}/>}
 

@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { PriorityTag } from '../PriorityIcon';
 import { EnterVisitButton, SendOnBar, type VisitControl } from './LiveVisit';
+import { PageGuide } from './PageGuide';
 import { BookingTab } from './Booking';
 import { ApptTab } from './Appointments';
 import { LineLinkTab } from './LineLink';
@@ -51,6 +52,7 @@ export default function QueuePage({patients,minute,timeNote,onOpenPatient,queue,
    {visitControl(queue) && <EnterVisitButton visits={visitControl(queue)!} user={queue.user} minute={minute} disabled={!queue.canAct} patients={patients} QrButton={QrButton}/>}
    <div className="pageTabs" role="tablist">{tabs.filter(([id])=>!['booking','appts','line'].includes(id) || bookingOk).map(([id,label,Icon])=><button key={id} role="tab" aria-selected={tab===id} className={tab===id?'on':''} onClick={()=>setTab(id)}><Icon size={15}/>{label}</button>)}</div>
   </div>
+  <PageGuide id="ติดตามคิว"/>
   {serviceNote(m) && <OffHours m={m} queue={queue}/>}
   {canDo(queue.user,'staff') && queue.api && !!queue.kioskHelp?.length && <KioskHelpBar list={queue.kioskHelp} api={queue.api}/>}
   {tab==='station' ? <StationConsole patients={patients} minute={minute} queue={queue} onOpen={onOpenPatient} assist={assist} onOpenSettings={onOpenSettings}/>

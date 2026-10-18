@@ -5,7 +5,7 @@ import { BookOpen, ChevronDown, ChevronRight } from 'lucide-react';
 // "หน้านี้ใช้ทำอะไร" at the top of every settings page: one line always shown; opened, what each part of the page is
 // for, the order to set things up, and the pages that are easy to confuse with this one (a click goes there). Folded
 // to the one line unless opened; a page whose guide was opened stays open on this screen.
-type Guide = { what:string; parts?:[string,string][]; steps?:string[]; related?:[string,string][]; note?:string };
+export type Guide = { what:string; parts?:[string,string][]; steps?:string[]; stepsTitle?:string; related?:[string,string][]; note?:string };
 
 export const GUIDES:Record<string,Guide> = {
   hours: { what:'เวลาเปิด–ปิดของผู้ป่วยนอก (OPD) ที่ทุกหน้าจอใช้ร่วมกัน',
@@ -89,17 +89,17 @@ export const GUIDES:Record<string,Guide> = {
     related:[['audit','ดูว่าแต่ละบัญชีทำอะไร']] },
 };
 
-const KEY = 'hdt.guideOpen'; // the pages whose guide was left open
-const opened = ():string[] => { try { return JSON.parse(localStorage.getItem(KEY) ?? '[]'); } catch { return []; } };
+const opened = (key:string):string[] => { try { return JSON.parse(localStorage.getItem(key) ?? '[]'); } catch { return []; } };
 
-export function SettingsGuide({id,titles,onGo}:{id:string; titles:Record<string,string>; onGo:(id:string)=>void}) {
-  const g = GUIDES[id];
+// The box itself, for any page: `guide` its text, `titles` the pages a link may go to (only those this account can
+// open), `store` where this screen remembers which guides were left open.
+export function GuideBox({id,guide:g,titles,onGo,store}:{id:string; guide?:Guide; titles:Record<string,string>; onGo:(id:string)=>void; store:string}) {
   const [open,setOpen] = useState(false);
-  useEffect(()=>{ setOpen(opened().includes(id)); },[id]);
+  useEffect(()=>{ setOpen(opened(store).includes(id)); },[id,store]);
   if (!g) return null;
   const toggle = () => { const next = !open; setOpen(next);
-    try { const f = new Set(opened()); if (next) f.add(id); else f.delete(id); localStorage.setItem(KEY,JSON.stringify([...f])); } catch { /* not remembered */ } };
-  const related = (g.related ?? []).filter(([p])=>titles[p]); // only the pages this account can open
+    try { const f = new Set(opened(store)); if (next) f.add(id); else f.delete(id); localStorage.setItem(store,JSON.stringify([...f])); } catch { /* not remembered */ } };
+  const related = (g.related ?? []).filter(([p])=>titles[p]);
   const more = !!(g.parts?.length || g.steps?.length || g.note || related.length);
   return <aside className={'setGuide'+(open?' open':'')} aria-label="คำอธิบายหน้านี้">
     <button type="button" className="setGuideHead" aria-expanded={open} onClick={toggle} disabled={!more}>
@@ -107,10 +107,14 @@ export function SettingsGuide({id,titles,onGo}:{id:string; titles:Record<string,
       {more && <em>{open ? <>ย่อ <ChevronDown size={14}/></> : <>อ่านเพิ่ม <ChevronRight size={14}/></>}</em>}</button>
     {open && more && <div className="setGuideBody">
       {g.parts?.length ? <dl>{g.parts.map(([t,d])=><div key={t}><dt>{t}</dt><dd>{d}</dd></div>)}</dl> : null}
-      {g.steps?.length ? <div className="setGuideSteps"><b>ลำดับการตั้งค่า</b><ol>{g.steps.map(s=><li key={s}>{s}</li>)}</ol></div> : null}
+      {g.steps?.length ? <div className="setGuideSteps"><b>{g.stepsTitle ?? 'ลำดับการตั้งค่า'}</b><ol>{g.steps.map(s=><li key={s}>{s}</li>)}</ol></div> : null}
       {g.note && <p className="setGuideNote">{g.note}</p>}
       {related.length>0 && <div className="setGuideRel"><b>หน้าที่เกี่ยวข้อง</b>{related.map(([p,why])=>
         <button key={p} type="button" onClick={()=>onGo(p)}><span>{titles[p]}</span><small>{why}</small></button>)}</div>}
     </div>}
   </aside>;
+}
+
+export function SettingsGuide({id,titles,onGo}:{id:string; titles:Record<string,string>; onGo:(id:string)=>void}) {
+  return <GuideBox id={id} guide={GUIDES[id]} titles={titles} onGo={onGo} store="hdt.guideOpen"/>;
 }

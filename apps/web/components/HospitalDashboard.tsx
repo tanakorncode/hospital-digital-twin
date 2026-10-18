@@ -16,6 +16,7 @@ import QRCode from 'qrcode';
 import QueuePage from './pages/QueuePage';
 import StatsPage from './pages/StatsPage';
 import OverviewBoard from './pages/OverviewBoard';
+import { PageNav } from './pages/PageGuide';
 import SettingsPage from './pages/SettingsPage';
 import CommandPage from './pages/CommandPage';
 import CapacityPage from './pages/CapacityPage';
@@ -229,6 +230,9 @@ export default function HospitalDashboard() {
  const world = worldKey(queueSync.settings);
  // Live data mode: today's real visits instead (rebuilt with the log, since each step starts when the previous one is done).
  const liveData = isLive(queueSync.settings);
+ const visibleNav = navItems.filter(([,label])=>label!=='ตั้งค่า' || !queueSync.online || canDo(queueSync.user,'supervisor'));
+ // The main pages' "หน้านี้ใช้ทำอะไร" links go between the pages this account sees.
+ const pageNav = useMemo(()=>({go:setActiveNav,pages:visibleNav.map(([,l])=>l)}),[visibleNav.map(([,l])=>l).join()]); // eslint-disable-line react-hooks/exhaustive-deps
  const basePatients = useMemo(()=>startingPatients(queueSync.settings,queueSync.visits,queueSync.events),[world,liveData,liveData?queueSync.visits:null,liveData?queueSync.events:null]); // eslint-disable-line react-hooks/exhaustive-deps
  const patients = useMemo(()=>applyQueueEvents(basePatients,queueSync.events),[basePatients,queueSync.events]);
  // following: the timeline tracks the clock and shows realtime values; scrubbing or playing leaves it.
@@ -481,20 +485,22 @@ export default function HospitalDashboard() {
    </div>
 
    <nav className="nav">
-    {navItems.filter(([,label])=>label!=='ตั้งค่า' || !queueSync.online || canDo(queueSync.user,'supervisor')).map(([Icon,label])=><button key={label} className={activeNav===label?'navItem selected':'navItem'} onClick={()=>setActiveNav(label)}><Icon size={20}/>{label}
+    {visibleNav.map(([Icon,label])=><button key={label} className={activeNav===label?'navItem selected':'navItem'} onClick={()=>setActiveNav(label)}><Icon size={20}/>{label}
      {label==='การแจ้งเตือน' && openAlerts>0 && <span className="navBadge" aria-label={`${openAlerts} รายการรอดำเนินการ`}>{openAlerts}</span>}</button>)}
    </nav>
 
+   <PageNav.Provider value={pageNav}>
    {activeNav==='ติดตามคิว' && <QueuePage patients={patients} minute={minute} timeNote={timeNote} onOpenPatient={openOnMap}
     queue={{...queueSync,canAct:following,onNow:()=>{ setPlaying(false); setFollowing(true); }}} assist={assist}
     onOpenSettings={g=>{ setSettingsFocus(g); setActiveNav('ตั้งค่า'); }} onOpenPlace={openPlaceOnMap}/>}
-   {activeNav==='ศูนย์อัจฉริยะ' && <CommandPage base={liveData ? usualDay : basePatients} liveData={liveData} patients={patients} minute={minute} queue={{events:queueSync.events,send:queueSync.send,canAct:following}} assist={assist} timeNote={timeNote}/>}
+   {activeNav==='ศูนย์อัจฉริยะ' && <CommandPage base={liveData ? usualDay : basePatients} liveData={liveData} patients={patients} minute={minute} queue={{events:queueSync.events,send:queueSync.send,canAct:following}} assist={assist} timeNote={timeNote} go={setActiveNav}/>}
    {activeNav==='แดชบอร์ด' && <OverviewBoard patients={patients} base={liveData ? usualDay : basePatients} liveData={liveData} minute={minute} assist={assist} events={queueSync.events}
     alerts={opsAlerts} acked={id=>!!acks[id]} timeNote={timeNote} onOpenPatient={openOnMap} go={setActiveNav}
     sys={{online:queueSync.online,api:queueSync.api,feed:live.status,feedSource:live.snapshot?.source,testing:clockOffset!==0,kioskHelp:queueSync.kioskHelp}}/>}
    {activeNav==='สถิติและรายงาน' && <StatsPage patients={patients} minute={minute} timeNote={timeNote} report={queueSync.online && queueSync.api ? {api:queueSync.api,user:queueSync.user} : undefined}/>}
    {activeNav==='การแจ้งเตือน' && <AlertsPage alerts={opsAlerts} rules={rules} onRules={saveRules} acks={acks} onAck={ackAlert} minute={minute} timeNote={timeNote} onOpenPatient={openOnMap}/>}
    {activeNav==='ผังโรงพยาบาล' && <CapacityPage patients={patients} minute={minute} timeNote={timeNote} onOpenPatient={openOnMap}/>}
+   </PageNav.Provider>
    {activeNav==='ตั้งค่า' && <SettingsPage settings={queueSync.settings} save={queueSync.saveSettings} events={queueSync.events} minute={minute} timeNote={timeNote} focusGroup={settingsFocus}
      user={queueSync.online ? queueSync.user : null} listUsers={queueSync.listUsers} saveUser={queueSync.saveUser} sync={queueSync}/>}
 
