@@ -2678,3 +2678,30 @@ a.liffChoice{text-decoration:none;padding:10px 16px}
 .hnSure{display:flex;gap:6px;align-items:center;margin-top:4px;font-weight:600;color:#78350f;cursor:pointer}
 .hnFirst{margin:4px 0;padding:14px;border:1px dashed #cbd5e1;border-radius:12px;text-align:center;color:#64748b;font-size:13px}
 .cmdNote .spin{margin-right:4px}
+/* Settings → นัดแพทย์: a doctor's schedule, step by step */
+.schedForm{display:flex;flex-direction:column;gap:12px;padding-top:8px;border-top:1px solid #eef2f6}
+.schedStep{display:flex;gap:12px;padding:14px;border:1px solid #e3e9f1;border-radius:14px;background:#fbfcfe}
+.schedNum{flex:none;display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:#1677ff;color:#fff;font-size:14px}
+.schedBody{flex:1;min-width:0;display:flex;flex-direction:column;gap:10px}
+.schedBody h5{margin:3px 0 0;font-size:14.5px;color:#0f2340}.schedBody h5 small{margin-left:6px;font-weight:500;color:#64748b;font-size:12.5px}
+.schedGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px;align-items:start}
+.schedGrid label{display:flex;flex-direction:column;gap:4px;font-size:12.5px;font-weight:600;color:#4d6074}
+.schedGrid label em{font-style:normal;font-weight:500;color:#94a3b8}
+.schedGrid label small{font-weight:500;color:#64748b;font-size:11.5px;line-height:1.4}
+.schedGrid input{height:40px;padding:0 10px;border:1px solid #d5e0ec;border-radius:10px;background:#fff;font:inherit;font-size:14px;color:#0f2340;min-width:0}
+.schedGrid .timeRange{gap:8px;font-weight:500;color:#64748b}
+.schedUnit{display:flex;align-items:center;gap:8px;font-weight:500;color:#64748b}.schedUnit input{width:90px}
+.schedDays{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.schedDays>span{font-size:13px;font-weight:600;color:#4d6074;margin-right:4px}
+.schedDays button{display:inline-flex;align-items:center;gap:4px;height:36px;padding:0 14px;border:1.5px solid #d5e0ec;border-radius:999px;background:#fff;color:#334155;font:inherit;font-size:13.5px;cursor:pointer}
+.schedDays button.on{border-color:#1677ff;background:#eef5ff;color:#1677ff;font-weight:700}
+.schedQuick{display:flex;flex-direction:column;gap:4px}.schedQuick>span{font-size:12.5px;font-weight:600;color:#4d6074}
+.schedQuick{flex-direction:row;flex-wrap:wrap;align-items:flex-end;gap:6px;padding-top:20px}.schedQuick>span{width:100%;margin-bottom:-2px}
+.schedQuick .btn{height:40px}
+.schedTimes{margin:0;font-size:12.5px;color:#475569}
+.schedSum{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:14px 16px;border-radius:14px;background:#eef5ff;border:1px solid #cfe0fb}
+.schedSum.wait{background:#fffbeb;border-color:#fde68a}
+.schedSum>div{flex:1;min-width:240px;display:flex;flex-direction:column;gap:3px;font-size:13px;color:#334155}
+.schedSum>div>b{font-size:14px;color:#0f2340}
+.schedSum .pickHint{flex:1}
+.schedSum .btn{height:40px;margin-left:auto}

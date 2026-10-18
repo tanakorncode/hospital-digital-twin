@@ -42,6 +42,9 @@ test('administrators set rules and doctors\' sessions; a doctor is never in two 
   const clash = api.gateway.createApptSessions(admin, { clinicCode: EYE, providerCode: 'D001', providerName: 'นพ.สมชาย ใจดี', from: '2026-11-04', to: '2026-11-04', weekdays: [3], start: '10:00', end: '11:00', minutes: 30, capacity: 2 }) as R;
   assert.deepEqual([clash.sessions, clash.conflicts], [0, ['2026-11-04']], 'overlaps his medicine session that day');
   assert.equal((api.gateway.apptSessions(staff, { clinicCode: MED, date: '2026-11-03' }) as { sessions: unknown[] }).sessions.length, 2);
+  // The doctors the form offers again, each once, with the clinics they work in.
+  assert.deepEqual((api.gateway.apptProviders(staff) as { providers: { code: string; name: string; clinics: string[] }[] }).providers.map((p) => [p.code, p.name, p.clinics]),
+    [['D001', 'นพ.สมชาย ใจดี', [MED]], ['D002', 'พญ.สมศรี รักษา', [MED]]]);
 });
 
 test('staff make an appointment by HN: an AP code, the doctor, the HN masked; one per clinic per day', () => {

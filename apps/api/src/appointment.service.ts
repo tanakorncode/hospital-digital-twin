@@ -98,6 +98,15 @@ export class AppointmentService implements OnModuleInit, OnModuleDestroy {
   // ---- doctors' sessions ------------------------------------------------------------------------------------------
   // One session per chosen day (start–end), cut into slots of `minutes` with `capacity` places each. A day where the
   // doctor already has an overlapping session (in any clinic) is skipped and reported, never double-booked.
+  // Doctors who have had a schedule here (newest name first), and the clinics they work in — the schedule form offers
+  // them, so the same doctor keeps the same code (that is what stops one doctor being booked in two places at once).
+  providers(): { code: string; name: string; clinics: string[] }[] {
+    const rows = this.store.db.prepare(`SELECT provider_code AS code, provider_name AS name, clinic_code AS clinic, MAX(updated_at) AS at FROM provider_schedules
+      GROUP BY provider_code, provider_name, clinic_code ORDER BY at DESC`).all() as { code: string; name: string; clinic: string }[];
+    const out = new Map<string, { code: string; name: string; clinics: string[] }>();
+    for (const r of rows) { const p = out.get(r.code) ?? { code: r.code, name: r.name, clinics: [] }; if (!p.clinics.includes(r.clinic)) p.clinics.push(r.clinic); out.set(r.code, p); }
+    return [...out.values()].sort((a, b) => a.name.localeCompare(b.name, 'th'));
+  }
   createSessions(plan: Record<string, unknown>): { sessions: number; slots: number; skipped: number; conflicts: string[] } {
     const { clinicCode, providerCode, providerName, from, to, weekdays, start, end, minutes, capacity, roomId } = plan;
     if (typeof clinicCode !== 'string' || !this.policy(clinicCode)) throw bad('ตั้งกติกาการนัดของคลินิกนี้ก่อน');

@@ -756,6 +756,11 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
       return { ok: true, ...r };
     });
   }
+  @SubscribeMessage('appt:providers')
+  apptProviders(@ConnectedSocket() client: Socket) {
+    if (!userOf(client)) return SIGN_IN;
+    return { ok: true, providers: this.appts.providers() };
+  }
   @SubscribeMessage('appt:sessions')
   apptSessions(@ConnectedSocket() client: Socket, @MessageBody() body: { clinicCode?: unknown; date?: unknown }) {
     if (!userOf(client)) return SIGN_IN;
