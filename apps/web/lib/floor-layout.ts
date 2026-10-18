@@ -19,7 +19,8 @@ export type Spot2 = {x:number; z:number};
 export type PlanBand = {deptId:string; name:string; index:number; x0:number; x1:number; z0:number; z1:number; seats:Spot2[]};
 // door: the wall the door is in — 's' towards the front (+z, rooms along the back wall), 'n' towards the back, 'e' / 'w'.
 export type Door = FDoor;
-export type PlanRoom = {point:FPoint; group:FGroup; deptId:string; index:number; count:number; x0:number; x1:number; z0:number; z1:number; w:number; door:Door; kind:PlanRoomKind};
+// doorAt: where along the door wall the doorway's middle is (0…1, from the left looking out); not set = at the left.
+export type PlanRoom = {point:FPoint; group:FGroup; deptId:string; index:number; count:number; x0:number; x1:number; z0:number; z1:number; w:number; door:Door; doorAt?:number; kind:PlanRoomKind};
 export type PlanCounter = {point:FPoint; group:FGroup; index:number; count:number; booth:boolean; at:Spot2};
 export type PlanBed = {point:FPoint; group:FGroup; room?:PlanRoom; ward:boolean; at:Spot2};
 // corridor: the band between the rooms and the waiting areas (z from … to), when the floor is laid out automatically.
@@ -39,13 +40,27 @@ export function roomPoint(r:{x0:number; x1:number; z0:number; z1:number; door:Do
   const f = roomFrame(r), lx = a-f.across/2, lz = d-f.deep/2, c = Math.cos(f.yaw), s = Math.sin(f.yaw);
   return {x:f.cx+lx*c+lz*s,z:f.cz-lx*s+lz*c};
 }
+// The reverse: a point on the floor as (across, deep) in the room's own frame.
+export function roomLocal(r:{x0:number; x1:number; z0:number; z1:number; door:Door}, p:Spot2) {
+  const f = roomFrame(r), c = Math.cos(f.yaw), s = Math.sin(f.yaw), dx = p.x-f.cx, dz = p.z-f.cz;
+  return {a:dx*c-dz*s+f.across/2,d:dx*s+dz*c+f.deep/2};
+}
+// The doorway along the door wall (from, to — across): DOORWAY wide, its middle at doorAt, kept inside the wall.
+export function doorSpan(r:{x0:number; x1:number; z0:number; z1:number; door:Door; doorAt?:number}):[number,number] {
+  const W = roomFrame(r).across, g = Math.min(DOORWAY,W);
+  if (r.doorAt===undefined) return [0,g];
+  const a0 = Math.min(W-g,Math.max(0,r.doorAt*W-g/2)); return [a0,a0+g];
+}
 
-// A room's walls as segments (building-local): the back wall, both sides, and the door wall with its doorway (`gap` wide,
-// at its left looking out). The doorway itself is returned as `door`.
+// A room's walls as segments (building-local): the back wall, both sides, and the door wall either side of its doorway
+// (doorSpan). The doorway itself is returned as `door`.
 export const DOORWAY = 0.8;
-export function roomWalls(r:{x0:number; x1:number; z0:number; z1:number; door:Door}, gap = DOORWAY) {
-  const f = roomFrame(r), W = f.across, D = f.deep, seg = (a0:number, d0:number, a1:number, d1:number) => { const p = roomPoint(r,a0,d0), q = roomPoint(r,a1,d1); return {x0:p.x,z0:p.z,x1:q.x,z1:q.z}; };
-  return {walls:[seg(0,0,W,0),seg(0,0,0,D),seg(W,0,W,D),seg(Math.min(gap,W),D,W,D)],door:seg(0,D,Math.min(gap,W),D)};
+export function roomWalls(r:{x0:number; x1:number; z0:number; z1:number; door:Door; doorAt?:number}) {
+  const f = roomFrame(r), W = f.across, D = f.deep, [g0,g1] = doorSpan(r), seg = (a0:number, d0:number, a1:number, d1:number) => { const p = roomPoint(r,a0,d0), q = roomPoint(r,a1,d1); return {x0:p.x,z0:p.z,x1:q.x,z1:q.z}; };
+  const walls = [seg(0,0,W,0),seg(0,0,0,D),seg(W,0,W,D)];
+  if (g0>0.01) walls.push(seg(0,D,g0,D));
+  if (g1<W-0.01) walls.push(seg(g1,D,W,D));
+  return {walls,door:seg(g0,D,g1,D)};
 }
 // Fixed proportions of a floor (the same in every building).
 export const ROOM_DEPTH = 0.42, CORRIDOR = 1.2, SEAT_DX = 0.46, SEAT_DZ = 0.68;
@@ -95,7 +110,7 @@ export function planFloor(data:Data, floorId:string):FloorPlan|null {
     return k==='lab' ? 'office' : k ?? (g.steps.includes('exam') ? 'exam' : kind==='er' ? 'treatment' : kind==='inpatient' ? 'ward' : 'office'); };
   const rooms:PlanRoom[] = roomIds.map((id,k)=>{ const p = byId.get(id)!, g = group.get(p.groupId)!, placed = manual ? L.rooms?.[id] : undefined;
     const r = placed ?? {x0:roomSpan[k][0],x1:roomSpan[k][1],z0:-hd,z1:roomFront,door:'s' as Door};
-    return {point:p,group:g,deptId:g.departmentId,index:k,count:roomIds.length,x0:r.x0,x1:r.x1,z0:r.z0,z1:r.z1,w:r.x1-r.x0,door:r.door,kind:roomKind(p,g)}; });
+    return {point:p,group:g,deptId:g.departmentId,index:k,count:roomIds.length,x0:r.x0,x1:r.x1,z0:r.z0,z1:r.z1,w:r.x1-r.x0,door:r.door,...(placed?.doorAt!==undefined ? {doorAt:placed.doorAt} : {}),kind:roomKind(p,g)}; });
   const roomOf = new Map(rooms.map(r=>[r.point.id,r]));
   // Counters / booths along the top of their waiting area, in each group's own order
   const counters:PlanCounter[] = [];
@@ -147,7 +162,7 @@ function seatGrid(a:FRect, booths:boolean):Spot2[] {
 export function floorRoute(plan:FloorPlan, from:Spot2, to:Spot2):Spot2[] {
   const G = 0.25, hw = plan.W/2, hd = plan.D/2, nx = Math.max(1,Math.round(plan.W/G)), nz = Math.max(1,Math.round(plan.D/G));
   const inRoom = (p:Spot2) => plan.rooms.find(r=>p.x>r.x0 && p.x<r.x1 && p.z>r.z0 && p.z<r.z1);
-  const door = (r:PlanRoom, d:number) => { const f = roomFrame(r); return roomPoint(r,Math.min(DOORWAY,f.across)/2,f.deep+d); };
+  const door = (r:PlanRoom, d:number) => { const [g0,g1] = doorSpan(r); return roomPoint(r,(g0+g1)/2,roomFrame(r).deep+d); };
   const a = inRoom(from), b = inRoom(to);
   const head = a && a!==b ? [from,door(a,-0.3),door(a,0.4)] : [from], tail = b && a!==b ? [door(b,0.4),door(b,-0.3),to] : [to];
   if (a && a===b) return [from,to];

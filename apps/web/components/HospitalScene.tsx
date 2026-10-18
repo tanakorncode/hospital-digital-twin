@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { screenData, type ScreenData } from '../lib/queue-screen';
 import { BedDouble, DoorOpen, FlaskConical, Plus, Settings, SquareParking, Ticket, type LucideIcon } from 'lucide-react';
 import { bandBeds, bandBooths, fmtMin, patientAt, statusColor as patientColor, stepText, wardBeds, type Patient, type PatientState, type StepKind } from '../lib/patients';
-import { DOORWAY, roomFrame, roomPoint } from '../lib/floor-layout';
+import { doorSpan, roomFrame, roomPoint } from '../lib/floor-layout';
 import { FloorPicture } from './FloorPicture';
 import { REF_HOUR, entranceSpot, floorBands, floorPlan, isOff, layoutRevision, plazas, kioskY, kiosks, type KioskStatus, buildingDensityAt, doctorName, findRoom, floorDutyAt, floorRooms, type DutyStatus, buildings, buildingStats, demoFlows, densityColor, fillerBuildings, floorCountAt, floorDepartments, floorPresence, isRealMode, kindPresence, peakFloorCount, parkingLots, personTypes, roads, type BuildingKind, type PersonType, type BuildingSpec, type Department, type Rect, type Room } from '../lib/scene-data';
 import { buildingShort, facility } from '../lib/facility';
@@ -273,7 +273,8 @@ function planLayout(b:BuildingSpec,level:number):Plan {
    if ((Math.abs(xa-xb)<e && Math.abs(Math.abs(xa)-hw)<e) || (Math.abs(za-zb)<e && Math.abs(Math.abs(za)-hd)<e)) return;
    const key = [Math.min(xa,xb),Math.min(za,zb),Math.max(xa,xb),Math.max(za,zb)].map(v=>v.toFixed(3)).join(); if (walled.has(key)) return; walled.add(key);
    p.walls.push({p:[(xa+xb)/2,wy,(za+zb)/2],s:[Math.max(0.08,Math.abs(xb-xa)),wallH,Math.max(0.08,Math.abs(zb-za))]}); };
-  wall(0,W,0,0); wall(0,0,0,D); wall(W,W,0,D); wall(DOORWAY,W,D,D); // back, sides, and the door wall with its doorway at the left
+  const [g0,g1] = doorSpan(room); // the doorway
+  wall(0,W,0,0); wall(0,0,0,D); wall(W,W,0,D); if (g0>0.01) wall(0,g0,D,D); if (g1<W-0.01) wall(g1,W,D,D); // back, sides, and the door wall either side of the doorway
   if (b.kind==='inpatient' || b.kind==='er') {
    if (b.kind==='er') p.beds.push(put(W*0.3,0.11,0.9),put(W*0.72,0.11,0.9)); // ward beds come from wardBeds() below
    const [ix,iz] = at(W*0.51,0.6); iv(ix,iz);

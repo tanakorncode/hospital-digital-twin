@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 import { sampleFacility as template } from '../../api/src/facility-template';
 import { facility, setFacility, type Facility } from '../lib/facility';
-import { CORRIDOR, SEAT_DX, SEAT_DZ, floorFrame, floorRoute, planFloor, roomFrame, roomPoint, seatCapacity } from '../lib/floor-layout';
+import { CORRIDOR, DOORWAY, SEAT_DX, SEAT_DZ, doorSpan, floorFrame, floorRoute, planFloor, roomFrame, roomLocal, roomPoint, roomWalls, seatCapacity } from '../lib/floor-layout';
 import { layoutFloor } from '../lib/floor-preview';
 import { erBedSpots, erResusSpots, wardBeds } from '../lib/patients';
 import { allStations } from '../lib/queue';
@@ -193,4 +193,35 @@ test('directions on a floor laid out by hand: out of the door, around the rooms,
   assert.ok(path.at(-3)!.z>target.z1,'from in front of the door');
   // A few straight legs, not a staircase.
   assert.ok(path.length<=10,`${path.length} points`);
+});
+
+test('a room\'s doorway can sit anywhere along its door wall; walls and directions follow it', () => {
+  const f = structuredClone(template()), floor = f.floors.find(x=>x.id==='opd-4')!, auto = planFloor(f,'opd-4')!, hd = auto.D/2;
+  const room = auto.rooms[2];
+  // Not set: at the left, as always.
+  assert.deepEqual(doorSpan(room),[0,Math.min(DOORWAY,roomFrame(room).across)]);
+  floor.layout = {mode:'manual',rooms:{[room.point.id]:{x0:-2,z0:-hd,x1:2,z1:-hd+3,door:'s',doorAt:0.5}}};
+  const plan = planFloor(f,'opd-4')!, r = plan.rooms.find(x=>x.point.id===room.point.id)!;
+  assert.equal(r.doorAt,0.5);
+  const [g0,g1] = doorSpan(r);
+  assert.ok(Math.abs((g0+g1)/2-2)<1e-9,'in the middle of the 4-wide wall');
+  // The door wall is two pieces either side of the doorway.
+  const {walls,door} = roomWalls(r), front = walls.filter(w=>Math.abs(w.z0-r.z1)<1e-9 && Math.abs(w.z1-r.z1)<1e-9);
+  assert.equal(front.length,2);
+  assert.ok(Math.abs((door.x0+door.x1)/2)<1e-9,'the doorway is at x = 0');
+  // Kept inside the wall at the ends.
+  assert.deepEqual(doorSpan({...r,doorAt:1}),[4-DOORWAY,4]);
+  // Directions enter through it.
+  const target = roomPoint(r,2,1), path = floorRoute(plan,{x:3,z:hd-0.5},target);
+  const entry = path.at(-2)!;
+  assert.ok(Math.abs(roomLocal(r,entry).a-2)<1e-9,'through the middle of the wall');
+});
+
+test('moving a building on the grounds plan takes its indoor kiosks along', async () => {
+  const { moveInside } = await import('../components/pages/FacilitySite');
+  const f = structuredClone(template()), lobby = f.points.find(p=>p.id==='k-opd-lobby')!, gate = f.points.find(p=>p.id==='k-main-1')!;
+  const before = {...lobby.map!}, gateBefore = {...gate.map!};
+  moveInside(f,'opd',2,-1.5);
+  assert.ok(Math.abs(lobby.map!.x-(before.x+2))<0.01 && Math.abs(lobby.map!.z-(before.z-1.5))<0.01,'moved with the building');
+  assert.deepEqual(gate.map,gateBefore,'kiosks outdoors stay');
 });

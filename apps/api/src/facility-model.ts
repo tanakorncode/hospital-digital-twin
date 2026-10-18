@@ -25,14 +25,15 @@ export type Floor = { id: string; buildingId: string; level: number; name: strin
 //   automatic: rooms along the back wall, a corridor, one waiting area per department at the front —
 //     roomDepth: share of the depth the rooms take · bandOrder / roomOrder: left → right (department / point ids; the
 //     rest follow in their usual order) · bandWeights / roomWeights: relative widths (1 = the usual share)
-//   manual: every room and waiting area where it was put (rooms: point id → rectangle + the wall its door is in;
+//   manual: every room and waiting area where it was put (rooms: point id → rectangle + the wall its door is in, and
+//     doorAt: where along that wall the doorway's middle is, 0…1 from the left looking out — not set = at the left;
 //     areas: department id → rectangle); anything not placed yet stands where the automatic layout puts it.
 //   background: a floor-plan picture (facility image id) laid under the plan, stretched over x0…x1 × z0…z1.
 //   lift: where the lift / stairs are (directions on the patient's floor plan start there); not set = the front-left corner.
 export type FloorRect = { x0: number; z0: number; x1: number; z1: number };
 export type DoorSide = 'n' | 's' | 'e' | 'w';
 export type FloorLayout = { mode?: 'auto' | 'manual'; roomDepth?: number; bandOrder?: string[]; bandWeights?: Record<string, number>; roomOrder?: string[];
-  roomWeights?: Record<string, number>; rooms?: Record<string, FloorRect & { door: DoorSide }>; areas?: Record<string, FloorRect>;
+  roomWeights?: Record<string, number>; rooms?: Record<string, FloorRect & { door: DoorSide; doorAt?: number }>; areas?: Record<string, FloorRect>;
   background?: FloorRect & { imageId: string; opacity: number }; lift?: { x: number; z: number } };
 export type Features = { booking: boolean; appointments: boolean; walkIn: boolean };
 // queuePrefix: the letter(s) of the department's queue numbers (unique). firstGroupId: where a patient waits after
@@ -138,7 +139,8 @@ function layoutProblem(l: unknown, w: number, d: number): string | undefined {
   const e = 1e-6, inside = (r: unknown) => isObj(r) && isNum(r.x0) && isNum(r.x1) && isNum(r.z0) && isNum(r.z1)
     && r.x1 - r.x0 >= 0.8 - e && r.z1 - r.z0 >= 0.8 - e && r.x0 >= -w / 2 - e && r.x1 <= w / 2 + e && r.z0 >= -d / 2 - e && r.z1 <= d / 2 + e;
   const rects = (v: unknown, door: boolean) => v === undefined || (isObj(v) && Object.keys(v).length <= 400
-    && Object.entries(v).every(([k, r]) => ID_RE.test(k) && inside(r) && (!door || ['n', 's', 'e', 'w'].includes((r as { door?: string }).door ?? ''))));
+    && Object.entries(v).every(([k, r]) => ID_RE.test(k) && inside(r) && (!door || (['n', 's', 'e', 'w'].includes((r as { door?: string }).door ?? '')
+      && ((r as { doorAt?: unknown }).doorAt === undefined || isNum((r as { doorAt?: unknown }).doorAt, 0, 1))))));
   if (l.mode !== undefined && l.mode !== 'auto' && l.mode !== 'manual') return 'การจัดผังชั้นไม่ถูกต้อง';
   if (l.roomDepth !== undefined && !isNum(l.roomDepth, 0.2, 0.7)) return 'ความลึกของแถวห้องต้องอยู่ระหว่าง 20–70% ของความลึกอาคาร';
   if (!ids(l.bandOrder) || !ids(l.roomOrder) || !weights(l.bandWeights) || !weights(l.roomWeights)) return 'ลำดับ/สัดส่วนความกว้างในผังชั้นไม่ถูกต้อง';

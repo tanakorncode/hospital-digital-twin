@@ -2626,12 +2626,22 @@ a.liffChoice{text-decoration:none;padding:10px 16px}
 .facEdSvg [role=button]:focus,.facSite svg [role=button]:focus{outline:none}
 .facEdSvg [role=button]:focus-visible{stroke:#1677ff;stroke-width:.14}
 .facEdSvg text{paint-order:stroke;stroke:#fbfcfe;stroke-width:.12;stroke-linejoin:round}
-.facEdSplit{fill:#1677ff;opacity:.18;cursor:ew-resize}
-.facEdSplit:hover{opacity:.55}
+.facEdSplitG{cursor:ew-resize}
+.facEdSplit{fill:#1677ff;opacity:.18}
+.facEdSplitG:hover .facEdSplit{opacity:.55}
 .facEdSel{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;padding:8px 10px;border-radius:10px;background:#f1f6ff;font-size:12.5px}
 .facEdSel b{color:#0f2340}
 .facEdSel .btn{height:30px}
 .facEdDoor{display:inline-flex;align-items:center;gap:4px;margin-left:6px}
 .facEdDoor .btn.on{background:#1677ff;color:#fff;border-color:#1677ff}
-.facUndo{display:inline-flex;gap:2px;margin-left:auto}
+.saveBar>.facUndo{flex:none;display:inline-flex;flex-direction:row;gap:2px}
+.facUndo .iconBtn{background:transparent;border-color:#ffffff33;color:#dbe7ff}
+.facUndo .iconBtn:hover:not(:disabled){background:#ffffff1a;color:#fff}
 .facUndo .iconBtn:disabled{opacity:.35;cursor:default}
+/* The facility pane goes to one column by its own width (the settings menu and the app's menu take room too): tree on
+   top, the selected item below — so a floor plan has room on a tablet */
+.facPane{container-type:inline-size}
+@container (max-width:900px){
+  .facBody{grid-template-columns:1fr}
+  .facTree{position:static;max-height:380px;min-height:0}
+}

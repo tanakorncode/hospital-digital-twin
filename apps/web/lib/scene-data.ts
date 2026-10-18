@@ -233,7 +233,7 @@ export const fmtHour = (h:number) => `${String(Math.floor(h)).padStart(2,'0')}:$
 export type RoomKind = 'exam'|'scan'|'treatment'|'ward'|'office';
 // x0…x1 × z0…z1: where the room is on its floor (building-local) · door: the wall its door is in ('s' = towards the front).
 export type Room = {id:string; buildingId:string; level:number; index:number; count:number; number:number; name:string; kind:RoomKind; dept:string; deptIndex:number; pointId:string;
-  x0:number; x1:number; z0:number; z1:number; door:Door};
+  x0:number; x1:number; z0:number; z1:number; door:Door; doorAt?:number};
 const roomsByFloor = new Map<string,Room[]>(), roomById = new Map<string,Room>();
 const roomIdOf = (p:FPoint) => p.id.startsWith('room:') ? p.id.slice(5) : p.id;
 function rebuildRooms() {
@@ -244,7 +244,7 @@ function rebuildRooms() {
     const rooms = plan.rooms.map((r):Room=>{ const p = r.point, deptIndex = bandOfDept.get(r.deptId) ?? 0;
       const number = /^\d+$/.test(p.roomCode ?? '') ? Number(p.roomCode) : p.number;
       return {id:roomIdOf(p),buildingId:b.id,level:fl.level,index:r.index,count:r.count,number,name:pointLabel(p),kind:r.kind,dept:plan.bands[deptIndex]?.name ?? '',deptIndex,pointId:p.id,
-        x0:r.x0,x1:r.x1,z0:r.z0,z1:r.z1,door:r.door};
+        x0:r.x0,x1:r.x1,z0:r.z0,z1:r.z1,door:r.door,...(r.doorAt!==undefined ? {doorAt:r.doorAt} : {})};
     });
     roomsByFloor.set(`${b.id}:${fl.level}`,rooms);
     for (const r of rooms) { roomById.set(r.id,r); roomById.set(r.pointId,r); }

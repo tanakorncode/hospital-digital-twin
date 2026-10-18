@@ -299,7 +299,7 @@ test('a floor can be laid out: proportions, rooms and waiting areas placed by ha
   floor.layout = { roomDepth: 0.5, bandOrder: ['opd-2-2'], bandWeights: { 'opd-2-0': 2 }, roomWeights: { 'room:opd-201': 1.5 } };
   assert.deepEqual(validateFacility(d).issues, []);
   // By hand: rooms with their door side, areas; ids no longer in the facility are left alone, not refused.
-  floor.layout = { mode: 'manual', rooms: { 'room:opd-201': { x0: -b.width / 2, z0: -b.depth / 2, x1: -b.width / 2 + 3, z1: -b.depth / 2 + 3, door: 'e' }, 'gone:1': { x0: 0, z0: 0, x1: 1, z1: 1, door: 's' } },
+  floor.layout = { mode: 'manual', rooms: { 'room:opd-201': { x0: -b.width / 2, z0: -b.depth / 2, x1: -b.width / 2 + 3, z1: -b.depth / 2 + 3, door: 'e', doorAt: 0.5 }, 'gone:1': { x0: 0, z0: 0, x1: 1, z1: 1, door: 's' } },
     areas: { 'opd-2-0': { x0: -2, z0: 0, x1: 2, z1: b.depth / 2 } }, lift: { x: b.width / 2 - 1, z: 0 } };
   assert.deepEqual(validateFacility(d).issues, []);
   // Out of the building, too small, a bad door, a weight out of range: refused.
@@ -308,6 +308,7 @@ test('a floor can be laid out: proportions, rooms and waiting areas placed by ha
   bad({ mode: 'manual', rooms: { 'room:opd-201': { x0: -b.width, z0: 0, x1: 0, z1: 2, door: 's' } } }, 'outside the building');
   bad({ mode: 'manual', areas: { 'opd-2-0': { x0: 0, z0: 0, x1: 0.3, z1: 2 } } }, 'too small');
   bad({ mode: 'manual', rooms: { 'room:opd-201': { x0: 0, z0: 0, x1: 2, z1: 2, door: 'up' } } }, 'door side');
+  bad({ mode: 'manual', rooms: { 'room:opd-201': { x0: 0, z0: 0, x1: 2, z1: 2, door: 's', doorAt: 1.5 } } }, 'doorway position');
   bad({ bandWeights: { 'opd-2-0': 50 } }, 'weight');
   bad({ roomDepth: 0.95 }, 'room depth');
   bad({ colour: 'red' }, 'unknown setting');

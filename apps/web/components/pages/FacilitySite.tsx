@@ -8,6 +8,12 @@ import type { Facility } from '../../lib/facility';
 type Data = Omit<Facility,'version'|'publishedAt'>;
 type Drag = {kind:'move'|'size'|'kiosk'; id:string; start:{x:number; z:number}; orig:{x:number; z:number; w:number; d:number}};
 const SNAP = 0.5, snap = (v:number) => Math.round(v/SNAP)*SNAP;
+// Moving a building takes along what stands inside it at a map position (kiosks on its floors).
+export function moveInside(d:Data, buildingId:string, dx:number, dz:number) {
+  if (!dx && !dz) return;
+  const floors = new Set(d.floors.filter(f=>f.buildingId===buildingId).map(f=>f.id));
+  d.points.forEach(p=>{ if (p.map && p.floorId && floors.has(p.floorId)) p.map = {x:Math.round((p.map.x+dx)*100)/100,z:Math.round((p.map.z+dz)*100)/100}; });
+}
 const overlap = (a:{x:number;z:number;w:number;d:number}, b:{x:number;z:number;w:number;d:number}) => Math.abs(a.x-b.x)<(a.w+b.w)/2 && Math.abs(a.z-b.z)<(a.d+b.d)/2;
 
 export function SitePlan({data,selected,editable,onSelect,update}:{data:Data; selected?:string; editable:boolean; onSelect:(id:string)=>void; update:(fn:(d:Data)=>void)=>void}) {
@@ -41,11 +47,11 @@ export function SitePlan({data,selected,editable,onSelect,update}:{data:Data; se
     setDrag(null); setLive(null);
     if (v.x===o.x && v.z===o.z && v.w===o.w && v.d===o.d) { if (kind==='move') onSelect(id); return; }
     update(d=>{ if (kind==='kiosk') { const p = d.points.find(x=>x.id===id); if (p) p.map = {x:v.x,z:v.z}; }
-      else { const b = d.buildings.find(x=>x.id===id); if (b) { b.map.x = v.x; b.map.z = v.z; b.map.width = v.w; b.map.depth = v.d; } } });
+      else { const b = d.buildings.find(x=>x.id===id); if (b) { if (kind==='move') moveInside(d,id,v.x-b.map.x,v.z-b.map.z); b.map.x = v.x; b.map.z = v.z; b.map.width = v.w; b.map.depth = v.d; } } });
     if (kind!=='kiosk') onSelect(id); };
   const nudge = (e:RKeyboardEvent, id:string) => { if (!editable) return; const step = e.shiftKey ? 2 : SNAP;
     const d = ({ArrowLeft:[-step,0],ArrowRight:[step,0],ArrowUp:[0,-step],ArrowDown:[0,step]} as Record<string,[number,number]>)[e.key]; if (!d) return;
-    e.preventDefault(); update(x=>{ const b = x.buildings.find(y=>y.id===id); if (b) { b.map.x = snap(b.map.x+d[0]); b.map.z = snap(b.map.z+d[1]); } }); };
+    e.preventDefault(); update(x=>{ const b = x.buildings.find(y=>y.id===id); if (b) { const nx = snap(b.map.x+d[0]), nz = snap(b.map.z+d[1]); moveInside(x,id,nx-b.map.x,nz-b.map.z); b.map.x = nx; b.map.z = nz; } }); };
   const rectOf = (id:string, m:{x:number; z:number; width:number; depth:number}) => drag && drag.id===id && live ? live : {x:m.x,z:m.z,w:m.width,d:m.depth};
   const clashes = new Set<string>();
   blds.forEach(a=>blds.forEach(b=>{ if (a.id<b.id && overlap(rectOf(a.id,a.map),rectOf(b.id,b.map))) { clashes.add(a.id); clashes.add(b.id); } }));

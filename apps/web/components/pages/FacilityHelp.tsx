@@ -118,7 +118,7 @@ function Plan2D({L}:{L:FloorLayout}) {
     {L.seats.map((c,i)=><rect key={i} x={sx(c.x)-3.5} y={sz(c.z)-3} width="7" height="6" rx="1.5" fill={c.focus?'#bfdbfe':'#d5dde7'}/>)}
     {corridor && <><rect x="10" y={sz(corridor[0])} width={W*S} height={(corridor[1]-corridor[0])*S} fill="#f8fafc"/>
       <text x={sx(0)} y={sz((corridor[0]+corridor[1])/2)+4} fontSize="9" textAnchor="middle" fill="#94a3b8">ทางเดิน</text></>}
-    {L.rooms.map(r=>{ const dr = roomWalls({x0:r.x0,x1:r.x0+r.w,z0:r.z0,z1:r.z0+r.d,door:r.door}).door;
+    {L.rooms.map(r=>{ const dr = roomWalls({x0:r.x0,x1:r.x0+r.w,z0:r.z0,z1:r.z0+r.d,door:r.door,doorAt:r.doorAt}).door;
       return <g key={r.id}><rect x={sx(r.x0)+1} y={sz(r.z0)+1} width={r.w*S-2} height={r.d*S-2} rx="3" fill={!r.on?'url(#facOff)':r.hi?C.hiFill:C.room} stroke={r.hi?C.hi:C.wall} strokeWidth={r.hi?2:1}/>
       <line x1={sx(dr.x0)} y1={sz(dr.z0)} x2={sx(dr.x1)} y2={sz(dr.z1)} stroke="#fbfcfe" strokeWidth="3"/>
       <text x={sx(r.x0+r.w/2)} y={sz(r.z0+r.d/2)+4} fontSize={fs} textAnchor="middle" fill={r.hi?C.hi:r.on?C.text:'#94a3b8'} fontWeight={r.hi?700:500}>{roomText(r)}</text></g>; })}

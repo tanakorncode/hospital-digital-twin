@@ -16,7 +16,7 @@ export default function FacilityPreview3D({L}:{L:FloorLayout}) {
   const {W,D,corridor} = L, hw = W/2, hd = D/2, size = Math.max(W,D), e = 1e-6;
   // Room walls, each once: not along the outside walls, not again where the room next door has one.
   const seen = new Set<string>();
-  const walls = L.rooms.flatMap(r=>roomWalls({x0:r.x0,x1:r.x0+r.w,z0:r.z0,z1:r.z0+r.d,door:r.door}).walls.map(w=>({...w,r}))).filter(w=>{
+  const walls = L.rooms.flatMap(r=>roomWalls({x0:r.x0,x1:r.x0+r.w,z0:r.z0,z1:r.z0+r.d,door:r.door,doorAt:r.doorAt}).walls.map(w=>({...w,r}))).filter(w=>{
     if ((Math.abs(w.x0-w.x1)<e && Math.abs(Math.abs(w.x0)-hw)<e) || (Math.abs(w.z0-w.z1)<e && Math.abs(Math.abs(w.z0)-hd)<e)) return false;
     if (Math.hypot(w.x1-w.x0,w.z1-w.z0)<0.05) return false;
     const k = [Math.min(w.x0,w.x1),Math.min(w.z0,w.z1),Math.max(w.x0,w.x1),Math.max(w.z0,w.z1)].map(v=>v.toFixed(3)).join(); if (seen.has(k)) return false; seen.add(k); return true; });

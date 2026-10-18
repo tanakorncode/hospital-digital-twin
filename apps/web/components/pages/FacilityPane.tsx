@@ -181,6 +181,10 @@ export function FacilityPane({api,online,canEdit,head}:{api?:Api; online:boolean
   const selDept = sel?.kind==='dept' ? data.departments.find(d=>d.id===sel.id) : undefined;
   const selBuilding = sel?.kind==='building' ? data.buildings.find(b=>b.id===sel.id) : undefined;
   const selFloor = sel?.kind==='floor' ? data.floors.find(f=>f.id===sel.id) : undefined;
+  // One column (narrow screen): the tree is above, so bring what was picked into view.
+  const detailRef = useRef<HTMLDivElement>(null), selKey = sel ? `${sel.kind}:${sel.id}` : '';
+  useEffect(()=>{ const el = detailRef.current, body = el?.parentElement; if (!el || !body || !selKey) return;
+    if (getComputedStyle(body).gridTemplateColumns.trim().split(/\s+/).length===1 && el.getBoundingClientRect().top>window.innerHeight*0.6) el.scrollIntoView({block:'start',behavior:'smooth'}); },[selKey]);
   const ctx = {data,update,editable,issuesAt,groupsOf,pointsOf,addPoints,addGroup,removeGroup,removePoints,askRemove,setSel,api,published};
 
   return <section className="setCard facPane">
@@ -234,7 +238,7 @@ export function FacilityPane({api,online,canEdit,head}:{api?:Api; online:boolean
           {editable && <li><button className="facAdd" onClick={()=>setDialog('addBuilding')}><Plus size={15}/> เพิ่มอาคาร</button></li>}
         </ul>}
       </aside>
-      <div className="facDetail">
+      <div className="facDetail" ref={detailRef}>
         {selDept ? <DeptDetail key={selDept.id} d={selDept} focus={sel?.focus} ctx={ctx}/>
           : selBuilding ? <BuildingDetail key={selBuilding.id} b={selBuilding} ctx={ctx}/>
           : selFloor ? <FloorDetail key={selFloor.id} f={selFloor} ctx={ctx}/>
