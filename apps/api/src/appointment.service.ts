@@ -204,7 +204,7 @@ export class AppointmentService implements OnModuleInit, OnModuleDestroy {
     if (typeof clinic !== 'string' || typeof date !== 'string' || !DATE_RE.test(date)) throw bad('ระบุคลินิกและวันที่');
     const [a, b] = dayRange(date);
     return (this.store.db.prepare(`SELECT p.*, COALESCE(SUM(s.capacity), 0) AS cap, COALESCE(SUM(s.reserved_count), 0) AS res FROM provider_schedules p
-      LEFT JOIN appointment_slots s ON s.schedule_id = p.id WHERE p.clinic_code = ? AND p.starts_at >= ? AND p.starts_at < ? GROUP BY p.id ORDER BY p.starts_at, p.provider_name`)
+      LEFT JOIN appointment_slots s ON s.schedule_id = p.id AND s.status <> 'CANCELLED' WHERE p.clinic_code = ? AND p.starts_at >= ? AND p.starts_at < ? GROUP BY p.id ORDER BY p.starts_at, p.provider_name`)
       .all(clinic, a, b) as (Record<string, string> & { cap: number; res: number })[]).map((r) => ({ id: r.id, providerCode: r.provider_code, providerName: r.provider_name,
       clinicCode: r.clinic_code, startsAt: r.starts_at, endsAt: r.ends_at, status: r.status as Session['status'], capacity: r.cap, reserved: r.res, ...(r.room_id ? { roomId: r.room_id } : {}) }));
   }
@@ -266,7 +266,7 @@ export class AppointmentService implements OnModuleInit, OnModuleDestroy {
   providerSessions(code: unknown, limit = 120): Session[] {
     if (typeof code !== 'string' || !PROVIDER_RE.test(code)) throw bad('รหัสแพทย์ไม่ถูกต้อง');
     return (this.store.db.prepare(`SELECT p.*, COALESCE(SUM(s.capacity), 0) AS cap, COALESCE(SUM(s.reserved_count), 0) AS res FROM provider_schedules p
-      LEFT JOIN appointment_slots s ON s.schedule_id = p.id WHERE p.provider_code = ? AND p.ends_at > ? GROUP BY p.id ORDER BY p.starts_at LIMIT ?`)
+      LEFT JOIN appointment_slots s ON s.schedule_id = p.id AND s.status <> 'CANCELLED' WHERE p.provider_code = ? AND p.ends_at > ? GROUP BY p.id ORDER BY p.starts_at LIMIT ?`)
       .all(code, this.now().toISOString(), Math.min(400, Math.max(1, limit))) as (Record<string, string> & { cap: number; res: number })[]).map((r) => ({ id: r.id, providerCode: r.provider_code, providerName: r.provider_name,
       clinicCode: r.clinic_code, startsAt: r.starts_at, endsAt: r.ends_at, status: r.status as Session['status'], capacity: r.cap, reserved: r.res, ...(r.room_id ? { roomId: r.room_id } : {}) }));
   }
@@ -274,7 +274,7 @@ export class AppointmentService implements OnModuleInit, OnModuleDestroy {
   slots(clinic: unknown, date: unknown, provider?: unknown): ApptSlot[] {
     if (typeof clinic !== 'string' || typeof date !== 'string' || !DATE_RE.test(date)) throw bad('ระบุคลินิกและวันที่');
     const [a, b] = dayRange(date), pc = typeof provider === 'string' && provider ? provider : null;
-    return (this.store.db.prepare(`${SLOT_SELECT} WHERE p.clinic_code = ? AND s.starts_at >= ? AND s.starts_at < ? AND (? IS NULL OR p.provider_code = ?) ORDER BY s.starts_at, p.provider_name`)
+    return (this.store.db.prepare(`${SLOT_SELECT} WHERE p.clinic_code = ? AND s.status <> 'CANCELLED' AND s.starts_at >= ? AND s.starts_at < ? AND (? IS NULL OR p.provider_code = ?) ORDER BY s.starts_at, p.provider_name`)
       .all(clinic, a, b, pc, pc) as SlotRow[]).map(toSlot);
   }
   bookable(clinic: unknown, date: unknown, provider?: unknown): ApptSlot[] {
@@ -332,6 +332,60 @@ export class AppointmentService implements OnModuleInit, OnModuleDestroy {
       if (st !== undefined) this.store.db.prepare('UPDATE provider_schedules SET status = ?, updated_at = ? WHERE id = ?').run(st, at, r.id);
       const day = new Date(r.starts_at).toLocaleDateString('sv-SE');
       return { session: this.sessions(r.clinic_code, day).find((x) => x.id === r.id)!, cancelled, movedVisits };
+    });
+  }
+
+  // New hours for a session not yet started (same day, same slot length and places per slot). Appointments whose time
+  // is still inside keep their place and time; a slot outside the new hours goes. If appointments are booked in such
+  // a slot, nothing changes unless `cancelReason` is given — they are then cancelled with it (the patients are told).
+  // dryRun: only how many appointments would be cancelled.
+  retime(id: unknown, change: { start?: unknown; end?: unknown; cancelReason?: unknown; dryRun?: unknown }, by: string): { session: Session; cancelled: Appointment[]; outside: number; added: number; removed: number } {
+    return this.store.tx(() => {
+      const r = typeof id === 'string' ? this.store.db.prepare('SELECT * FROM provider_schedules WHERE id = ?').get(id) as { id: string; status: string; clinic_code: string; provider_code: string; starts_at: string; ends_at: string } | undefined : undefined;
+      if (!r) throw new AppError('RESOURCE_NOT_FOUND', 'ไม่พบตารางออกตรวจนี้');
+      if (r.status === 'CANCELLED') throw new AppError('INVALID_STATE_TRANSITION', 'ตารางนี้ถูกยกเลิกแล้ว');
+      const now = this.now();
+      if (new Date(r.starts_at) <= now) throw new AppError('INVALID_STATE_TRANSITION', 'แก้เวลาได้เฉพาะตารางที่ยังไม่เริ่ม');
+      const { start, end } = change;
+      if (typeof start !== 'string' || !TIME_RE.test(start) || typeof end !== 'string' || !TIME_RE.test(end) || end <= start) throw bad('ช่วงเวลาไม่ถูกต้อง');
+      const day = localDate(new Date(r.starts_at)), s = localInstant(day, start), e = localInstant(day, end);
+      if (s <= now) throw bad('เวลาเริ่มใหม่ผ่านไปแล้ว');
+      const slots = this.store.db.prepare('SELECT * FROM appointment_slots WHERE schedule_id = ? ORDER BY starts_at').all(r.id) as { id: string; starts_at: string; ends_at: string; capacity: number; reserved_count: number; status: string }[];
+      const live = slots.filter((x) => x.status !== 'CANCELLED'), first = live[0] ?? slots[0];
+      if (!first) throw new AppError('INVALID_STATE_TRANSITION', 'ตารางนี้ไม่มีช่วงนัด');
+      const minutes = Math.round((new Date(first.ends_at).getTime() - new Date(first.starts_at).getTime()) / 60000), capacity = first.capacity;
+      const grid: [string, string][] = [];
+      for (let t = s.getTime(); t + minutes * 60000 <= e.getTime(); t += minutes * 60000) grid.push([new Date(t).toISOString(), new Date(t + minutes * 60000).toISOString()]);
+      if (!grid.length) throw bad(`ช่วงเวลาสั้นกว่าความยาวหนึ่งช่วง (${minutes} นาที)`);
+      const clash = this.store.db.prepare(`SELECT 1 FROM provider_schedules WHERE provider_code = ? AND id <> ? AND status <> 'CANCELLED' AND starts_at < ? AND ends_at > ?`).get(r.provider_code, r.id, e.toISOString(), s.toISOString());
+      if (clash) throw new AppError('POLICY_REJECTED', 'แพทย์มีตารางอื่นทับช่วงเวลานี้ในวันเดียวกัน');
+      if (s.toISOString() !== r.starts_at && this.store.db.prepare('SELECT 1 FROM provider_schedules WHERE provider_code = ? AND starts_at = ?').get(r.provider_code, s.toISOString()))
+        throw new AppError('POLICY_REJECTED', 'มีตารางที่ยกเลิกไปแล้วเริ่มเวลานี้ — เลือกเวลาเริ่มอื่น (เช่น ช้าหรือเร็วขึ้น 5 นาที)');
+      const starts = new Set(grid.map(([a]) => a)), gone = live.filter((x) => !starts.has(x.starts_at));
+      const booked = (slot: string) => (this.store.db.prepare(`SELECT id FROM appointments WHERE slot_id = ? AND status = 'CONFIRMED'`).all(slot) as { id: string }[]).map((x) => x.id);
+      const outside = gone.flatMap((x) => booked(x.id));
+      const added = grid.filter(([a]) => !live.some((x) => x.starts_at === a)).length;
+      if (change.dryRun) return { session: this.sessions(r.clinic_code, day).find((x) => x.id === r.id)!, cancelled: [], outside: outside.length, added, removed: gone.length };
+      const reason = typeof change.cancelReason === 'string' ? change.cancelReason.trim().slice(0, 100) : '';
+      if (outside.length && !reason) throw new AppError('POLICY_REJECTED', `มีนัด ${outside.length} รายในช่วงที่ตัดออก — ระบุเหตุผลเพื่อยกเลิกนัดเหล่านั้น หรือเลือกเวลาที่ครอบคลุมนัดเดิม`);
+      const at = now.toISOString();
+      const cancelled = outside.map((x) => this.cancelRow(x, reason, by, at)).filter((x): x is Appointment => !!x);
+      for (const x of gone) {
+        this.store.db.prepare(`UPDATE appointment_reschedule_requests SET status = 'CANCELLED', decided_by = ?, decided_at = ?, decision_note = ? WHERE status = 'PENDING' AND requested_slot_id = ?`)
+          .run(by, at, 'เวลาออกตรวจของแพทย์เปลี่ยน', x.id);
+        // A slot nothing ever pointed at goes; one with history (cancelled appointments, requests) stays, cancelled.
+        const used = this.store.db.prepare('SELECT 1 FROM appointments WHERE slot_id = ? UNION SELECT 1 FROM appointment_reschedule_requests WHERE requested_slot_id = ?').get(x.id, x.id);
+        if (used) this.store.db.prepare(`UPDATE appointment_slots SET status = 'CANCELLED', updated_at = ? WHERE id = ?`).run(at, x.id);
+        else this.store.db.prepare('DELETE FROM appointment_slots WHERE id = ?').run(x.id);
+      }
+      for (const [a, b] of grid) {
+        const old = slots.find((x) => x.starts_at === a);
+        if (old) this.store.db.prepare(`UPDATE appointment_slots SET ends_at = ?, status = CASE WHEN status = 'CANCELLED' THEN 'OPEN' ELSE status END, capacity = MAX(capacity, reserved_count), updated_at = ? WHERE id = ?`).run(b, at, old.id);
+        else this.store.db.prepare(`INSERT INTO appointment_slots (id, schedule_id, starts_at, ends_at, capacity, reserved_count, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 0, 'OPEN', ?, ?)`)
+          .run(newId('as'), r.id, a, b, capacity, at, at);
+      }
+      this.store.db.prepare('UPDATE provider_schedules SET starts_at = ?, ends_at = ?, updated_at = ? WHERE id = ?').run(s.toISOString(), e.toISOString(), at, r.id);
+      return { session: this.sessions(r.clinic_code, day).find((x) => x.id === r.id)!, cancelled, outside: outside.length, added, removed: gone.length };
     });
   }
 

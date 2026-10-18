@@ -839,6 +839,26 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
       return { ok: true, session: r.session, cancelled: r.cancelled.length, movedVisits: r.movedVisits.length };
     });
   }
+  // New hours for a session not yet started (administrators). Appointments outside the new hours: refused unless
+  // cancelReason is given — then cancelled and the patients told. dryRun: only how many that would be.
+  @SubscribeMessage('appt:session:times')
+  setApptSessionTimes(@ConnectedSocket() client: Socket, @MessageBody() body: { sessionId?: unknown; start?: unknown; end?: unknown; cancelReason?: unknown; dryRun?: unknown }) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (!may(me, 'admin')) return DENIED;
+    return attempt(() => {
+      mustCover(me, this.appts.sessionClinic(body?.sessionId));
+      if (body?.dryRun) { const x = this.appts.retime(body.sessionId, body, `user:${me.id}`); return { ok: true, session: x.session, outside: x.outside, added: x.added, removed: x.removed }; }
+      const r = this.notify.tx(() => { const x = this.appts.retime(body?.sessionId, body ?? {}, `user:${me.id}`);
+        for (const a of x.cancelled) this.notify.appointmentCancelled(a, this.appts.profileOf(a.id)!, true); return x; });
+      this.notify.kick();
+      this.audit.record({ ...actor(me), action: 'appointment.session.retime', targetType: 'provider-schedule', targetId: r.session.id,
+        reason: r.cancelled.length ? String(body?.cancelReason) : undefined, meta: { startsAt: r.session.startsAt, endsAt: r.session.endsAt, cancelledAppointments: r.cancelled.length, added: r.added, removed: r.removed } });
+      for (const a of r.cancelled) this.audit.record({ ...actor(me), action: 'appointment.cancel', targetType: 'appointment', targetId: a.id, reason: a.cancellationReason, meta: { sessionRetimed: true } });
+      this.apptChanged();
+      return { ok: true, session: r.session, cancelled: r.cancelled.length, added: r.added, removed: r.removed };
+    });
+  }
   // Days with a place left — the pickers offer only these (no empty weekends / holidays).
   @SubscribeMessage('booking:days')
   bookingDays(@ConnectedSocket() client: Socket, @MessageBody() body: { serviceCode?: unknown }) {

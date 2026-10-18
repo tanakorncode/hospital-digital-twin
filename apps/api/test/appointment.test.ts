@@ -347,3 +347,37 @@ test("today's doctors by room, for every screen: doctor, clinic, room, hours —
   const next = api.gateway.apptDuty({ fallback: true }) as { day: string; today: boolean; sessions: unknown[] };
   assert.deepEqual([next.day, next.today], ['2026-11-03', false]); assert.ok(next.sessions.length > 0);
 });
+
+test('new hours for a session: appointments inside keep their time; those outside go only with a reason', () => {
+  const { api, admin, staff, head, slot, make } = setup();
+  const a = make('65-1', '2026-11-03', '09:00').appointment!, b = make('65-2', '2026-11-03', '11:30').appointment!;
+  const id = api.appts.sessions(MED, '2026-11-03').find((s) => s.providerCode === 'D001')!.id;
+  const t = (body: Record<string, unknown>, u = admin) => api.gateway.setApptSessionTimes(u, { sessionId: id, ...body }) as R & { outside?: number; added?: number; removed?: number; session?: { startsAt: string; endsAt: string; capacity: number } };
+  assert.equal(t({ start: '08:00', end: '11:00' }, head).code, 'FORBIDDEN', 'administrators only');
+  assert.equal(t({ start: '11:00', end: '10:00' }).code, 'VALIDATION_ERROR');
+  // Earlier start, earlier end: 11:00 and 11:30 go — 11:30 has an appointment.
+  const dry = t({ start: '08:00', end: '11:00', dryRun: true });
+  assert.deepEqual([dry.outside, dry.added, dry.removed], [1, 2, 2]);
+  assert.equal(api.appts.sessions(MED, '2026-11-03').find((s) => s.id === id)!.startsAt, localInstant('2026-11-03', '09:00').toISOString(), 'a dry run changes nothing');
+  const refused = t({ start: '08:00', end: '11:00' });
+  assert.equal(refused.code, 'POLICY_REJECTED');
+  assert.match(refused.reason!, /1 ราย/);
+  const r = t({ start: '08:00', end: '11:00', cancelReason: 'แพทย์มีประชุมช่วงบ่าย' });
+  assert.equal(r.ok, true, r.reason);
+  assert.deepEqual([r.cancelled, r.session!.startsAt, r.session!.endsAt, r.session!.capacity], [1, localInstant('2026-11-03', '08:00').toISOString(), localInstant('2026-11-03', '11:00').toISOString(), 6 * 2]);
+  assert.equal(api.appts.get(a.id)!.startsAt, localInstant('2026-11-03', '09:00').toISOString(), 'inside: same place and time');
+  assert.equal(api.appts.get(a.id)!.status, 'CONFIRMED');
+  assert.deepEqual([api.appts.get(b.id)!.status, api.appts.get(b.id)!.cancellationReason], ['CANCELLED', 'แพทย์มีประชุมช่วงบ่าย']);
+  assert.ok(api.appts.get(b.id), 'the cancelled appointment keeps its history');
+  assert.deepEqual(api.appts.slots(MED, '2026-11-03', 'D001').map((s) => s.startsAt.slice(11, 16)), ['01:00', '01:30', '02:00', '02:30', '03:00', '03:30'].map((x) => x), 'six 30-minute slots from 08:00 (UTC+7)');
+  assert.ok(make('65-3', '2026-11-03', '08:00').ok, 'the new slots take appointments');
+  // Back to the old end: the 11:30 slot (with its history) opens again.
+  assert.equal(t({ start: '08:00', end: '12:00' }).ok, true);
+  assert.equal(slot('2026-11-03', '11:30').remaining, 2);
+  // Not over another of the doctor's sessions, not once started.
+  api.gateway.createApptSessions(admin, { clinicCode: MED, providerCode: 'D001', providerName: 'นพ.สมชาย ใจดี', from: '2026-11-03', to: '2026-11-03', weekdays: [2], start: '13:00', end: '14:00', minutes: 30, capacity: 2 });
+  assert.equal(t({ start: '08:00', end: '13:30' }).code, 'POLICY_REJECTED');
+  api.appts.now = () => localInstant('2026-11-03', '08:10');
+  assert.equal(t({ start: '09:00', end: '12:00' }).code, 'INVALID_STATE_TRANSITION');
+  assert.equal((api.gateway.createAppt(staff, { hn: '65-4', slotId: slot('2026-11-03', '10:00').id, key: key() }) as R).ok, true);
+});

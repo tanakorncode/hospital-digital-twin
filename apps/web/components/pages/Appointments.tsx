@@ -121,6 +121,7 @@ export function SessionPlanner({api,clinics,say,fixed,onMade,existing=[]}:{api:A
   (m[d] ??= []).push({...x,start:hm(x.startsAt),end:hm(x.endsAt)}); return m; },{}),[existing]);
  // Close / reopen / cancel (with a reason) a session made before, from its day's row.
  const [cancelFor,setCancelFor] = useState<string|null>(null), [reason,setReason] = useState(''), [acting,setActing] = useState('');
+ const [retimeFor,setRetimeFor] = useState<string|null>(null); // a session whose hours are being changed
  const setSession = async (id:string, status:'OPEN'|'CLOSED'|'CANCELLED', day?:string) => {
   setActing(id); const r = await api<{ok:boolean; reason?:string; cancelled?:number}>('appt:session:set',{sessionId:id,status,...(status==='CANCELLED' ? {reason} : {})}); setActing('');
   setDone({text:r.ok ? (status==='CANCELLED' ? `ยกเลิกตารางแล้ว${r.cancelled ? ` · ยกเลิกนัด ${r.cancelled} รายพร้อมแจ้งผู้ป่วย` : ''}` : status==='CLOSED' ? 'ปิดรับนัดเพิ่มแล้ว' : 'เปิดรับนัดแล้ว') : r.reason ?? 'ไม่สำเร็จ',bad:!r.ok});
@@ -217,8 +218,11 @@ export function SessionPlanner({api,clinics,say,fixed,onMade,existing=[]}:{api:A
        {cancelFor===x.id ? <span className="schedCancel"><input className="bare" value={reason} autoFocus placeholder="เหตุผล เช่น แพทย์ลาประชุม" onChange={e=>setReason(e.target.value)}/>
          <button type="button" className="btn sm warnBtn" disabled={!reason.trim() || acting===x.id} onClick={()=>void setSession(x.id,'CANCELLED',r.date)}>{acting===x.id ? <Loader2 size={13} className="spin"/> : null}ยืนยันยกเลิก{x.reserved ? ` (${x.reserved} นัด)` : ''}</button>
          <button type="button" className="btn ghost sm" onClick={()=>setCancelFor(null)}>ไม่ยกเลิก</button></span>
-       : <span className="schedExistActs"><button type="button" className="linkBtn dark" disabled={acting===x.id} onClick={()=>void setSession(x.id,x.status==='CLOSED' ? 'OPEN' : 'CLOSED')}>{x.status==='CLOSED' ? 'เปิดรับ' : 'ปิดรับ'}</button>
-         <button type="button" className="linkBtn danger" onClick={()=>{ setCancelFor(x.id); setReason(''); }}>ยกเลิก</button></span>}
+       : retimeFor===x.id ? null
+       : <span className="schedExistActs">{canRetime(x) && <button type="button" className="linkBtn dark" onClick={()=>{ setRetimeFor(x.id); setCancelFor(null); }}>แก้เวลา</button>}
+         <button type="button" className="linkBtn dark" disabled={acting===x.id} onClick={()=>void setSession(x.id,x.status==='CLOSED' ? 'OPEN' : 'CLOSED')}>{x.status==='CLOSED' ? 'เปิดรับ' : 'ปิดรับ'}</button>
+         <button type="button" className="linkBtn danger" onClick={()=>{ setCancelFor(x.id); setReason(''); setRetimeFor(null); }}>ยกเลิก</button></span>}
+       {retimeFor===x.id && <RetimeSession api={api} s={x} onClose={()=>setRetimeFor(null)} onDone={text=>{ setRetimeFor(null); setDone({text}); onMade?.(); }}/>}
       </div>)}
       {r.ranges.map((x,i)=><div key={x.id} className="schedRangeLine">
        <span className="timeRange"><input type="time" value={x.start} aria-label={`เวลาเริ่ม ${dayOf(r.date)}${r.ranges.length>1 ? ` ช่วงที่ ${i+1}` : ''}`} onChange={e=>setRanges(r.date,rs=>rs.map((y,k)=>k===i ? {...y,start:e.target.value} : y))}/>ถึง
@@ -254,6 +258,42 @@ export function SessionPlanner({api,clinics,say,fixed,onMade,existing=[]}:{api:A
  </div>;
 }
 
+// New hours for a session not yet started (same slot length and places per slot). Appointments still inside keep
+// their time; any outside are cancelled only once confirmed with a reason (the patients are told).
+type Retimed = {ok:boolean; reason?:string; outside?:number; cancelled?:number; added?:number; removed?:number};
+const hm24 = (iso:string) => new Date(iso).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+export const canRetime = (s:{startsAt:string; status:string}) => s.status!=='CANCELLED' && new Date(s.startsAt).getTime()>Date.now();
+function RetimeSession({api,s,onDone,onClose}:{api:Api; s:{id:string; startsAt:string; endsAt:string}; onDone:(text:string)=>void; onClose:()=>void}) {
+ const [start,setStart] = useState(hm24(s.startsAt)), [end,setEnd] = useState(hm24(s.endsAt));
+ const [outside,setOutside] = useState<number|null>(null), [reason,setReason] = useState(''), [busy,setBusy] = useState(false), [err,setErr] = useState('');
+ useEffect(()=>{ setOutside(null); setErr(''); },[start,end]);
+ const same = start===hm24(s.startsAt) && end===hm24(s.endsAt), problem = end<=start ? 'เวลาเลิกต้องหลังเวลาเริ่ม' : '';
+ const send = (extra:Record<string,unknown>) => api<Retimed>('appt:session:times',{sessionId:s.id,start,end,...extra});
+ const save = async () => {
+  setBusy(true); setErr('');
+  if (outside===null) { // first: would any appointment fall outside?
+   const d = await send({dryRun:true});
+   if (!d.ok) { setBusy(false); setErr(d.reason ?? 'ตรวจสอบไม่สำเร็จ'); return; }
+   if (d.outside) { setBusy(false); setOutside(d.outside); return; }
+  }
+  const r = await send(outside ? {cancelReason:reason.trim()} : {});
+  setBusy(false);
+  if (!r.ok) { setErr(r.reason ?? 'บันทึกไม่สำเร็จ'); return; }
+  onDone(`เปลี่ยนเวลาออกตรวจเป็น ${start}–${end} แล้ว · นัดเดิมในช่วงนี้คงเวลาเดิม${r.cancelled ? ` · ยกเลิกนัด ${r.cancelled} รายที่อยู่นอกช่วงพร้อมแจ้งผู้ป่วย` : ''}`);
+ };
+ return <div className="schedRetime">
+  <span className="timeRange"><input type="time" value={start} aria-label="เวลาเริ่มใหม่" onChange={e=>setStart(e.target.value)}/>ถึง
+   <input type="time" value={end} aria-label="เวลาเลิกใหม่" onChange={e=>setEnd(e.target.value)}/></span>
+  {outside ? <span className="schedCancel"><small className="schedMadeWarn">มีนัด {outside} รายอยู่นอกช่วงใหม่ — จะถูกยกเลิกและแจ้งผู้ป่วย</small>
+    <input className="bare" value={reason} maxLength={100} autoFocus placeholder="เหตุผล เช่น แพทย์มีประชุมช่วงบ่าย" onChange={e=>setReason(e.target.value)}/></span>
+   : <small className="muted">ช่วงนัดยาวและรับคนเท่าเดิม · นัดที่ยังอยู่ในช่วงคงเวลาเดิม</small>}
+  <span className="schedExistActs">
+   <button type="button" className={'btn sm'+(outside ? ' warnBtn' : '')} disabled={busy || same || !!problem || (!!outside && !reason.trim())} onClick={()=>void save()}>{busy && <Loader2 size={13} className="spin"/>}{outside ? `ยืนยัน (ยกเลิก ${outside} นัด)` : 'บันทึกเวลา'}</button>
+   <button type="button" className="btn ghost sm" onClick={onClose}>ไม่แก้</button></span>
+  {(problem || err) && <small className="facErr">{problem || err}</small>}
+ </div>;
+}
+
 function SessionList({api,rev,clinics,say,roomOnly=false}:{api:Api; rev:number; clinics:Clinic[]; say:Say; roomOnly?:boolean}) {
  const [clinic,setClinic] = useState(clinics[0].key);
  const [date,setDate] = useState(()=>roomOnly ? today() : addDays(today(),1));
@@ -261,6 +301,7 @@ function SessionList({api,rev,clinics,say,roomOnly=false}:{api:Api; rev:number; 
  const [list,setList] = useState<Session[]>([]);
  const [cancelFor,setCancelFor] = useState<string|null>(null);
  const [reason,setReason] = useState('');
+ const [retimeFor,setRetimeFor] = useState<string|null>(null);
  const load = useCallback(async ()=>{ const r = await api<{ok:boolean; sessions?:Session[]}>('appt:sessions',{clinicCode:clinic,date}); setList(r.ok ? r.sessions ?? [] : []); },[api,clinic,date]);
  useEffect(()=>{ void load(); },[load,rev]);
  const set = async (s:Session, change:Record<string,unknown>, ok:string) => { const r = await api('appt:session:set',{sessionId:s.id,...change}); say(r,ok); setCancelFor(null); setReason(''); void load(); };
@@ -271,7 +312,8 @@ function SessionList({api,rev,clinics,say,roomOnly=false}:{api:Api; rev:number; 
    <DatePicker value={date} onChange={setDate} aria-label="วันที่" className="dpFilter"/></div>
   {list.length ? <div className="tableWrap"><table className="dataTable compact"><thead><tr><th>แพทย์</th><th>เวลา</th><th>ห้องตรวจ</th><th className="num">นัดแล้ว</th>{!roomOnly && <th className="num">รับได้</th>}<th>สถานะ</th>{!roomOnly && <th/>}</tr></thead>
    <tbody>{list.map(s=><tr key={s.id} className={s.status!=='OPEN'?'muted':''}><td><b>{s.providerName}</b> <small className="muted">{s.providerCode}</small></td>
-    <td>{timeOf(s.startsAt)}–{timeOf(s.endsAt)}</td>
+    <td>{retimeFor===s.id ? <RetimeSession api={api} s={s} onClose={()=>setRetimeFor(null)} onDone={text=>{ setRetimeFor(null); say({ok:true},text); void load(); }}/>
+     : <>{timeOf(s.startsAt)}–{timeOf(s.endsAt)}{!roomOnly && canRetime(s) && <button type="button" className="linkBtn dark slotRetime" onClick={()=>setRetimeFor(s.id)}>แก้เวลา</button>}</>}</td>
     <td>{s.status==='CANCELLED' ? roomLabel(s.roomId) || '—' : <Select size="sm" className="roomPick" aria-label={`ห้องตรวจของ ${s.providerName}`} value={s.roomId ?? ''}
      onChange={v=>void set(s,{roomId:v},v?`${s.providerName} ตรวจที่${roomLabel(v)}`:`${s.providerName} ไม่ระบุห้อง`)}
      options={[{value:'',label:'ไม่ระบุ'},...rooms.map(roomOption)]}/>}</td>
