@@ -572,4 +572,19 @@ export const MIGRATIONS: Migration[] = [
         FROM provider_schedules s GROUP BY s.provider_code;
     `,
   },
+  {
+    version: 17,
+    name: 'reception kiosk characters',
+    sql: `
+      -- 3D models (GLB) uploaded for the reception kiosk's character. info_json: what the model holds (triangles,
+      -- textures, skeleton, animation names), worked out when it arrived. Which one the kiosks use is a setting.
+      CREATE TABLE reception_avatars (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        bytes BLOB NOT NULL,
+        info_json TEXT NOT NULL,
+        uploaded_at TEXT NOT NULL,
+        uploaded_by TEXT NOT NULL);
+    `,
+  },
 ];

@@ -26,8 +26,9 @@ import { ReceptionService } from './reception.service';
 import { FacilityService } from './facility.service';
 import { FacilityController } from './facility.controller';
 import { ReceptionController } from './reception.controller';
+import { ReceptionAvatarService } from './reception-avatar.service';
 import { QueueService } from './queue.service';
 import { TicketsService } from './tickets.service';
 import { VisitsService } from './visits.service';
-@Module({ controllers: [HealthController, IngestController, LineController, PatientController, WayfindingController, ReceptionController, FacilityController], providers: [DbService, AuditService, IdempotencyService, FeaturesService, AuthService, FlowGateway, FlowService, LiveFeedService, QueueService, TicketsService, LineService, VisitsService, BookingService, AppointmentService, CheckInService, PatientIdentityService, NotificationService, WayfindingService, RetentionService, ReportService, KioskDeviceService, ReceptionService, FacilityService] })
+@Module({ controllers: [HealthController, IngestController, LineController, PatientController, WayfindingController, ReceptionController, FacilityController], providers: [DbService, AuditService, IdempotencyService, FeaturesService, AuthService, FlowGateway, FlowService, LiveFeedService, QueueService, TicketsService, LineService, VisitsService, BookingService, AppointmentService, CheckInService, PatientIdentityService, NotificationService, WayfindingService, RetentionService, ReportService, KioskDeviceService, ReceptionService, FacilityService, ReceptionAvatarService] })
 export class AppModule {}

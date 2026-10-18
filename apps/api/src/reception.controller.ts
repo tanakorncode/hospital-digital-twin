@@ -1,9 +1,10 @@
-import { Body, Controller, Get, Headers, HttpCode, Ip, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Headers, HttpCode, Ip, Param, Post, Query, Res } from '@nestjs/common';
 import { AuditService } from './audit.service';
 import { AuthService } from './auth.service';
 import { AppError } from './errors';
 import { FeaturesService } from './features.service';
 import { KioskDeviceService } from './kiosk-device.service';
+import { ReceptionAvatarService } from './reception-avatar.service';
 import { ReceptionService } from './reception.service';
 
 // Digital Reception kiosks (/reception), REST only — a kiosk opens no socket, so it never holds the live queue.
@@ -17,6 +18,7 @@ import { ReceptionService } from './reception.service';
 //   GET  /api/reception/v1/places?q=              public places (directory / search)
 //   POST /api/reception/v1/kiosk/pair             {username, password} → a pairing ticket + the kiosks and places — set up on the kiosk
 //   POST /api/reception/v1/kiosk/pair/finish      {ticket, kioskId | name + atCode} → this kiosk's credential
+//   GET  /api/reception/v1/avatars/:id            an uploaded character model (GLB; ids are never reused, cached for good)
 // Kiosk calls carry "Authorization: Bearer <kiosk token>". Everything answers FEATURE_DISABLED while the switch is off.
 const SIGN_IN_LIMIT = { max: 10, windowMs: 60_000 };
 
@@ -24,7 +26,7 @@ const SIGN_IN_LIMIT = { max: 10, windowMs: 60_000 };
 export class ReceptionController {
   private tries = new Map<string, number[]>();
   constructor(private readonly devices: KioskDeviceService, private readonly reception: ReceptionService, private readonly features: FeaturesService,
-    private readonly auth: AuthService, private readonly audit: AuditService) {}
+    private readonly auth: AuthService, private readonly audit: AuditService, private readonly avatars: ReceptionAvatarService) {}
   private limit(ip: string) {
     const now = Date.now(), list = (this.tries.get(ip) ?? []).filter((t) => now - t < SIGN_IN_LIMIT.windowMs);
     list.push(now); this.tries.set(ip, list);
@@ -86,7 +88,19 @@ export class ReceptionController {
     return { ok: true, kiosk: { id: k.id, name: k.name, at }, contact: process.env.HOSPITAL_CONTACT?.trim() || undefined,
       // Speech: the kiosk reads approved text with a voice installed on the kiosk itself (never a cloud voice).
       // Voice input (Release B) and an LLM (only after evaluation) are not built, so always off. Queue: as an administrator set it.
+      avatar: this.avatars.settings(),
       capabilities: { wayfinding: true, speech: process.env.RECEPTION_SPEECH !== 'off', voiceInput: false, ai: false, generalQueueInfo: this.reception.settings().queueInfo, myQueue: this.reception.settings().myQueue } };
+  }
+  // The character's model: public like the floor pictures (a mascot, nothing about anyone).
+  @Get('avatars/:id')
+  avatar(@Param('id') id: string, @Res() res: { setHeader: (k: string, v: string) => void; end: (b: Uint8Array) => void }) {
+    const bytes = this.avatars.bytes(id);
+    if (!bytes) throw new AppError('RESOURCE_NOT_FOUND', 'ไม่พบไฟล์ตัวละคร');
+    res.setHeader('Content-Type', 'model/gltf-binary');
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.end(bytes);
   }
   @Post('sessions')
   @HttpCode(200)

@@ -6,6 +6,7 @@ import { directoryPlaces } from '../../lib/wayfinding';
 import type { QueueSync } from '../../lib/queue';
 import { Select } from '../Select';
 import { DatePicker } from '../DatePicker';
+import { ReceptionAvatarAdmin } from './ReceptionAvatarAdmin';
 
 // Settings → ตู้ต้อนรับ (administrators): the Digital Reception kiosks (/reception), what they may say, and how they are
 // used. Release A — no LLM: a kiosk answers only with what is approved here, places from QR นำทาง, and the OPD hours.
@@ -74,6 +75,8 @@ export function ReceptionAdminPane({api,on,setFeature}:{api:Api; on:boolean; set
    <small>เปิดที่เครื่องตู้: <code>/reception</code> · แตะเมนู ค้นหาจุดบริการ พิมพ์คำถาม เรียกเจ้าหน้าที่ · ไม่ใช้ AI ไม่ใช้กล้อง ไม่บันทึกข้อความที่พิมพ์ · ตอบได้เฉพาะคำตอบที่อนุมัติด้านล่าง</small></div>
    <button className={on?'btn ghost':'btn'} onClick={()=>void setFeature(!on)}>{on?'ปิดตู้ทั้งหมด':'เปิดใช้งาน'}</button></div>
   {msg && <p className={'setToast'+(msg.bad?' bad':'')} role="status">{msg.text}</p>}
+
+  <ReceptionAvatarAdmin api={api}/>
 
   <h4 className="setSub">ข้อมูลคิวบนตู้ <small>ไม่แสดงชื่อ HN หรือข้อมูลการรักษาในทุกกรณี</small></h4>
   <div className="rcpQueueOpts">

@@ -3,7 +3,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import { BellRing, ChevronLeft, Clock, Keyboard, ListOrdered, MapPin, Navigation, Search, Users, Volume2, VolumeX } from 'lucide-react';
 import FloorPlanSvg from '../FloorPlanSvg';
-import { AVATAR_NAME, Avatar, type AvatarState } from './Avatar';
+import { AVATAR_NAME, type AvatarState } from './Avatar';
+import { KioskAvatar, avatarUrl } from './KioskAvatar';
 import { MyQueue, QueueBoard, QueueFeed } from './QueueViews';
 import type { Capabilities, KioskClient, PublicPlace, Reply, Turn } from '../../lib/reception/client';
 import { speak, speechAvailable, stopSpeaking } from '../../lib/reception/speech';
@@ -78,11 +79,11 @@ export function ReceptionShell({client,caps}:{client:KioskClient; caps:Capabilit
   const r = await client.help(sid);
   setBusy(false);
   if (!r.ok) { setError(r.reason); return; }
-  setView({kind:'help'}); say('แจ้งเจ้าหน้าที่แล้วค่ะ กรุณารอที่ตู้นี้สักครู่ เจ้าหน้าที่จะมาช่วย');
+  setView({kind:'help'}); say('แจ้งเจ้าหน้าที่แล้วค่ะ กรุณารอที่ตู้นี้สักครู่ เจ้าหน้าที่จะมาช่วย','thanks');
  };
 
  if (!active) return <main className="rcp idle" onClick={()=>void begin()}>
-  <Avatar state={busy?'thinking':'greeting'}/>
+  <KioskAvatar state={busy?'thinking':'greeting'} mode={caps.avatar?.mode} url={avatarUrl(caps.avatar?.id)}/>
   <div className="rcpWelcome">
    <h1>สวัสดีค่ะ ยินดีต้อนรับ</h1>
    <p>ฉันชื่อ<b>{AVATAR_NAME}</b> ผู้ช่วยต้อนรับดิจิทัล<br/>ค้นหาจุดบริการ · ขั้นตอนรับบริการ · เวลาทำการ · ข้อมูลคิว · เรียกเจ้าหน้าที่</p>
@@ -95,7 +96,7 @@ export function ReceptionShell({client,caps}:{client:KioskClient; caps:Capabilit
  const queueOn = caps.capabilities.generalQueueInfo || caps.capabilities.myQueue;
  const page = <main className="rcp" onPointerDown={touch} onKeyDown={touch}>
   <aside className="rcpSide">
-   <Avatar state={avatar}/>
+   <KioskAvatar state={avatar} mode={caps.avatar?.mode} url={avatarUrl(caps.avatar?.id)}/>
    <span className="rcpNameTag">{AVATAR_NAME} · ผู้ช่วยต้อนรับดิจิทัล</span>
    <p className="rcpCaption" aria-live="polite">{caption}</p>
    <div className="rcpSideActs">

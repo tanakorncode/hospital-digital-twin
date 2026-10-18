@@ -17,7 +17,7 @@ export type Action =
  | {type:'my_queue'};
 export type Reply = {text:string; intent:string; actions:Action[]; sources:{id:string; title:string}[]; handoff:{required:boolean; reason:string|null}};
 export type Turn = {type:'text'; text:string}|{type:'menu'; id:'directory'|'steps'|'hours'|'queue'|'staff'}|{type:'answer'; id:string}|{type:'place'; code:string};
-export type Capabilities = {kiosk:{id:string; name:string; at?:PublicPlace}; contact?:string; capabilities:{wayfinding:boolean; speech:boolean; voiceInput:boolean; ai:boolean; generalQueueInfo:boolean; myQueue:boolean}};
+export type Capabilities = {kiosk:{id:string; name:string; at?:PublicPlace}; contact?:string; avatar?:{mode:'2d'|'3d'; id:string|null}; capabilities:{wayfinding:boolean; speech:boolean; voiceInput:boolean; ai:boolean; generalQueueInfo:boolean; myQueue:boolean}};
 type Res<T> = ({ok:true} & T) | {ok:false; code?:string; reason:string};
 
 const KEY = 'reception.kiosk';

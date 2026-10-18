@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import { Logger } from '@nestjs/common';
 import { AuditService } from '../src/audit.service';
+import { ReceptionAvatarService } from '../src/reception-avatar.service';
 import { AppointmentService } from '../src/appointment.service';
 import { AuthService } from '../src/auth.service';
 import { BookingService } from '../src/booking.service';
@@ -44,8 +45,8 @@ export function makeApi() {
   const notify = new NotificationService(db, features, identity, visits, facility), wayfinding = new WayfindingService(db, facility);
   const queue = new QueueService(db, visits), tickets = new TicketsService(db), line = new LineService(db, tickets, notify, wayfinding, features);
   const retention = new RetentionService(db, audit);
-  const kiosks = new KioskDeviceService(db), reception = new ReceptionService(db, wayfinding, queue);
-  const gateway = new FlowGateway(new FlowService(), new LiveFeedService(), queue, auth, tickets, line, audit, features, visits, idempotency, booking, checkin, appts, identity, notify, wayfinding, retention, new ReportService(db), kiosks, reception, facility);
+  const kiosks = new KioskDeviceService(db), reception = new ReceptionService(db, wayfinding, queue), avatars = new ReceptionAvatarService(db);
+  const gateway = new FlowGateway(new FlowService(), new LiveFeedService(), queue, auth, tickets, line, audit, features, visits, idempotency, booking, checkin, appts, identity, notify, wayfinding, retention, new ReportService(db), kiosks, reception, facility, avatars);
   // Broadcasts: `to` = only that room (staff), `except` = everyone else (public screens), neither = everyone.
   const emitted: { event: string; data: unknown; to?: string; except?: string }[] = [];
   // `sockets`: the connected screens (signIn adds its socket), so account changes can reach screens already open.
@@ -56,7 +57,7 @@ export function makeApi() {
     to: (room: string) => ({ emit: (event: string, data: unknown) => emitted.push({ event, data, to: room }) }),
     except: (room: string) => ({ emit: (event: string, data: unknown) => emitted.push({ event, data, except: room }) }),
   };
-  return { db, auth, queue, tickets, line, audit, features, idempotency, visits, booking, appts, checkin, identity, notify, wayfinding, gateway, emitted, sockets, retention, kiosks, reception, facility };
+  return { avatars, db, auth, queue, tickets, line, audit, features, idempotency, visits, booking, appts, checkin, identity, notify, wayfinding, gateway, emitted, sockets, retention, kiosks, reception, facility };
 }
 // A socket as the gateway sees it, optionally signed in with a session token.
 export function fakeSocket(token = '') {
@@ -76,4 +77,4 @@ export function signIn(api: ReturnType<typeof makeApi>, username: string, passwo
 export const patientController = (api: ReturnType<typeof makeApi>) =>
   new PatientController(api.identity, api.features, api.audit, api.booking, api.appts, api.visits, api.tickets, api.idempotency, api.gateway, api.notify);
 // The Digital Reception REST controller wired to a test API.
-export const receptionController = (api: ReturnType<typeof makeApi>) => new ReceptionController(api.kiosks, api.reception, api.features, api.auth, api.audit);
+export const receptionController = (api: ReturnType<typeof makeApi>) => new ReceptionController(api.kiosks, api.reception, api.features, api.auth, api.audit, api.avatars);

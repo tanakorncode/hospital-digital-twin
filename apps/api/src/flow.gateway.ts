@@ -23,6 +23,7 @@ import { RetentionService } from './retention.service';
 import { metrics } from './metrics';
 import { ReportService } from './report.service';
 import { KioskDeviceService } from './kiosk-device.service';
+import { ReceptionAvatarService } from './reception-avatar.service';
 import { ReceptionService } from './reception.service';
 import { FacilityService } from './facility.service';
 
@@ -73,7 +74,7 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
   @WebSocketServer() server!: Server;
   private unsubscribe?: () => void;
   constructor(private readonly flowService: FlowService, private readonly liveFeed: LiveFeedService, private readonly queue: QueueService, private readonly auth: AuthService, private readonly tickets: TicketsService, private readonly line: LineService, private readonly audit: AuditService, private readonly features: FeaturesService, private readonly visits: VisitsService, private readonly idempotency: IdempotencyService, private readonly booking: BookingService, private readonly checkin: CheckInService, private readonly appts: AppointmentService, private readonly identity: PatientIdentityService, private readonly notify: NotificationService, private readonly wayfinding: WayfindingService, private readonly retention: RetentionService, private readonly report: ReportService,
-    private readonly kiosks: KioskDeviceService, private readonly reception: ReceptionService, private readonly facility: FacilityService) {
+    private readonly kiosks: KioskDeviceService, private readonly reception: ReceptionService, private readonly facility: FacilityService, private readonly avatars: ReceptionAvatarService) {
     // A kiosk asks for a member of staff: every staff console sees the open requests (kiosk and place only).
     reception.onHelp((open) => this.server.to(STAFF_ROOM).emit('reception:help', open));
   }
@@ -268,6 +269,41 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
         checkedIn: sum(mineB, (r) => r.status === 'CHECKED_IN' || r.status === 'CONVERTED_TO_QUEUE'), expired: sum(mineB, (r) => r.status === 'EXPIRED'), cancelled: sum(mineB, (r) => r.status === 'CANCELLED') },
       messages: { enabled: this.features.on('notifications'), ...this.notify.backlog() },
       visits: { active: visits.filter((v) => v.status === 'active').length, cancelled: visits.filter((v) => v.status === 'cancelled').length } };
+  }
+  // ---- The kiosk's character (administrators): 2D or 3D, which model; models uploaded in pieces ----------------------
+  @SubscribeMessage('reception:avatar')
+  receptionAvatar(@ConnectedSocket() client: Socket) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (!may(me, 'admin')) return DENIED;
+    return { ok: true, settings: this.avatars.settings(), avatars: this.avatars.list() };
+  }
+  @SubscribeMessage('reception:avatar:set')
+  receptionAvatarSet(@ConnectedSocket() client: Socket, @MessageBody() body: { mode?: unknown; id?: unknown }) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (!may(me, 'admin')) return DENIED;
+    return attempt(() => { const s = this.avatars.setSettings(body ?? {});
+      this.audit.record({ ...actor(me), action: 'reception.avatar.set', targetType: 'reception', meta: { mode: s.mode, model: s.id ?? 'default' } });
+      return { ok: true, settings: s }; });
+  }
+  @SubscribeMessage('reception:avatar:upload')
+  receptionAvatarUpload(@ConnectedSocket() client: Socket, @MessageBody() body: { uploadId?: unknown; name?: unknown; index?: unknown; total?: unknown; bytes?: unknown }) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (!may(me, 'admin')) return DENIED;
+    return attempt(() => { const r = this.avatars.piece(`user:${me.id}`, body ?? {});
+      if (r.done) this.audit.record({ ...actor(me), action: 'reception.avatar.upload', targetType: 'reception-avatar', targetId: r.avatar.id,
+        meta: { size: r.avatar.size, triangles: r.avatar.triangles, rigged: r.avatar.rigged, animations: r.avatar.animations.length } });
+      return { ok: true, ...r }; });
+  }
+  @SubscribeMessage('reception:avatar:delete')
+  receptionAvatarDelete(@ConnectedSocket() client: Socket, @MessageBody() body: { id?: unknown }) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (!may(me, 'admin')) return DENIED;
+    return attempt(() => { this.avatars.delete(body?.id); this.audit.record({ ...actor(me), action: 'reception.avatar.delete', targetType: 'reception-avatar', targetId: String(body?.id) });
+      return { ok: true, avatars: this.avatars.list() }; });
   }
   // ---- Digital Reception (administrators): kiosks, approved answers, use; staff: take on a kiosk's call ----------------
   @SubscribeMessage('reception:kiosks')

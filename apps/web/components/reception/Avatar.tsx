@@ -7,7 +7,8 @@
 // a nurse or any real person. A few dependable states rather than many gestures (Reception spec §5):
 //   idle (breathing, blinking, gentle smile) · greeting (waves, open smile) · speaking (mouth moves while text is read)
 //   · pointing (towards the content panel) · thinking (looks up, head tilted) · unsure (concerned brows, offers staff)
-export type AvatarState = 'idle'|'greeting'|'thinking'|'speaking'|'pointing'|'unsure';
+//   · thanks (a small bow, happy eyes — once someone is helped)
+export type AvatarState = 'idle'|'greeting'|'thinking'|'speaking'|'pointing'|'unsure'|'thanks';
 export const AVATAR_NAME = 'น้องใจดี';
 
 const EYES = [118,182];
