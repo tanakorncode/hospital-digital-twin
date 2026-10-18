@@ -24,6 +24,7 @@ import { ReportService } from '../src/report.service';
 import { KioskDeviceService } from '../src/kiosk-device.service';
 import { ReceptionService } from '../src/reception.service';
 import { ReceptionController } from '../src/reception.controller';
+import { FacilityService } from '../src/facility.service';
 
 Logger.overrideLogger(false); // keep test output clean
 
@@ -34,16 +35,17 @@ export function makeApi() {
   process.env.ADMIN_USERNAME = 'admin';
   process.env.ADMIN_PASSWORD = ADMIN_PASSWORD;
   const db = new DbService();
-  const auth = new AuthService(db);
+  const facility = new FacilityService(db);
+  const auth = new AuthService(db, facility);
   auth.onModuleInit();
-  const visits = new VisitsService(db);
+  const visits = new VisitsService(db, facility);
   const audit = new AuditService(db), features = new FeaturesService(db), idempotency = new IdempotencyService(db);
-  const booking = new BookingService(db), appts = new AppointmentService(db), checkin = new CheckInService(db, booking, visits, appts), identity = new PatientIdentityService(db, booking);
-  const notify = new NotificationService(db, features, identity, visits), wayfinding = new WayfindingService(db);
+  const booking = new BookingService(db, facility), appts = new AppointmentService(db, facility), checkin = new CheckInService(db, booking, visits, appts), identity = new PatientIdentityService(db, booking);
+  const notify = new NotificationService(db, features, identity, visits, facility), wayfinding = new WayfindingService(db);
   const queue = new QueueService(db, visits), tickets = new TicketsService(db), line = new LineService(db, tickets, notify, wayfinding, features);
   const retention = new RetentionService(db, audit);
   const kiosks = new KioskDeviceService(db), reception = new ReceptionService(db, wayfinding, queue);
-  const gateway = new FlowGateway(new FlowService(), new LiveFeedService(), queue, auth, tickets, line, audit, features, visits, idempotency, booking, checkin, appts, identity, notify, wayfinding, retention, new ReportService(db), kiosks, reception);
+  const gateway = new FlowGateway(new FlowService(), new LiveFeedService(), queue, auth, tickets, line, audit, features, visits, idempotency, booking, checkin, appts, identity, notify, wayfinding, retention, new ReportService(db), kiosks, reception, facility);
   // Broadcasts: `to` = only that room (staff), `except` = everyone else (public screens), neither = everyone.
   const emitted: { event: string; data: unknown; to?: string; except?: string }[] = [];
   // `sockets`: the connected screens (signIn adds its socket), so account changes can reach screens already open.
@@ -54,7 +56,7 @@ export function makeApi() {
     to: (room: string) => ({ emit: (event: string, data: unknown) => emitted.push({ event, data, to: room }) }),
     except: (room: string) => ({ emit: (event: string, data: unknown) => emitted.push({ event, data, except: room }) }),
   };
-  return { db, auth, queue, tickets, line, audit, features, idempotency, visits, booking, appts, checkin, identity, notify, wayfinding, gateway, emitted, sockets, retention, kiosks, reception };
+  return { db, auth, queue, tickets, line, audit, features, idempotency, visits, booking, appts, checkin, identity, notify, wayfinding, gateway, emitted, sockets, retention, kiosks, reception, facility };
 }
 // A socket as the gateway sees it, optionally signed in with a session token.
 export function fakeSocket(token = '') {

@@ -1,5 +1,8 @@
-// Names patients read on the hospital signs, from station ids (the web app has the full labels; these are enough for a message).
-export function placeOf(station: string): string {
+// Names patients read on the hospital signs, from station ids: the facility model's name (FacilityService.stationName),
+// else these, enough for a message about a station the model no longer has.
+export function placeOf(station: string, named?: (station: string) => string | undefined): string {
+  const fromModel = named?.(station);
+  if (fromModel) return fromModel;
   let m: RegExpMatchArray | null;
   if ((m = station.match(/^room:[a-z]+-(\d+)$/))) return `ห้องตรวจ ${m[1]}`;
   if ((m = station.match(/^counter:([a-z]+):(\d+)$/))) {

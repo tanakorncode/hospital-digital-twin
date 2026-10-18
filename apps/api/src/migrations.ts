@@ -425,4 +425,91 @@ export const MIGRATIONS: Migration[] = [
         PRIMARY KEY (day, kiosk_id, event, intent));
     `,
   },
+  {
+    version: 12,
+    name: 'facility model',
+    sql: `
+      -- The hospital's facility (docs/FACILITY-MODEL-DESIGN.md): buildings › floors (where), departments (who, not tied
+      -- to a floor) › service groups (one step, one queue, on a floor) › service points (rooms / counters / beds / kiosks
+      -- = queue stations). Ids are stable and never derived from a position. These tables hold the published version;
+      -- sort = display order. Retired rows stay (retired_at) so history still reads them.
+      CREATE TABLE facility_buildings (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        short_name TEXT NOT NULL DEFAULT '',
+        kind TEXT NOT NULL,
+        map_json TEXT NOT NULL,
+        sort INTEGER NOT NULL,
+        active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)),
+        retired_at TEXT);
+      CREATE TABLE facility_floors (
+        id TEXT PRIMARY KEY,
+        building_id TEXT NOT NULL,
+        level INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        sort INTEGER NOT NULL,
+        active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)),
+        retired_at TEXT);
+      CREATE TABLE facility_departments (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        short_name TEXT,
+        type TEXT NOT NULL,
+        queue_prefix TEXT,
+        features_json TEXT NOT NULL,
+        first_group_id TEXT,
+        sort INTEGER NOT NULL,
+        active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)),
+        retired_at TEXT);
+      CREATE TABLE facility_service_groups (
+        id TEXT PRIMARY KEY,
+        department_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        floor_id TEXT,
+        point_kind TEXT NOT NULL,
+        point_noun TEXT NOT NULL,
+        steps_json TEXT NOT NULL,
+        serves TEXT NOT NULL,
+        min_open INTEGER NOT NULL DEFAULT 0,
+        sort INTEGER NOT NULL,
+        active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)),
+        retired_at TEXT);
+      CREATE INDEX facility_service_groups_department ON facility_service_groups (department_id);
+      CREATE TABLE facility_service_points (
+        id TEXT PRIMARY KEY,
+        group_id TEXT NOT NULL,
+        number INTEGER NOT NULL,
+        name TEXT,
+        room_code TEXT,
+        floor_id TEXT,
+        room_kind TEXT,
+        in_room_id TEXT,
+        map_json TEXT,
+        sort INTEGER NOT NULL,
+        active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)),
+        retired_at TEXT);
+      CREATE INDEX facility_service_points_group ON facility_service_points (group_id);
+      -- Scenery around the buildings (roads, car parks, neighbouring blocks): one row.
+      CREATE TABLE facility_site (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        site_json TEXT NOT NULL);
+      -- Every published version, in full (rollback publishes an old one again). source: seed = made from the sample
+      -- hospital and the old Settings layout, layout = re-made after a layout change, publish, rollback.
+      CREATE TABLE facility_versions (
+        version INTEGER PRIMARY KEY,
+        published_at TEXT NOT NULL,
+        published_by TEXT NOT NULL,
+        source TEXT NOT NULL CHECK (source IN ('seed','layout','publish','rollback')),
+        note TEXT,
+        summary_json TEXT NOT NULL,
+        snapshot_json TEXT NOT NULL);
+      -- Work in progress: one draft per administrator, on top of the version it started from.
+      CREATE TABLE facility_drafts (
+        user_id TEXT PRIMARY KEY,
+        base_version INTEGER NOT NULL,
+        data_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL);
+    `,
+  },
 ];

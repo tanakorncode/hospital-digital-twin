@@ -2,6 +2,7 @@ import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { randomBytes, randomInt } from 'node:crypto';
 import { DbService } from './db.service';
 import { AppError } from './errors';
+import { FacilityService } from './facility.service';
 
 // General queue booking: a patient reserves a place in a time slot of a service (an OPD clinic) — not a doctor, and
 // not yet a queue number (that comes at check-in, stage 2.3). Capacity is per slot; rules are per service.
@@ -19,7 +20,7 @@ export type SlotPlan = { serviceCode?: unknown; from?: unknown; to?: unknown; we
 export type Actor = { kind: 'staff'; id: number; name: string; canOverride: boolean } | { kind: 'patient'; profileId: string };
 
 const CODE_CHARS = 'ACDEFGHJKLMNPQRTUVWXY3479'; // no 0/O, 1/I, 2/Z, 5/S, 6/B, 8 — read out over the phone without mistakes
-const SERVICE_RE = /^opd-\d-\d{1,2}$/, HN_RE = /^[0-9A-Za-z-]{3,20}$/, DATE_RE = /^\d{4}-\d{2}-\d{2}$/, TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+const HN_RE = /^[0-9A-Za-z-]{3,20}$/, DATE_RE = /^\d{4}-\d{2}-\d{2}$/, TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 const MAX_SLOTS_PER_PLAN = 2000, MAX_PLAN_DAYS = 92;
 const bad = (reason: string) => new AppError('VALIDATION_ERROR', reason);
 const id = (prefix: string) => `${prefix}_${randomBytes(9).toString('base64url')}`;
@@ -51,7 +52,8 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
   // The clock, replaceable in tests.
   now = () => new Date();
   private timer?: NodeJS.Timeout;
-  constructor(private readonly store: DbService) {}
+  private readonly facility: FacilityService;
+  constructor(private readonly store: DbService, facility?: FacilityService) { this.facility = facility ?? new FacilityService(store); }
   onModuleInit() { this.expire(); this.timer = setInterval(() => this.expire(), 3600_000); this.timer.unref(); }
   onModuleDestroy() { clearInterval(this.timer); }
 
@@ -68,7 +70,8 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
   setPolicy(input: { serviceCode?: unknown; displayName?: unknown; enabled?: unknown; advanceDays?: unknown; cancelCutoffMinutes?: unknown; maxActivePerPatient?: unknown;
     queuePrefix?: unknown; checkinEarlyMinutes?: unknown; checkinLateMinutes?: unknown }, by: string): Policy {
     const code = input.serviceCode;
-    if (typeof code !== 'string' || !SERVICE_RE.test(code)) throw bad('ระบุบริการ (คลินิก)');
+    // A department of the facility model that takes bookings.
+    if (typeof code !== 'string' || !this.facility.department(code)?.features.booking) throw bad('ระบุบริการ (คลินิกที่เปิดรับจองในผังโรงพยาบาล)');
     const cur = this.policy(code);
     const name = input.displayName === undefined ? cur?.displayName : input.displayName;
     if (typeof name !== 'string' || !name.trim() || name.length > 30) throw bad('ระบุชื่อบริการ (ไม่เกิน 30 ตัวอักษร)');

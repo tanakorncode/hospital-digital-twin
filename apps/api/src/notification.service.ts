@@ -3,6 +3,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import type { Appointment } from './appointment.service';
 import type { Booking } from './booking.service';
 import { DbService } from './db.service';
+import { FacilityService } from './facility.service';
 import { FeaturesService } from './features.service';
 import { PatientIdentityService } from './patient-identity.service';
 import { placeOf } from './places';
@@ -54,10 +55,10 @@ export function render(t: Template, p: Payload, now = new Date()): string {
   }
 }
 // The queue message for a staff action, if it is one patients hear about.
-export function queueTemplate(e: QueueEvent): { template: Template; place?: string; who?: string } | undefined {
-  if (e.action === 'call') return { template: 'QUEUE_CALL', place: placeOf(e.station) };
-  if (e.action === 'recall') return { template: 'QUEUE_RECALL', place: placeOf(e.station) };
-  if (e.action === 'transfer' && e.target) return { template: 'QUEUE_TRANSFER', place: placeOf(e.target) };
+export function queueTemplate(e: QueueEvent, named?: (station: string) => string | undefined): { template: Template; place?: string; who?: string } | undefined {
+  if (e.action === 'call') return { template: 'QUEUE_CALL', place: placeOf(e.station, named) };
+  if (e.action === 'recall') return { template: 'QUEUE_RECALL', place: placeOf(e.station, named) };
+  if (e.action === 'transfer' && e.target) return { template: 'QUEUE_TRANSFER', place: placeOf(e.target, named) };
   if (e.action === 'resolve' && e.reason?.startsWith('assign:')) return { template: 'QUEUE_HELP', who: e.reason.slice(7) };
   return undefined;
 }
@@ -68,7 +69,11 @@ export class NotificationService implements OnModuleInit, OnModuleDestroy {
   now = () => new Date();
   private timer?: NodeJS.Timeout;
   private running = false;
-  constructor(private readonly store: DbService, private readonly features: FeaturesService, private readonly identity: PatientIdentityService, private readonly visits: VisitsService) {}
+  private readonly facility: FacilityService;
+  constructor(private readonly store: DbService, private readonly features: FeaturesService, private readonly identity: PatientIdentityService, private readonly visits: VisitsService,
+    facility?: FacilityService) { this.facility = facility ?? new FacilityService(store); }
+  // A station's name for patients (from the facility model).
+  placeName = (station: string) => placeOf(station, (s) => this.facility.stationName(s));
   onModuleInit() {
     // A job left half-done by a restart goes back to the queue (LINE's retry key keeps it from arriving twice).
     this.store.db.prepare(`UPDATE notification_jobs SET status = 'RETRY', updated_at = ? WHERE status = 'PROCESSING'`).run(this.now().toISOString());
@@ -133,7 +138,7 @@ export class NotificationService implements OnModuleInit, OnModuleDestroy {
   // A staff action on a real patient whose LINE account is linked (visits from bookings / appointments).
   onQueueEvent(e: QueueEvent) {
     if (!this.on || !e.patientId?.startsWith('v-')) return;
-    const q = queueTemplate(e), v = q && this.visits.get(e.patientId), profile = v && this.visits.profileOf(v.id);
+    const q = queueTemplate(e, (s) => this.facility.stationName(s)), v = q && this.visits.get(e.patientId), profile = v && this.visits.profileOf(v.id);
     if (!q || !v || !profile) return;
     if (this.enqueue({ template: q.template, payload: { queue: v.queue, place: q.place, who: q.who }, target: { type: 'PROFILE', id: profile }, related: { type: 'visit', id: v.id }, dedupe: `queue:${e.id}:profile` })) this.kick();
   }

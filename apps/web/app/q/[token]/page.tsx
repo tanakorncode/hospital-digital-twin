@@ -86,7 +86,8 @@ function QueueStatusPage() {
   const myReports = events.filter(e=>e.action==='report' && e.patientId===patient.id).sort((x,y)=>y.at-x.at), lastReport = myReports[0];
   const lastHelp = lastReport ? helpRequests(events).find(h=>h.report.id===lastReport.id) : undefined, resolved = lastHelp?.closed, assignedTo = lastHelp?.assigned?.reason?.slice(7);
   const askHelp = async (topic:string) => { if (!st) return; setSheet(null);
-    const where = st.step.manual ?? st.step.assigned ?? st.step.stationId ?? `group:${stepGroup(st)}`;
+    // A step without a queue of its own (waiting for a lab result): the clinic's exam rooms see to it, else registration.
+    const where = st.step.manual ?? st.step.assigned ?? st.step.stationId ?? `group:${stepGroup(st) ?? (patient.clinicKey ? `exam:${patient.clinicKey}` : 'counter:registration')}`;
     const r = await send({action:'report',at:m,station:where,patientId:patient.id,step:st.index,reason:topic,by:'ผู้ป่วย',ticket:token});
     setToast({key:'help',at:m,title:r.ok?'ส่งเรื่องถึงเจ้าหน้าที่แล้ว':'ส่งไม่สำเร็จ',body:r.ok?`${topic} · ${scopeName(where.replace(/^group:/,''))}`:r.reason ?? ''}); };
   const shareFamily = async () => {

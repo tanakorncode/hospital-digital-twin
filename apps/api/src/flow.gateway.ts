@@ -24,6 +24,7 @@ import { metrics } from './metrics';
 import { ReportService } from './report.service';
 import { KioskDeviceService } from './kiosk-device.service';
 import { ReceptionService } from './reception.service';
+import { FacilityService } from './facility.service';
 
 // Who may do what. Public screens (TV boards, the patient's QR page) connect without signing in: they receive the
 // queue log, may look up a patient link ('ticket:resolve'), make a family link from a patient link, and send the
@@ -69,7 +70,7 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
   @WebSocketServer() server!: Server;
   private unsubscribe?: () => void;
   constructor(private readonly flowService: FlowService, private readonly liveFeed: LiveFeedService, private readonly queue: QueueService, private readonly auth: AuthService, private readonly tickets: TicketsService, private readonly line: LineService, private readonly audit: AuditService, private readonly features: FeaturesService, private readonly visits: VisitsService, private readonly idempotency: IdempotencyService, private readonly booking: BookingService, private readonly checkin: CheckInService, private readonly appts: AppointmentService, private readonly identity: PatientIdentityService, private readonly notify: NotificationService, private readonly wayfinding: WayfindingService, private readonly retention: RetentionService, private readonly report: ReportService,
-    private readonly kiosks: KioskDeviceService, private readonly reception: ReceptionService) {
+    private readonly kiosks: KioskDeviceService, private readonly reception: ReceptionService, private readonly facility: FacilityService) {
     // A kiosk asks for a member of staff: every staff console sees the open requests (kiosk and place only).
     reception.onHelp((open) => this.server.to(STAFF_ROOM).emit('reception:help', open));
   }
@@ -92,7 +93,13 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
     client.emit('live:snapshot', this.liveFeed.snapshot());
     this.sendLog(client);
     client.emit('queue:settings', user ? this.queue.getSettings() : publicSettings(this.queue.getSettings()));
+    client.emit('facility:updated', user ? this.facility.current() : this.facility.publicView());
     client.emit('visits', this.visits.list());
+  }
+  // A new facility version to every screen (staff get retired things too, for history).
+  private publishFacility() {
+    this.server.to(STAFF_ROOM).emit('facility:updated', this.facility.current());
+    this.server.except(STAFF_ROOM).emit('facility:updated', this.facility.publicView());
   }
   private sendLog(client: Socket) {
     const list = this.queue.list();
@@ -124,6 +131,7 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
     this.sendLog(client); // now with the names the public stream leaves out
     client.emit('reception:help', this.reception.openHelp());
     client.emit('queue:settings', this.queue.getSettings());
+    client.emit('facility:updated', this.facility.current());
     return res;
   }
   @SubscribeMessage('auth:logout')
@@ -381,6 +389,78 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
     if (res.ok) this.publishQueueEvent(res.event);
     return res.ok ? { ok: true } : { ok: false, reason: res.reason };
   }
+  // ---- Facility model (docs/FACILITY-MODEL-DESIGN.md): every screen reads it; administrators edit a draft, check its
+  // impact and publish it as a new version (or roll back to an earlier one).
+  @SubscribeMessage('facility:get')
+  facilityGet(@ConnectedSocket() client: Socket) {
+    const me = userOf(client);
+    return { ok: true, facility: me ? this.facility.current() : this.facility.publicView() };
+  }
+  @SubscribeMessage('facility:draft:get')
+  facilityDraft(@ConnectedSocket() client: Socket) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (!may(me, 'admin')) return DENIED;
+    return { ok: true, draft: this.facility.draft(`user:${me.id}`) ?? null, version: this.facility.version() };
+  }
+  @SubscribeMessage('facility:draft:save')
+  facilityDraftSave(@ConnectedSocket() client: Socket, @MessageBody() body: { data?: unknown; baseVersion?: unknown }) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (!may(me, 'admin')) return DENIED;
+    return attempt(() => ({ ok: true, ...this.facility.saveDraft(`user:${me.id}`, body?.data, body?.baseVersion) }));
+  }
+  @SubscribeMessage('facility:draft:discard')
+  facilityDraftDiscard(@ConnectedSocket() client: Socket) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (!may(me, 'admin')) return DENIED;
+    return { ok: true, discarded: this.facility.discardDraft(`user:${me.id}`) };
+  }
+  // What publishing would do — the given data, else the administrator's draft.
+  @SubscribeMessage('facility:impact')
+  facilityImpact(@ConnectedSocket() client: Socket, @MessageBody() body: { data?: unknown }) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (!may(me, 'admin')) return DENIED;
+    const data = body?.data ?? this.facility.draft(`user:${me.id}`)?.data;
+    if (!data) return { ok: false, code: 'VALIDATION_ERROR', reason: 'ยังไม่มีร่างผัง' };
+    return { ok: true, impact: this.facility.impact(data) };
+  }
+  @SubscribeMessage('facility:publish')
+  facilityPublish(@ConnectedSocket() client: Socket, @MessageBody() body: { data?: unknown; note?: unknown; baseVersion?: unknown }) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (!may(me, 'admin')) return DENIED;
+    return attempt(() => {
+      const draft = body?.data === undefined ? this.facility.draft(`user:${me.id}`) : undefined;
+      if (body?.data === undefined && !draft) return { ok: false, code: 'VALIDATION_ERROR', reason: 'ยังไม่มีร่างผัง' };
+      const r = this.facility.publish(`user:${me.id}`, body?.data ?? draft!.data, { note: body?.note, baseVersion: body?.baseVersion ?? draft?.baseVersion });
+      this.audit.record({ ...actor(me), action: 'facility.publish', targetType: 'facility', targetId: String(r.facility.version), reason: typeof body?.note === 'string' ? body.note.slice(0, 200) : undefined, meta: r.impact.summary });
+      this.publishFacility();
+      return { ok: true, version: r.facility.version, impact: r.impact };
+    });
+  }
+  @SubscribeMessage('facility:versions')
+  facilityVersions(@ConnectedSocket() client: Socket, @MessageBody() body: { version?: unknown }) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (!may(me, 'admin')) return DENIED;
+    if (body?.version !== undefined) { const data = this.facility.versionData(body.version); return data ? { ok: true, data } : { ok: false, code: 'RESOURCE_NOT_FOUND', reason: 'ไม่พบเวอร์ชันนี้' }; }
+    return { ok: true, current: this.facility.version(), versions: this.facility.versions() };
+  }
+  @SubscribeMessage('facility:rollback')
+  facilityRollback(@ConnectedSocket() client: Socket, @MessageBody() body: { version?: unknown }) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (!may(me, 'admin')) return DENIED;
+    return attempt(() => {
+      const r = this.facility.rollback(`user:${me.id}`, body?.version);
+      this.audit.record({ ...actor(me), action: 'facility.rollback', targetType: 'facility', targetId: String(r.facility.version), meta: { to: body?.version, ...r.impact.summary } });
+      this.publishFacility();
+      return { ok: true, version: r.facility.version, impact: r.impact };
+    });
+  }
   // Settings: per-group / per-station overrides for supervisors; everything else for administrators.
   @SubscribeMessage('queue:settings:set')
   queueSettings(@ConnectedSocket() client: Socket, @MessageBody() cmd: SettingsCommand) {
@@ -390,6 +470,8 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
     if (!may(me, hospitalWide ? 'admin' : 'supervisor')) return { ok: false, reason: hospitalWide ? 'เฉพาะผู้ดูแลระบบเปลี่ยนค่าของทั้งโรงพยาบาลได้' : 'เฉพาะหัวหน้างานขึ้นไปเปลี่ยนการตั้งค่าได้' };
     const res = this.queue.setSettings({ ...cmd, by: me.name });
     if (res.ok) this.audit.record({ ...actor(me), action: 'settings.update', targetType: 'settings', targetId: cmd.scope, reason: cmd.summary, meta: { reset: res.reset } });
+    // The old departments page still edits the layout: the facility model follows it until it is edited directly.
+    if (res.ok && p.layout !== undefined && this.facility.syncFromLayout(res.settings.layout, `user:${me.id}`)) this.publishFacility();
     // New service hours reset today's log: send every screen the whole log again.
     if (res.ok) { this.server.to(STAFF_ROOM).emit('queue:settings', res.settings); this.server.except(STAFF_ROOM).emit('queue:settings', publicSettings(res.settings)); if (res.reset) this.publishLog(); else this.publishQueueEvent(res.event); }
     return res.ok ? { ok: true } : { ok: false, reason: res.reason };

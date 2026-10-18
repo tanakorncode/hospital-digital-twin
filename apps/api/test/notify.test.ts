@@ -175,7 +175,7 @@ test('a linked patient hears about check-in and being called without the slip co
   api.gateway.queueCommand(admin, { at: 520, station: 'screen:opd-2-0', action: 'call', patientId: v.id, step: 0 });
   assert.deepEqual(jobs().map((j) => j.template), ['BOOKING_CONFIRMED', 'CHECKIN_DONE', 'QUEUE_CALL']);
   await api.notify.process();
-  assert.match(pushes.at(-1)!.text, new RegExp(`ถึงคิว ${v.queue} แล้ว\\nเชิญที่ จุดซักประวัติ ชั้น 2`));
+  assert.match(pushes.at(-1)!.text, new RegExp(`ถึงคิว ${v.queue} แล้ว\\nเชิญที่ ซักประวัติอายุรกรรมทั่วไป ช่องบริการ`));
 });
 
 test('a job half-sent when the API stopped goes back to the queue on start', async () => {

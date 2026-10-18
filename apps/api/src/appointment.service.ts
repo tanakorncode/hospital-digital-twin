@@ -3,6 +3,7 @@ import { randomBytes, randomInt } from 'node:crypto';
 import { localInstant, maskHN } from './booking.service';
 import { DbService } from './db.service';
 import { AppError } from './errors';
+import { FacilityService } from './facility.service';
 
 // Doctor appointments — separate from general booking: own rules per clinic, own capacity (a doctor's session split
 // into slots), own codes (AP…). Typically made by staff for the next visit ("นัดครั้งหน้า"); patients see, cancel and
@@ -23,8 +24,7 @@ export type RescheduleRequest = { id: string; status: 'PENDING' | 'APPROVED' | '
   appointment: Appointment; to: { slotId: string; startsAt: string; endsAt: string; providerName: string } };
 export type Actor = { kind: 'staff'; id: number; canOverride: boolean } | { kind: 'patient'; profileId: string };
 
-export const ROOM_RE = /^opd-\d{3,4}$/;
-const CLINIC_RE = /^opd-\d-\d{1,2}$/, PROVIDER_RE = /^[A-Za-z0-9ก-๙._-]{1,20}$/, DATE_RE = /^\d{4}-\d{2}-\d{2}$/, TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+const PROVIDER_RE = /^[A-Za-z0-9ก-๙._-]{1,20}$/, DATE_RE = /^\d{4}-\d{2}-\d{2}$/, TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 const CODE_CHARS = 'ACDEFGHJKLMNPQRTUVWXY3479';
 const bad = (reason: string) => new AppError('VALIDATION_ERROR', reason);
 const newId = (p: string) => `${p}_${randomBytes(9).toString('base64url')}`;
@@ -53,7 +53,8 @@ const APPT_SELECT = `SELECT a.*, s.starts_at, s.ends_at, p.provider_name, p.room
 export class AppointmentService implements OnModuleInit, OnModuleDestroy {
   now = () => new Date();
   private timer?: NodeJS.Timeout;
-  constructor(private readonly store: DbService) {}
+  private readonly facility: FacilityService;
+  constructor(private readonly store: DbService, facility?: FacilityService) { this.facility = facility ?? new FacilityService(store); }
   onModuleInit() { this.expire(); this.timer = setInterval(() => this.expire(), 3600_000); this.timer.unref(); }
   onModuleDestroy() { clearInterval(this.timer); }
 
@@ -65,7 +66,8 @@ export class AppointmentService implements OnModuleInit, OnModuleDestroy {
   }
   setPolicy(input: Record<string, unknown>, by: string): ApptPolicy {
     const code = input.clinicCode;
-    if (typeof code !== 'string' || !CLINIC_RE.test(code)) throw bad('ระบุคลินิก');
+    // A department of the facility model that takes appointments.
+    if (typeof code !== 'string' || !this.facility.department(code)?.features.appointments) throw bad('ระบุคลินิก (คลินิกที่เปิดรับนัดในผังโรงพยาบาล)');
     const cur = this.policy(code);
     const name = input.displayName ?? cur?.displayName;
     if (typeof name !== 'string' || !name.trim() || name.length > 30) throw bad('ระบุชื่อคลินิก (ไม่เกิน 30 ตัวอักษร)');
@@ -98,8 +100,8 @@ export class AppointmentService implements OnModuleInit, OnModuleDestroy {
   // doctor already has an overlapping session (in any clinic) is skipped and reported, never double-booked.
   createSessions(plan: Record<string, unknown>): { sessions: number; slots: number; skipped: number; conflicts: string[] } {
     const { clinicCode, providerCode, providerName, from, to, weekdays, start, end, minutes, capacity, roomId } = plan;
-    if (roomId !== undefined && roomId !== null && roomId !== '' && (typeof roomId !== 'string' || !ROOM_RE.test(roomId))) throw bad('ห้องตรวจไม่ถูกต้อง');
     if (typeof clinicCode !== 'string' || !this.policy(clinicCode)) throw bad('ตั้งกติกาการนัดของคลินิกนี้ก่อน');
+    if (roomId !== undefined && roomId !== null && roomId !== '' && !this.facility.roomOf(clinicCode, roomId)) throw bad('ห้องตรวจไม่ถูกต้อง (ต้องเป็นห้องตรวจที่เปิดอยู่ของคลินิกนี้)');
     if (typeof providerCode !== 'string' || !PROVIDER_RE.test(providerCode)) throw bad('ระบุรหัสแพทย์ (เช่น รหัสใน HIS หรือเลข ว.)');
     if (typeof providerName !== 'string' || !providerName.trim() || providerName.length > 60) throw bad('ระบุชื่อแพทย์');
     if (typeof from !== 'string' || !DATE_RE.test(from) || typeof to !== 'string' || !DATE_RE.test(to) || to < from) throw bad('ช่วงวันที่ไม่ถูกต้อง');
@@ -187,7 +189,7 @@ export class AppointmentService implements OnModuleInit, OnModuleDestroy {
       const st = change.status, room = change.roomId;
       if (st === undefined && room === undefined) throw bad('ไม่มีสิ่งที่จะเปลี่ยน');
       if (st !== undefined && st !== 'OPEN' && st !== 'CLOSED' && st !== 'CANCELLED') throw bad('สถานะไม่ถูกต้อง');
-      if (room !== undefined && room !== null && room !== '' && (typeof room !== 'string' || !ROOM_RE.test(room))) throw bad('ห้องตรวจไม่ถูกต้อง');
+      if (room !== undefined && room !== null && room !== '' && !this.facility.roomOf(r.clinic_code, room)) throw bad('ห้องตรวจไม่ถูกต้อง (ต้องเป็นห้องตรวจที่เปิดอยู่ของคลินิกนี้)');
       const at = this.now().toISOString();
       let cancelled: Appointment[] = [], movedVisits: string[] = [];
       if (room !== undefined) {

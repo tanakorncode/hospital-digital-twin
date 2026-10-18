@@ -121,7 +121,7 @@ export class LineService {
   onQueueEvent(e: QueueEvent) {
     if (!this.enabled || !e.patientId) return;
     const links = this.store.db.prepare('SELECT * FROM line_links WHERE patient_id = ?').all(e.patientId) as Link[];
-    const q = links.length ? queueTemplate(e) : undefined;
+    const q = links.length ? queueTemplate(e, this.notify.placeName) : undefined;
     if (!q) return;
     const linked = new Set(this.notify.linkedSubjects(e.patientId));
     let queued = false;

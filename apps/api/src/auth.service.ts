@@ -3,6 +3,7 @@ import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypt
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DbService } from './db.service';
+import { FacilityService } from './facility.service';
 
 // Staff accounts and sessions. Passwords: scrypt with a per-user salt. Sessions: random tokens, only their SHA-256
 // is stored, valid for SESSION_HOURS (default 12 — one shift). The public screens (TV, patient page) need no login.
@@ -23,14 +24,14 @@ const checkPassword = (password: string, stored: string) => {
 };
 const sha = (s: string) => createHash('sha256').update(s).digest('hex');
 type Row = { id: number; username: string; name: string; role: Role; pass_hash: string; active: number; last_login: string | null };
-export const CLINIC_KEY_RE = /^(opd-\d-\d{1,2}|er)$/;
 const MAX_CLINICS = 40;
 
 @Injectable()
 export class AuthService implements OnModuleInit {
   private readonly log = new Logger('Auth');
   private fails = new Map<string, number[]>(); // per username + client address: recent failed logins
-  constructor(private readonly store: DbService) {}
+  private readonly facility: FacilityService;
+  constructor(private readonly store: DbService, facility?: FacilityService) { this.facility = facility ?? new FacilityService(store); }
 
   // First start: create the administrator from ADMIN_USERNAME / ADMIN_PASSWORD (apps/api/.env). Without a password,
   // a random one is written to data/initial-admin.txt (git-ignored) — change it after the first login.
@@ -86,7 +87,7 @@ export class AuthService implements OnModuleInit {
     if (input.role !== undefined && !ROLES.includes(input.role)) return { ok: false, reason: 'สิทธิ์ไม่ถูกต้อง' };
     if (input.password !== undefined && (typeof input.password !== 'string' || input.password.length < 8 || input.password.length > 200)) return { ok: false, reason: 'รหัสผ่านต้องยาวอย่างน้อย 8 ตัวอักษร' };
     const clinics = input.clinics === undefined ? undefined : Array.isArray(input.clinics) ? [...new Set(input.clinics)] : null;
-    if (clinics === null || (clinics && (clinics.length > MAX_CLINICS || clinics.some((c) => typeof c !== 'string' || !CLINIC_KEY_RE.test(c))))) return { ok: false, reason: 'แผนกที่รับผิดชอบไม่ถูกต้อง' };
+    if (clinics === null || (clinics && (clinics.length > MAX_CLINICS || clinics.some((c) => !this.facility.knowsDepartment(c))))) return { ok: false, reason: 'แผนกที่รับผิดชอบไม่ถูกต้อง' };
     if (!input.id) {
       if (!username || !/^[a-zA-Z0-9._-]{3,40}$/.test(username)) return { ok: false, reason: 'ชื่อผู้ใช้ 3–40 ตัว ใช้ a–z 0–9 . _ - ได้' };
       if (!name || !input.role || !input.password) return { ok: false, reason: 'กรอกชื่อ สิทธิ์ และรหัสผ่านให้ครบ' };

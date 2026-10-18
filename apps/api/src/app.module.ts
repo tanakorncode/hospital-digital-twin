@@ -23,9 +23,10 @@ import { RetentionService } from './retention.service';
 import { ReportService } from './report.service';
 import { KioskDeviceService } from './kiosk-device.service';
 import { ReceptionService } from './reception.service';
+import { FacilityService } from './facility.service';
 import { ReceptionController } from './reception.controller';
 import { QueueService } from './queue.service';
 import { TicketsService } from './tickets.service';
 import { VisitsService } from './visits.service';
-@Module({ controllers: [HealthController, IngestController, LineController, PatientController, WayfindingController, ReceptionController], providers: [DbService, AuditService, IdempotencyService, FeaturesService, AuthService, FlowGateway, FlowService, LiveFeedService, QueueService, TicketsService, LineService, VisitsService, BookingService, AppointmentService, CheckInService, PatientIdentityService, NotificationService, WayfindingService, RetentionService, ReportService, KioskDeviceService, ReceptionService] })
+@Module({ controllers: [HealthController, IngestController, LineController, PatientController, WayfindingController, ReceptionController], providers: [DbService, AuditService, IdempotencyService, FeaturesService, AuthService, FlowGateway, FlowService, LiveFeedService, QueueService, TicketsService, LineService, VisitsService, BookingService, AppointmentService, CheckInService, PatientIdentityService, NotificationService, WayfindingService, RetentionService, ReportService, KioskDeviceService, ReceptionService, FacilityService] })
 export class AppModule {}

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DbService } from './db.service';
 import { AppError } from './errors';
+import { FacilityService } from './facility.service';
 
 // Real patients in the queue ("live" data mode). The demo builds its patients in the browser from a simulation;
 // a visit is the server-side record that lets a real person — registered at a counter, checked in from a booking,
@@ -37,7 +38,8 @@ const today = () => new Date().toLocaleDateString('sv-SE');
 
 @Injectable()
 export class VisitsService {
-  constructor(private readonly store: DbService) {}
+  private readonly facility: FacilityService;
+  constructor(private readonly store: DbService, facility?: FacilityService) { this.facility = facility ?? new FacilityService(store); }
 
   list(): Visit[] {
     return (this.store.db.prepare('SELECT * FROM visits WHERE day = ? ORDER BY arrival, id').all(today()) as Row[]).map(toVisit);
@@ -68,7 +70,10 @@ export class VisitsService {
     if (!minuteOk(input.at)) throw bad('เวลาไม่ถูกต้อง');
     let clinicKey: string | undefined, dept: string, prefix: string;
     if (flow === 'opd') {
-      if (typeof input.clinicKey !== 'string' || !/^opd-\d-\d{1,2}$/.test(input.clinicKey)) throw bad('ระบุคลินิก');
+      // A department of the facility model that is open (switched on, not retired).
+      if (typeof input.clinicKey !== 'string' || !this.facility.knowsDepartment(input.clinicKey)) throw bad('ระบุคลินิก');
+      if (!this.facility.isClinic(input.clinicKey, 'walkIn') && !this.facility.isClinic(input.clinicKey, 'booking') && !this.facility.isClinic(input.clinicKey, 'appointments'))
+        throw bad('คลินิกนี้ปิดให้บริการอยู่');
       if (typeof input.dept !== 'string' || !input.dept.trim() || input.dept.length > 30) throw bad('ระบุชื่อแผนก');
       if (typeof input.prefix !== 'string' || !/^[A-Z]{1,2}$/.test(input.prefix)) throw bad('อักษรนำหน้าคิวไม่ถูกต้อง');
       clinicKey = input.clinicKey; dept = input.dept.trim(); prefix = input.prefix;
