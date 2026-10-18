@@ -53,6 +53,7 @@ const SIGN_IN = { ...fail('AUTH_REQUIRED', 'กรุณาเข้าสู่
 // department's id (the sample's 'er') covers ER patients.
 export const covers = (u: User, clinic: string | undefined) => u.role === 'admin' || !u.clinics?.length || (!!clinic && u.clinics.includes(clinic));
 const OUTSIDE = () => new AppError('FORBIDDEN', 'รายการนี้อยู่นอกแผนกที่คุณรับผิดชอบ');
+const CONSOLES = ['supervisor', 'porter']; // queue "stations" that are screens, not service points
 function mustCover(u: User, clinic: string | undefined) { if (clinic !== undefined && !covers(u, clinic)) throw OUTSIDE(); }
 const actor = (u: User) => ({ actorType: 'staff' as const, actorId: `user:${u.id}` });
 // Signed-in staff sockets share this room. Everyone else (TV boards, patient pages, anyone who opens a socket) gets the
@@ -385,11 +386,27 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
     if (cmd?.action === 'report') cmd = { ...cmd, by: undefined };
     else if (!me) return SIGN_IN;
     else if (!may(me, 'staff')) return DENIED;
+    else if (this.outsideScope(me, cmd)) return fail('FORBIDDEN', OUTSIDE().message);
     // The audit trail names the signed-in user (not a name typed on the screen); the assistant's automatic moves stay "ระบบ".
     else cmd = { ...cmd, by: cmd.by === SYSTEM_BY ? SYSTEM_BY : me.name };
     const res = this.queue.apply(cmd);
     if (res.ok) this.publishQueueEvent(res.event);
     return res.ok ? { ok: true } : { ok: false, reason: res.reason };
+  }
+  // Department scope of a queue action: the station it is done at (a staff member limited to medicine calls, holds and
+  // opens only medicine's rooms / counters) and, for a move, where the patient goes. Staff with a list always act at a
+  // station of the model; only the supervisor console and the porters' desk ('supervisor', 'porter') stand for no
+  // station — from there a move still needs a covered target, and taking a help request is open to them. A real
+  // patient (live mode) moved into a clinic must also be that clinic's patient.
+  private outsideScope(me: User, cmd: QueueCommand): boolean {
+    if (me.role === 'admin' || !me.clinics?.length) return false;
+    const at = this.facility.scopeOf(cmd.station);
+    if (at ? !covers(me, at) : !(cmd.action === 'resolve' || (cmd.action === 'transfer' && CONSOLES.includes(cmd.station)))) return true;
+    if (cmd.action !== 'transfer') return false;
+    const to = this.facility.scopeOf(cmd.target);
+    if (!to || !covers(me, to)) return true;
+    const visit = this.visits.get(cmd.patientId);
+    return !!visit && this.facility.departmentOf(cmd.target)?.type === 'clinic' && !covers(me, visit.flow === 'er' ? this.facility.erDepartment()?.id : visit.clinicKey);
   }
   // ---- Facility model (docs/FACILITY-MODEL-DESIGN.md): every screen reads it; administrators edit a draft, check its
   // impact and publish it as a new version (or roll back to an earlier one).
@@ -509,6 +526,9 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
     if (!me) return SIGN_IN;
     const hospitalWide = p.system !== undefined || p.hours !== undefined || p.demoOffset !== undefined || p.layout !== undefined || p.dataMode !== undefined;
     if (!may(me, hospitalWide ? 'admin' : 'supervisor')) return { ok: false, reason: hospitalWide ? 'เฉพาะผู้ดูแลระบบเปลี่ยนค่าของทั้งโรงพยาบาลได้' : 'เฉพาะหัวหน้างานขึ้นไปเปลี่ยนการตั้งค่าได้' };
+    // A supervisor limited to some departments sets only their groups' and stations' rules.
+    const keys = [...Object.keys(p.groups ?? {}), ...Object.keys(p.stations ?? {})];
+    if (keys.some((k) => { const d = this.facility.scopeOf(k); return !d || !covers(me, d); }) && me.role !== 'admin' && me.clinics?.length) return fail('FORBIDDEN', OUTSIDE().message);
     const res = this.queue.setSettings({ ...cmd, by: me.name });
     if (res.ok) this.audit.record({ ...actor(me), action: 'settings.update', targetType: 'settings', targetId: cmd.scope, reason: cmd.summary, meta: { reset: res.reset } });
     // The old departments page still edits the layout: the facility model follows it until it is edited directly.

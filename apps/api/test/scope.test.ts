@@ -100,3 +100,50 @@ test('a changed account reaches screens already open: new clinics at once, suspe
   const sent = (med as unknown as { sent: { event: string; data: unknown }[] }).sent.filter((e) => e.event === 'auth:me');
   assert.equal(sent.at(-1)!.data, null);
 });
+
+test('queue: staff call, hold, open and move only at their departments’ stations; supervisors set only their groups', () => {
+  const { api, admin, med, all } = setup();
+  const ix = api.facility.index(), pointIn = (d: string, kind = 'room') => [...ix.point.values()].find((p) => { const g = ix.group.get(p.groupId)!; return g.departmentId === d && g.pointKind === kind && !p.retiredAt; })!.id;
+  const medRoom = pointIn(MED), medRoom2 = [...ix.point.values()].filter((p) => ix.group.get(p.groupId)!.departmentId === MED && ix.group.get(p.groupId)!.pointKind === 'room')[1].id, eyeRoom = pointIn(EYE);
+  const q = (u: typeof med, cmd: Record<string, unknown>) => api.gateway.queueCommand(u, { at: 600, patientId: 'p-0001', step: 3, ...cmd } as never) as R;
+  assert.equal(q(med, { station: medRoom, action: 'call' }).ok, true, 'their own room');
+  for (const action of ['open', 'call', 'hold', 'pause', 'done']) assert.equal(q(med, { station: eyeRoom, action }).code, 'FORBIDDEN', `${action} at another department`);
+  assert.match(q(med, { station: eyeRoom, action: 'call' }).reason!, /นอกแผนก/);
+  assert.equal(q(med, { station: 'made-up', action: 'call' }).code, 'FORBIDDEN', 'a station the model does not have');
+  assert.equal(q(med, { station: 'supervisor', action: 'call' }).code, 'FORBIDDEN', 'the consoles only move and take requests');
+  assert.equal(q(med, { station: medRoom, action: 'transfer', target: medRoom2, position: 'keep' }).ok, true, 'within the department');
+  assert.equal(q(med, { station: medRoom, action: 'transfer', target: eyeRoom, position: 'keep' }).code, 'FORBIDDEN', 'into another department');
+  assert.equal(q(med, { station: eyeRoom, action: 'transfer', target: medRoom, position: 'keep' }).code, 'FORBIDDEN', 'out of another department');
+  assert.equal(q(med, { station: 'supervisor', action: 'transfer', target: eyeRoom, position: 'keep', step: 4 }).code, 'FORBIDDEN');
+  assert.equal(q(med, { station: 'supervisor', action: 'transfer', target: medRoom2, position: 'keep', step: 4 }).ok, true);
+  for (const u of [all, admin]) assert.equal(q(u, { station: eyeRoom, action: 'call', patientId: 'p-0002' }).ok, true, 'no list / administrator: everywhere');
+  // A real patient of the eye clinic cannot be pulled into a medicine room by medicine staff.
+  const v = api.gateway.enterVisit(all, { flow: 'opd', clinicKey: EYE, dept: 'ตา', prefix: 'H', at: 520, key: key() }) as R & { visit?: { id: string } };
+  assert.equal(q(med, { station: 'supervisor', action: 'transfer', target: medRoom, position: 'keep', patientId: v.visit!.id, step: 0 }).code, 'FORBIDDEN');
+  // Settings: a supervisor of medicine sets medicine's groups and stations, not the eye clinic's.
+  const made = api.gateway.saveUser(admin, { username: 'med.sup', name: 'ซี', role: 'supervisor', password: 'password-3', clinics: [MED] }) as R;
+  assert.equal(made.ok, true, made.reason);
+  const sup = signIn(api, 'med.sup', 'password-3');
+  const set = (patch: Record<string, unknown>) => api.gateway.queueSettings(sup, { patch, at: 600, scope: 'x', summary: 'ทดสอบ' } as never) as R;
+  const medGroup = ix.point.get(medRoom)!.groupId, eyeGroup = ix.point.get(eyeRoom)!.groupId;
+  assert.equal(set({ groups: { [medGroup]: { mode: 'suggest' } } }).ok, true);
+  assert.equal(set({ stations: { [medRoom]: { cap: 3 } } }).ok, true);
+  assert.equal(set({ groups: { [eyeGroup]: { mode: 'suggest' } } }).code, 'FORBIDDEN');
+  assert.equal(set({ stations: { [medRoom]: { cap: 2 }, [eyeRoom]: { cap: 3 } } }).code, 'FORBIDDEN', 'one outside refuses all');
+  assert.equal(api.queue.getSettings().stations[medRoom]?.cap, 3);
+});
+
+test('queue: the ER key covers every part of the ER (triage too); a shared service can be an account’s department', () => {
+  const { api, admin } = setup();
+  const ix = api.facility.index(), pointOf = (group: string) => [...ix.point.values()].find((p) => p.groupId === group && !p.retiredAt)!.id;
+  const triage = pointOf('counter:triage'), pharmacy = pointOf('counter:pharmacy'), medRoom = [...ix.point.values()].find((p) => ix.group.get(p.groupId)!.departmentId === MED && ix.group.get(p.groupId)!.pointKind === 'room')!.id;
+  api.gateway.saveUser(admin, { username: 'er.c', name: 'ซี', role: 'staff', password: 'password-4', clinics: ['er'] });
+  assert.equal((api.gateway.saveUser(admin, { username: 'rx.d', name: 'ดี', role: 'staff', password: 'password-5', clinics: ['opd-1-1'] }) as R).ok, true, 'pharmacy is a department too');
+  const er = signIn(api, 'er.c', 'password-4'), rx = signIn(api, 'rx.d', 'password-5');
+  let n = 10; // a new patient each time: one already called elsewhere cannot be called again
+  const q = (u: typeof er, station: string) => api.gateway.queueCommand(u, { at: 600, station, action: 'call', patientId: `p-00${++n}`, step: 1 } as never) as R;
+  assert.equal(q(er, triage).ok, true, 'ER staff at triage');
+  assert.equal(q(er, pharmacy).code, 'FORBIDDEN');
+  assert.equal(q(rx, pharmacy).ok, true, 'pharmacy staff at the pharmacy');
+  assert.equal(q(rx, medRoom).code, 'FORBIDDEN');
+});

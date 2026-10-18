@@ -8,7 +8,7 @@ import { apiSocket } from './api-url';
 import { NO_SHOW, generatePatients, livePatients, opdClinics, patientAt, patientToken, servicePlace, stationSpot, type LiveVisit, type Patient, type PatientState, type StepKind } from './patients';
 import { doctorName, findRoom, isOff, layoutRevision, roomDutyAt, setServiceHours, waitingSpot, type Layout, type Spot } from './scene-data';
 import { setDuty } from './doctor-duty';
-import { buildingShort, fDepartment, fDepartments, fGroup, fGroups, onFacility, pointFloor, pointLabel, pointsOf, storeFacility } from './facility';
+import { buildingShort, erDepartment, fDepartment, fDepartments, fGroup, fGroups, onFacility, pointFloor, pointLabel, pointsOf, storeFacility } from './facility';
 import { useFacility } from './use-facility';
 
 const DAY = 24*60;
@@ -405,6 +405,10 @@ export type Role = 'admin'|'supervisor'|'staff';
 export type AuthUser = {id:number; username:string; name:string; role:Role; active:boolean; lastLogin?:string; clinics?:string[]};
 // Same rule as the server (apps/api/src/flow.gateway.ts `covers`): administrators and accounts without a list cover all.
 export const covers = (u:AuthUser|null|undefined, clinic:string) => !u || u.role==='admin' || !u.clinics?.length || u.clinics.includes(clinic);
+// A queue station or service group the account may work at (its department) — the server refuses the rest.
+// Every part of the ER (triage, resuscitation) is covered by the ER's key — as on the server (FacilityService.scopeOf).
+export const coversGroup = (u:AuthUser|null|undefined, group:string) => { const d = fDepartment(fGroup(group)?.departmentId);
+  return covers(u,d?.type==='emergency' ? erDepartment()?.id ?? d.id : d?.id ?? ''); };
 export const roleText:Record<Role,string> = {admin:'ผู้ดูแลระบบ',supervisor:'หัวหน้างาน',staff:'เจ้าหน้าที่'};
 const roleRank:Record<Role,number> = {staff:1,supervisor:2,admin:3};
 export const canDo = (u:AuthUser|null|undefined, role:Role) => !!u && roleRank[u.role]>=roleRank[role];

@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Archive, BellRing, Building2, CalendarClock, Clock, Database, FlaskConical, History, KeyRound, Layers, MessageCircle, Minus, Navigation, Plus, RotateCcw, ScrollText, Search, Smile, Sparkles, Stethoscope, UserCog, UserRound, type LucideIcon } from 'lucide-react';
 import { fmtMin, opdClinics } from '../../lib/patients';
 import { DEFAULT_HOURS } from '../../lib/scene-data';
-import { buildingShort, erDepartment, fDepartment, fGroup } from '../../lib/facility';
+import { buildingShort, erDepartment, fDepartment, fDepartments, fGroup } from '../../lib/facility';
 import { BookingAdminPane } from './Booking';
 import { ApptAdminPane } from './Appointments';
 import { DoctorsPane } from './Doctors';
@@ -14,7 +14,7 @@ import { LineOaPane } from './LineOaPane';
 import { RetentionPane } from './RetentionPane';
 import { ReceptionAdminPane } from './ReceptionAdmin';
 import { FacilityPane } from './FacilityPane';
-import { DEFAULT_RULES, canDo, isLive, roleText, type AuthUser, type QueueSync, type Role, type UserInput, modeText, queueGroups, rulesFor, scopeName, type AssistMode, type QueueEvent, type QueueGroup, type QueueRules, type QueueSettings, type SettingsPatch } from '../../lib/queue';
+import { DEFAULT_RULES, canDo, isLive, roleText, type AuthUser, type QueueSync, type Role, type UserInput, modeText, queueGroups, coversGroup, rulesFor, scopeName, type AssistMode, type QueueEvent, type QueueGroup, type QueueRules, type QueueSettings, type SettingsPatch } from '../../lib/queue';
 import { Select } from '../Select';
 
 // Settings, one topic at a time (left menu). Rules read as sentences with − / + steppers; several changes are saved
@@ -87,7 +87,7 @@ export default function SettingsPage({settings,save,events,minute,timeNote,focus
     {pane==='facility' && <FacilityPane api={sync?.api} online={!!sync?.online} canEdit={user?.role==='admin'}
      head={<PaneHead icon="facility" title="ผังโรงพยาบาล" scope="ทุกหน้าจอ">อาคาร ชั้น แผนก กลุ่มบริการ และห้อง/ช่อง/เตียง ของทั้งโรงพยาบาล · แก้เป็นร่าง ดูผลกระทบ แล้วเผยแพร่ครั้งเดียว — แผนที่ คิว จอทีวี จอง/นัด และตัวจำลองใช้ผังนี้</PaneHead>}/>}
     {pane==='assist' && <AssistPane settings={settings} commit={commit}/>}
-    {pane==='groups' && <GroupsPane settings={settings} commit={commit} focus={focusGroup ?? null}/>}
+    {pane==='groups' && <GroupsPane settings={settings} commit={commit} focus={focusGroup ?? null} user={user}/>}
     {pane==='history' && <HistoryPane history={history}/>}
     {pane==='test' && <TestPane settings={settings} commit={commit}/>}
     {pane==='data' && <DataPane settings={settings} commit={commit} linking={sync ? {on:!!sync.features.phase2.accountLinking,set:async on=>{
@@ -191,8 +191,14 @@ function AssistPane({settings,commit}:{settings:QueueSettings;commit:Commit}) {
  </section>;
 }
 
-function GroupsPane({settings,commit,focus}:{settings:QueueSettings;commit:Commit;focus:string|null}) {
- const groups = queueGroups(); // cached per layout revision
+// A supervisor limited to some departments sees (and the server takes) only their groups.
+function GroupsPane({settings,commit,focus,user}:{settings:QueueSettings;commit:Commit;focus:string|null;user:AuthUser|null}) {
+ const all = queueGroups(); // cached per layout revision
+ const groups = useMemo(()=>all.filter(g=>coversGroup(user,g.id)),[all,user]);
+ if (!groups.length) return <section className="setCard"><PaneHead icon="groups" title="ปรับรายแผนก" scope="—">ไม่มีแผนกหรือจุดบริการในแผนกที่คุณรับผิดชอบ · ให้ผู้ดูแลระบบตรวจแผนกในบัญชีของคุณ (ตั้งค่า → ผู้ใช้งาน)</PaneHead></section>;
+ return <GroupRules settings={settings} commit={commit} focus={focus && groups.some(g=>g.id===focus) ? focus : null} groups={groups}/>;
+}
+function GroupRules({settings,commit,focus,groups}:{settings:QueueSettings;commit:Commit;focus:string|null;groups:QueueGroup[]}) {
  const [sel,setSel] = useState<string>(focus ?? groups[0].id);
  const [q,setQ] = useState('');
  const [only,setOnly] = useState(false);
@@ -319,9 +325,12 @@ const ROLE_LIST:Role[] = ['staff','supervisor','admin'];
 const clinicLabel = (k:string) => fDepartment(k)?.name ?? k;
 const scopeText = (u:AuthUser) => u.role==='admin' || !u.clinics?.length ? 'ทุกแผนก' : u.clinics.length<=2 ? u.clinics.map(clinicLabel).join(', ') : `${u.clinics.length} แผนก`;
 function ClinicScope({value,onChange}:{value:string[];onChange:(v:string[])=>void}) {
- const options = useMemo(()=>{ const er = erDepartment(); return [...opdClinics().map(c=>({key:c.key,label:c.dept,sub:`${buildingShort(c.buildingId)} ชั้น ${c.level}`})),...(er ? [{key:er.id,label:er.name,sub:'ER'}] : [])]; },[]);
+ // Clinics, the ER, and the shared services with a queue (pharmacy, cashier, lab…) — their counters' staff can be limited too.
+ const options = useMemo(()=>{ const er = erDepartment(), shared = new Set(queueGroups().map(g=>fGroup(g.id)?.departmentId));
+  return [...opdClinics().map(c=>({key:c.key,label:c.dept,sub:`${buildingShort(c.buildingId)} ชั้น ${c.level}`})),...(er ? [{key:er.id,label:er.name,sub:'ER'}] : []),
+   ...fDepartments().filter(d=>d.type!=='clinic' && d.type!=='emergency' && shared.has(d.id)).map(d=>({key:d.id,label:d.name,sub:'จุดบริการร่วม'}))]; },[]);
  const flip = (k:string) => onChange(value.includes(k) ? value.filter(x=>x!==k) : [...value,k]);
- return <div className="addField"><span>แผนกที่รับผิดชอบ <small className="muted">{value.length ? `${value.length} แผนก — จอง นัด เช็กอิน และรับผู้ป่วยได้เฉพาะแผนกเหล่านี้` : 'ไม่เลือก = ทุกแผนก (เช่น เวชระเบียน เคาน์เตอร์กลาง บัญชีตู้เช็กอิน)'}</small></span>
+ return <div className="addField"><span>แผนกที่รับผิดชอบ <small className="muted">{value.length ? `${value.length} แผนก — จอง นัด เช็กอิน รับผู้ป่วย และเรียก/ย้ายคิวได้เฉพาะแผนกเหล่านี้` : 'ไม่เลือก = ทุกแผนก (เช่น เวชระเบียน เคาน์เตอร์กลาง บัญชีตู้เช็กอิน)'}</small></span>
   <div className="scopePick">{options.map(o=><label key={o.key} className={value.includes(o.key)?'on':''}><input type="checkbox" checked={value.includes(o.key)} onChange={()=>flip(o.key)}/><b>{o.label}</b><small>{o.sub}</small></label>)}
    {value.length>0 && <button type="button" className="btn ghost sm" onClick={()=>onChange([])}>ล้าง (ทุกแผนก)</button>}</div></div>;
 }

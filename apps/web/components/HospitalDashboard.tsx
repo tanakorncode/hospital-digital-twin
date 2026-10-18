@@ -7,7 +7,7 @@ const dayOfDuty = (d:string) => new Date(`${d}T12:00:00`).toLocaleDateString('th
 import { findDepts, findDoctors, isOff, type DeptPlace, kiosks, kioskStatusLabel, type Kiosk, DENSITY_HIGH, DENSITY_LOW, doctorName, dutyLabel, findRoom, floorDutyAt, roomDutyAt, HOURS, HOUR_END, HOUR_START, REF_HOUR, buildingDensityAt, buildingStatsAt, buildings, buildingStats, clampHour, crowdFactor, demoFlows, densityColor, densityLevel, floorDepartments, fmtHour, isRealMode, setRealCounts, hourlySeries, parkingLots, peakWindow, personTypes, roads, scopeAt, servicePointAt, servicePoints, type PersonType, type Scope, type ServicePoint } from '../lib/scene-data';
 import { useLiveFeed, type LiveStatus } from '../lib/live-feed';
 import { realCounts } from '../lib/live-counts';
-import { SYSTEM_BY, allStations, canDo, openStations, useTicket, applyQueueEvents, basePatients as startingPatients, isLive, queueAssist, rulesFor, suggestionText, useQueueEvents, worldKey } from '../lib/queue';
+import { SYSTEM_BY, allStations, canDo, coversGroup, openStations, useTicket, applyQueueEvents, basePatients as startingPatients, isLive, queueAssist, rulesFor, suggestionText, useQueueEvents, worldKey } from '../lib/queue';
 import { demoOffset } from '../lib/use-demo-clock';
 import { LONG_WAIT, alertsAt, bottlenecksAt, etaOf, fmtDur, fmtMin, generatePatients, knownUntil, placeText, patientToken, kioskAt, maskHN, patientAt, searchPatients, statusColor as patientColor, statusText, stepText, type Patient, type StepKind } from '../lib/patients';
 import { LoginScreen, UserChip } from './LoginScreen';
@@ -367,7 +367,8 @@ export default function HospitalDashboard() {
  const autoBusy = useRef(false);
  useEffect(()=>{
   if (!following || autoBusy.current || (queueSync.online && !canDo(queueSync.user,'staff'))) return; // online: only a signed-in screen may act
-  const todo = assist.suggestions.filter(sg=>rulesFor(queueSync.settings,sg.group).mode==='auto');
+  // A screen signed in for some departments carries out only their moves (the others are left to their screens).
+  const todo = assist.suggestions.filter(sg=>rulesFor(queueSync.settings,sg.group).mode==='auto' && coversGroup(queueSync.user,sg.group) && coversGroup(queueSync.user,sg.to.group));
   if (!todo.length) return;
   autoBusy.current = true;
   void (async ()=>{

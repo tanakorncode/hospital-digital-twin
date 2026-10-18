@@ -105,6 +105,19 @@ export class FacilityService {
   }
   // Known department (also when switched off — existing records keep their department).
   knowsDepartment(id: unknown): boolean { return !!this.department(id); }
+  // The department a queue station (a point id) or a service group belongs to; undefined = neither (the supervisor
+  // console, the porters' desk — or an id the model does not have).
+  departmentOf(id: unknown): Department | undefined {
+    if (typeof id !== 'string') return undefined;
+    const p = this.ix.point.get(id), g = this.ix.group.get(p ? p.groupId : id);
+    return g ? this.ix.department.get(g.departmentId) : undefined;
+  }
+  // The staff-scope key that covers a station / group: its department — every part of the ER (triage, resuscitation)
+  // is covered by the ER's key, the one an account's "แผนกที่รับผิดชอบ" offers.
+  scopeOf(id: unknown): string | undefined {
+    const d = this.departmentOf(id);
+    return d?.type === 'emergency' ? this.erDepartment()?.id ?? d.id : d?.id;
+  }
   // A doctor's room of a department, by room reference ("opd-201" or a point id), in use.
   roomOf(departmentId: string, ref: unknown): ServicePoint | undefined {
     if (typeof ref !== 'string') return undefined;

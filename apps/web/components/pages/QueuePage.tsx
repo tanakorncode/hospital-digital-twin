@@ -10,7 +10,7 @@ import QRCode from 'qrcode';
 import { ArrowLeftRight, BellRing, CalendarCheck, CalendarClock, Camera, Link2, Coffee, Copy, Hand, Lock, LockOpen, MapPin, QrCode, Sparkles, CheckCircle2, ChevronDown, ChevronRight, ClipboardList, ExternalLink, HeartPulse, LayoutList, List, Map as MapIcon, Megaphone, Pause, PhoneCall, Pill, Play, Repeat, ScanLine, Settings2, Siren, SkipForward, Stethoscope, TestTube, UserCheck, Volume2, VolumeX, Wallet, X } from 'lucide-react';
 import { LONG_WAIT, NO_SHOW, fmtDur, fmtMin, maskHN, opdClinics, servicePlace, patientAt, patientToken, placeText, statusColor, statusText, stepText, triageLevels, type Patient, type PatientState, type PatientStatus, type StepKind } from '../../lib/patients';
 import { erBoard, serviceNote } from '../../lib/ops';
-import { DEFAULT_POLICY, SYSTEM_BY, actionText, openReports, groupName, moveNote, sameZone, allStations, everyStation, announce, capFor, healthText, modeText, rulesFor, scopeName, suggestionText, type AssistView, type Suggestion, groupOf, openStations, priorityOf, stationById, stationDoctor, stationQueue, stepGroup, type PriorityPolicy, type QueueCommand, type QueueEvent, type QueueSettings, type SettingsPatch, type Station, type AuthUser, type QueueSync, useTicket, canDo, isLive } from '../../lib/queue';
+import { DEFAULT_POLICY, SYSTEM_BY, actionText, openReports, groupName, moveNote, sameZone, allStations, everyStation, announce, capFor, healthText, modeText, rulesFor, scopeName, suggestionText, type AssistView, type Suggestion, groupOf, openStations, priorityOf, stationById, stationDoctor, stationQueue, stepGroup, coversGroup, type PriorityPolicy, type QueueCommand, type QueueEvent, type QueueSettings, type SettingsPatch, type Station, type AuthUser, type QueueSync, useTicket, canDo, isLive } from '../../lib/queue';
 
 import { DEFAULT_HOURS, bandIndex, buildings, floorRooms, layoutRevision, roomArea, placeName, waitingSeats, deptArea } from '../../lib/scene-data';
 import { buildingShort, erDepartment, fGroup, pointsOf } from '../../lib/facility';
@@ -121,7 +121,9 @@ function waitingByGroup(patients:Patient[], m:number) {
 }
 type Msg = {text:string; bad?:boolean; undo?:{label:string; run:()=>void}};
 function StationConsole({patients,minute,queue,onOpen,assist,onOpenSettings}:{patients:Patient[];minute:number;queue:QueueControl;onOpen:(id:string)=>void;assist:AssistView;onOpenSettings:(group:string|null)=>void}) {
- const stations = allStations(); // cached per layout revision
+ const every = allStations(); // cached per layout revision
+ // Only the stations of the account's departments (the server refuses the rest).
+ const stations = useMemo(()=>every.filter(s=>coversGroup(queue.user,s.group)),[every,queue.user]);
  const [stationId,setStationId] = useState('');
  const [prevStation,setPrevStation] = useState(''); // to go back when "change station" was pressed by mistake
  const [sound,setSound] = useState(true);
@@ -145,7 +147,7 @@ function StationConsole({patients,minute,queue,onOpen,assist,onOpenSettings}:{pa
   try { setPolicy({...DEFAULT_POLICY,...JSON.parse(loadPref('hdt.priorityPolicy','{}'))}); } catch { /* defaults */ } },[]);
  const savePolicy = (p:PriorityPolicy) => { setPolicy(p); savePref('hdt.priorityPolicy',JSON.stringify(p)); };
  useEffect(()=>{ if (!msg) return; const t = setTimeout(()=>setMsg(null),msg.undo?8000:4000); return ()=>clearTimeout(t); },[msg]);
- const st = stationById(stationId);
+ const saved = stationById(stationId), st = saved && coversGroup(queue.user,saved.group) ? saved : undefined;
  const m = minute;
  const q = useMemo(()=>st ? stationQueue(patients,st,m,policy,queue.events) : null,[patients,st,m,policy,queue.events]);
  const isOpen = useMemo(()=>{ if (!st) return false; const last = [...queue.events].filter(e=>e.station===st.id && (e.action==='open'||e.action==='close')).sort((a,b)=>a.at-b.at).at(-1); return last?.action==='open'; },[queue.events,st]);
@@ -236,7 +238,8 @@ function StationConsole({patients,minute,queue,onOpen,assist,onOpenSettings}:{pa
  };
 
  if (!st) return <section className="panel"><h3>เลือกจุดบริการของคุณ</h3><p className="muted spIntro">เลือกครั้งเดียว เครื่องนี้จะจำไว้ เปิดครั้งหน้าเข้าจุดเดิมทันที</p>
-  {stationId && (()=>{ const was = everyStation().find(x=>x.id===stationId); return was && <p className="unitNote">{was.label} ถูกปิดใช้งานในหน้าตั้งค่า (แผนกและจุดบริการ) · เลือกจุดที่เปิดอยู่</p>; })()}
+  {stationId && (()=>{ const was = everyStation().find(x=>x.id===stationId); return was && <p className="unitNote">{saved ? `${was.label} อยู่นอกแผนกที่คุณรับผิดชอบ · เลือกจุดในแผนกของคุณ` : `${was.label} ถูกปิดใช้งานในหน้าตั้งค่า (แผนกและจุดบริการ) · เลือกจุดที่เปิดอยู่`}</p>; })()}
+  {!stations.length && <p className="unitNote">ไม่มีจุดบริการที่เปิดอยู่ในแผนกที่คุณรับผิดชอบ · ให้ผู้ดูแลระบบตรวจแผนกในบัญชีของคุณ (ตั้งค่า → ผู้ใช้งาน)</p>}
   <StationPicker stations={stations} patients={patients} minute={m} openIds={openIds} current={stationById(prevStation)} onCancel={()=>setStationId(prevStation)}
    onPick={id=>{ setStationId(id); savePref('hdt.station',id); }}/></section>;
  const elapsed = mode==='calling' && lastCall!==undefined ? m-lastCall : cur ? m-cur.step.called : 0;
@@ -401,7 +404,7 @@ function StationConsole({patients,minute,queue,onOpen,assist,onOpenSettings}:{pa
     <a className="tvLink" href={`/tv?dept=${encodeURIComponent(st.clinicKey ? st.section.split(' · ').slice(-1)[0] : st.section)}`} target="_blank" rel="noreferrer">จอพื้นที่รอ <ExternalLink size={12}/></a>
     {hasFloorTv(st) && <a className="tvLink" href={`/tv?floor=${st.level}`} target="_blank" rel="noreferrer">จอรวมชั้น {st.level} <ExternalLink size={12}/></a>}</span>
   </section>
-  {moving && <MoveDialog s={moving} from={st} patients={patients} minute={m} openIds={openIds} assist={assist} onClose={()=>setMoveFor(null)} onMove={(t,pos,r)=>void move(moving,t,pos,r)}/>}
+  {moving && <MoveDialog s={moving} from={st} user={queue.user} patients={patients} minute={m} openIds={openIds} assist={assist} onClose={()=>setMoveFor(null)} onMove={(t,pos,r)=>void move(moving,t,pos,r)}/>}
   {camera && <CameraScanner onResult={t=>{ setCamera(false); findScanned(t); }} onClose={()=>setCamera(false)}/>}
  </div>;
 }
@@ -409,7 +412,7 @@ function StationConsole({patients,minute,queue,onOpen,assist,onOpenSettings}:{pa
 // Move / refer a patient: other rooms of the same clinic first, then other clinics (or other counters of the same
 // service). Rooms without a doctor on duty cannot take patients. Rooms nobody runs on screen are served by the
 // simulator in the demo.
-function MoveDialog({s:one,list,from,atFrom=true,patients,minute,openIds,assist,onClose,onMove}:{s?:PatientState;list?:PatientState[];from:Station;atFrom?:boolean;patients:Patient[];minute:number;openIds:Set<string>;assist:AssistView;onClose:()=>void;onMove:(target:string,position:'keep'|'end',reason?:string)=>void}) {
+function MoveDialog({s:one,list,from,atFrom=true,user,patients,minute,openIds,assist,onClose,onMove}:{s?:PatientState;list?:PatientState[];from:Station;atFrom?:boolean;user?:AuthUser|null;patients:Patient[];minute:number;openIds:Set<string>;assist:AssistView;onClose:()=>void;onMove:(target:string,position:'keep'|'end',reason?:string)=>void}) {
  const m = Math.floor(minute);
  const many = list ?? (one ? [one] : []), s = many[0], label = many.length>1 ? `${many.length} คิว` : s.p.queue; // one patient, or several from the same queue
  const [q,setQ] = useState('');
@@ -419,7 +422,8 @@ function MoveDialog({s:one,list,from,atFrom=true,patients,minute,openIds,assist,
  const waiting = useMemo(()=>waitingByGroup(patients,m),[patients,m]);
  useEffect(()=>{ const k = (e:KeyboardEvent)=>{ if (e.key==='Escape') onClose(); }; window.addEventListener('keydown',k); return ()=>window.removeEventListener('keydown',k); },[onClose]);
  // atFrom: the patients are at `from` itself (else `from` only stands for their queue, and it is a valid target too).
- const all = allStations().filter(t=>(!atFrom || t.id!==from.id) && t.kinds.some(k=>from.kinds.includes(k)));
+ // Only into the account's departments (a patient for another department: that department, or a supervisor of every department, moves them).
+ const all = allStations().filter(t=>(!atFrom || t.id!==from.id) && t.kinds.some(k=>from.kinds.includes(k)) && coversGroup(user,t.group));
  const terms = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
  const shown = all.filter(t=>terms.every(w=>norm(`${t.label} ${t.section} ${stationDoctor(t,m)?.name ?? ''}`).includes(norm(w))));
  const same = shown.filter(t=>t.group===from.group), other = shown.filter(t=>t.group!==from.group);
@@ -709,8 +713,9 @@ function OverviewTab({patients,m,onOpen,queue,assist,onOpenSettings,onOpenPlace}
  const moveMany = async (list:PatientState[], target:string, position:'keep'|'end'='keep', reason?:string) => {
   if (!queue.canAct) return;
   let ok = 0;
-  for (const s of list) { const r = await queue.send({action:'transfer',at:m,station:'supervisor',patientId:s.p.id,step:s.index,target,position,reason,by:loadPref('hdt.operator','') || undefined}); if (r.ok) ok++; }
-  setSel(new Set()); setBulkOpen(false); setNote(`ย้าย ${ok} คิวไป ${stationById(target)?.label} แล้ว`);
+  let why = '';
+  for (const s of list) { const r = await queue.send({action:'transfer',at:m,station:'supervisor',patientId:s.p.id,step:s.index,target,position,reason,by:loadPref('hdt.operator','') || undefined}); if (r.ok) ok++; else why = r.reason ?? why; }
+  setSel(new Set()); setBulkOpen(false); setNote(`ย้าย ${ok} คิวไป ${stationById(target)?.label} แล้ว${ok<list.length ? ` · ย้ายไม่ได้ ${list.length-ok} คิว${why ? ` (${why})` : ''}` : ''}`);
  };
  const log = [...queue.events].sort((a,b)=>b.at-a.at).filter(e=>{ const t = logQ.trim(); if (!t) return true; const p = e.patientId ? patients.find(x=>x.id===e.patientId) : undefined;
   return (p?.queue.includes(t.toUpperCase())) || (scopeName(e.station).includes(t)) || (e.reason?.includes(t)) || (e.by?.includes(t)) || actionText[e.action].includes(t); });
@@ -805,7 +810,7 @@ function OverviewTab({patients,m,onOpen,queue,assist,onOpenSettings,onOpenPlace}
    {bulkFrom ? <button className="btn" disabled={!queue.canAct} onClick={()=>setBulkOpen(true)}><ArrowLeftRight size={14}/> ย้าย / ส่งต่อ…</button>
     : <span className="bulkWarn">เลือกเฉพาะคนในคิวเดียวกัน (เช่น รอพบแพทย์แผนกเดียวกัน) เพื่อย้ายพร้อมกัน</span>}
    <button className="linkBtn dark" onClick={()=>setSel(new Set())}>ยกเลิกการเลือก</button></div>}
-  {bulkOpen && bulkFrom && <MoveDialog list={selected} from={bulkFrom} atFrom={new Set(selected.map(x=>rowStation(x)?.id)).size===1 && !!rowStation(selected[0])} patients={patients} minute={m} openIds={openIds} assist={assist} onClose={()=>setBulkOpen(false)} onMove={(t,pos,r)=>void moveMany(selected,t,pos,r)}/>}
+  {bulkOpen && bulkFrom && <MoveDialog list={selected} from={bulkFrom} user={queue.user} atFrom={new Set(selected.map(x=>rowStation(x)?.id)).size===1 && !!rowStation(selected[0])} patients={patients} minute={m} openIds={openIds} assist={assist} onClose={()=>setBulkOpen(false)} onMove={(t,pos,r)=>void moveMany(selected,t,pos,r)}/>}
   {note && <p className="consoleMsg" role="status">{note}</p>}
   <div className={'ovSplit'+(mapOpen?' withMap':'')}>
   <div className="tableWrap tall"><table className="dataTable grouped ovTable">
@@ -890,7 +895,7 @@ function AssistPanel({assist,queue,m,patients,onOpenSettings}:{assist:AssistView
  const stranded = [...assist.stranded.entries()].filter(([id])=>rulesFor(queue.settings,stationById(id)!.group).mode!=='off');
  const openIds = new Set(openStations(queue.events).map(x=>x.id));
  const problems = allStations().filter(st=>{ const h = assist.health.get(st.id); return h && (['paused','stalled','slow'].includes(h.state) || (h.state==='away' && openIds.has(st.id))); });
- const sg = assist.suggestions.filter(x=>!dismissed.has(x.key));
+ const sg = assist.suggestions.filter(x=>!dismissed.has(x.key) && coversGroup(queue.user,x.group) && coversGroup(queue.user,x.to.group));
  const pending = sg.filter(x=>rulesFor(queue.settings,x.group).mode==='suggest'), autoSoon = sg.filter(x=>rulesFor(queue.settings,x.group).mode==='auto');
  const sys = queue.events.filter(e=>e.by===SYSTEM_BY && e.action==='transfer' && m-e.at<30).slice().reverse();
  const reports = openReports(queue.events);
