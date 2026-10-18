@@ -3,8 +3,8 @@ import { useEffect, useState } from 'react';
 import { BookOpen, ChevronDown, ChevronRight } from 'lucide-react';
 
 // "หน้านี้ใช้ทำอะไร" at the top of every settings page: one line always shown; opened, what each part of the page is
-// for, the order to set things up, and the pages that are easy to confuse with this one (a click goes there). Open or
-// folded is remembered per page on this screen — open the first time, so a page seen after a long while explains itself.
+// for, the order to set things up, and the pages that are easy to confuse with this one (a click goes there). Folded
+// to the one line unless opened; a page whose guide was opened stays open on this screen.
 type Guide = { what:string; parts?:[string,string][]; steps?:string[]; related?:[string,string][]; note?:string };
 
 export const GUIDES:Record<string,Guide> = {
@@ -88,16 +88,16 @@ export const GUIDES:Record<string,Guide> = {
     related:[['audit','ดูว่าแต่ละบัญชีทำอะไร']] },
 };
 
-const KEY = 'hdt.guideFolded';
-const folded = ():string[] => { try { return JSON.parse(localStorage.getItem(KEY) ?? '[]'); } catch { return []; } };
+const KEY = 'hdt.guideOpen'; // the pages whose guide was left open
+const opened = ():string[] => { try { return JSON.parse(localStorage.getItem(KEY) ?? '[]'); } catch { return []; } };
 
 export function SettingsGuide({id,titles,onGo}:{id:string; titles:Record<string,string>; onGo:(id:string)=>void}) {
   const g = GUIDES[id];
-  const [open,setOpen] = useState(true);
-  useEffect(()=>{ setOpen(!folded().includes(id)); },[id]);
+  const [open,setOpen] = useState(false);
+  useEffect(()=>{ setOpen(opened().includes(id)); },[id]);
   if (!g) return null;
   const toggle = () => { const next = !open; setOpen(next);
-    try { const f = new Set(folded()); if (next) f.delete(id); else f.add(id); localStorage.setItem(KEY,JSON.stringify([...f])); } catch { /* not remembered */ } };
+    try { const f = new Set(opened()); if (next) f.add(id); else f.delete(id); localStorage.setItem(KEY,JSON.stringify([...f])); } catch { /* not remembered */ } };
   const related = (g.related ?? []).filter(([p])=>titles[p]); // only the pages this account can open
   const more = !!(g.parts?.length || g.steps?.length || g.note || related.length);
   return <aside className={'setGuide'+(open?' open':'')} aria-label="คำอธิบายหน้านี้">
