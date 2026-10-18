@@ -5,6 +5,7 @@ import { DbService } from '../src/db.service';
 import { FacilityService } from '../src/facility.service';
 import { indexFacility, stationLabel, validateFacility, type FacilityData } from '../src/facility-model';
 import { sampleFacility } from '../src/facility-template';
+import { FacilityController } from '../src/facility.controller';
 import { ADMIN_PASSWORD, makeApi, signIn } from './helpers';
 
 // The facility model (docs/FACILITY-MODEL-DESIGN.md): the sample hospital keeps every id the system used before, the
@@ -228,4 +229,37 @@ test('public screens get the facility without retired things; staff get all of i
   assert.equal(pub.points.some((p) => p.id === 'k-main-2'), false);
   assert.equal((api.gateway.facilityGet(admin) as R).facility!.points.some((p) => p.id === 'k-main-2'), true);
   assert.equal((api.gateway.facilityDraft({ data: {} } as never) as R).code, 'AUTH_REQUIRED');
+});
+
+test('the sample comes with how groups are set out: blood-draw booths, resuscitation bays for triage 1–2', () => {
+  const ix = indexFacility(sampleFacility());
+  assert.deepEqual(ix.group.get('counter:lab')?.options, { arrange: 'booths' });
+  assert.deepEqual(ix.group.get('beds:er-resus')?.options, { triage: [1, 2] });
+  assert.deepEqual(ix.group.get('beds:er')?.options, { triage: [3, 5] });
+  const bad = sampleFacility();
+  bad.groups.find((g) => g.id === 'beds:er')!.options = { triage: [4, 2] };
+  assert.match(validateFacility(bad).issues[0].message, /ตัวเลือกของกลุ่มบริการ/);
+});
+
+test('an installation nobody has edited follows a newer sample on the next start; an edited one keeps its facility', () => {
+  process.env.DB_PATH = ':memory:';
+  const db = new DbService();
+  const a = new FacilityService(db);
+  assert.equal(a.version(), 1);
+  // As if version 1 had been made by an older sample without the group options.
+  db.db.prepare('UPDATE facility_service_groups SET options_json = NULL').run();
+  assert.equal(new FacilityService(db).version(), 2, 're-made from the sample');
+  assert.deepEqual(new FacilityService(db).index().group.get('counter:lab')?.options, { arrange: 'booths' });
+  const c = new FacilityService(db), d = structuredClone(c.current());
+  d.departments[0].name = 'ลงทะเบียนผู้ป่วย';
+  c.publish('user:1', d);
+  db.db.prepare('UPDATE facility_service_groups SET options_json = NULL').run();
+  assert.equal(new FacilityService(db).version(), 3, 'published by hand: left as it is');
+});
+
+test('screens without a socket read the facility over REST (public view)', () => {
+  const { api } = setup();
+  const r = new FacilityController(api.facility).get();
+  assert.equal(r.facility.version, 1);
+  assert.ok(r.facility.points.some((p) => p.id === 'room:opd-201'));
 });

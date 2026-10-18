@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 import { fmtDur, fmtDurRange, generatePatients, opdClinics, patientAt } from '../lib/patients';
-import { findDepts, findDoctors, setLayout, setServiceHours } from '../lib/scene-data';
+import { findDepts, findDoctors, setServiceHours } from '../lib/scene-data';
+import { useLayout } from './facility-helpers';
 
-afterEach(() => { setLayout(undefined); setServiceHours(undefined); });
+afterEach(() => { useLayout(undefined); setServiceHours(undefined); });
 const stations = (ps: ReturnType<typeof generatePatients>) => new Set(ps.flatMap((p) => p.steps.map((s) => s.stationId).filter(Boolean)));
 
 test('the simulated day is deterministic (every screen sees the same patients)', () => {
@@ -34,7 +35,7 @@ test('patientAt gives a state during the visit and nothing before arrival', () =
 test('a room switched off in Settings gets no patients; other departments keep their queue numbers', () => {
   const before = generatePatients('demo-day');
   const room = opdClinics()[0].rooms[0];
-  setLayout({ off: [`room:${room.id}`] });
+  useLayout({ off: [`room:${room.id}`] });
   const after = generatePatients('demo-day');
   assert.ok(stations(before).has(`room:${room.id}`));
   assert.ok(!stations(after).has(`room:${room.id}`));
@@ -44,7 +45,7 @@ test('a room switched off in Settings gets no patients; other departments keep t
 
 test('a closed department has no patients and does not renumber the others', () => {
   const before = generatePatients('demo-day');
-  setLayout({ off: ['dept:ตา'] });
+  useLayout({ off: ['dept:ตา'] });
   const after = generatePatients('demo-day');
   assert.ok(before.some((p) => p.dept === 'ตา'));
   assert.ok(!after.some((p) => p.dept === 'ตา'));
@@ -53,7 +54,7 @@ test('a closed department has no patients and does not renumber the others', () 
 });
 
 test('an added department gets rooms, a new letter and patients', () => {
-  setLayout({ depts: [{ name: 'ผิวหนัง', level: 3 }] });
+  useLayout({ depts: [{ name: 'ผิวหนัง', level: 3 }] });
   const c = opdClinics().find((x) => x.dept === 'ผิวหนัง')!;
   assert.ok(c && c.rooms.length >= 1);
   assert.equal(c.letter, 'J', 'letters of existing clinics stay A–I');

@@ -10,27 +10,27 @@ import type { Layout } from './queue.service';
 // folded in. apps/web/test/facility-parity.test.ts checks the ids against the web's own lists.
 
 type FloorSpec = { level: number; desc: string; depts: string[] };
-const BUILDINGS: { id: string; name: string; kind: BuildingKind; x: number; z: number; width: number; depth: number; color: string; floors: FloorSpec[] }[] = [
-  { id: 'opd', name: 'อาคารผู้ป่วยนอก (OPD)', kind: 'opd', x: -5, z: 2.5, width: 12, depth: 8, color: '#e8eef3', floors: [
+const BUILDINGS: { id: string; name: string; shortName: string; kind: BuildingKind; x: number; z: number; width: number; depth: number; color: string; floors: FloorSpec[] }[] = [
+  { id: 'opd', name: 'อาคารผู้ป่วยนอก (OPD)', shortName: 'OPD', kind: 'opd', x: -5, z: 2.5, width: 12, depth: 8, color: '#e8eef3', floors: [
     { level: 1, desc: 'ลงทะเบียน / ห้องยา', depts: ['ลงทะเบียน', 'ห้องยา', 'การเงิน'] },
     { level: 2, desc: 'ห้องตรวจอายุรกรรม', depts: ['อายุรกรรมทั่วไป', 'อายุรกรรมเฉพาะทาง', 'คลินิกเบาหวาน'] },
     { level: 3, desc: 'แผนกตรวจรักษา', depts: ['ศัลยกรรม', 'ออร์โธปิดิกส์', 'สูติ-นรีเวช'] },
     { level: 4, desc: 'พิเศษ / คลินิกเฉพาะทาง', depts: ['คลินิกพิเศษ', 'ตา', 'หู คอ จมูก'] }] },
-  { id: 'inpatient', name: 'อาคารผู้ป่วยใน', kind: 'inpatient', x: -4, z: -10, width: 10, depth: 5.5, color: '#eef2f5', floors: [
+  { id: 'inpatient', name: 'อาคารผู้ป่วยใน', shortName: 'อาคารผู้ป่วยใน', kind: 'inpatient', x: -4, z: -10, width: 10, depth: 5.5, color: '#eef2f5', floors: [
     { level: 1, desc: 'หอผู้ป่วยรับใหม่ / อายุรกรรมรวม', depts: ['หอผู้ป่วยรับใหม่', 'อายุรกรรมรวม'] },
     { level: 2, desc: 'หอผู้ป่วยเด็ก', depts: ['กุมารเวช', 'ทารกแรกเกิด'] },
     { level: 3, desc: 'หอผู้ป่วยอายุรกรรม', depts: ['อายุรกรรมชาย', 'อายุรกรรมหญิง'] },
     { level: 4, desc: 'หอผู้ป่วยศัลยกรรม', depts: ['ศัลยกรรมชาย', 'ศัลยกรรมหญิง'] },
     { level: 5, desc: 'หอผู้ป่วยพิเศษ', depts: ['หอพิเศษ A', 'หอพิเศษ B'] }] },
-  { id: 'er', name: 'อาคารฉุกเฉิน', kind: 'er', x: 7.5, z: -12, width: 7, depth: 6, color: '#eef1f4', floors: [
+  { id: 'er', name: 'อาคารฉุกเฉิน', shortName: 'ER', kind: 'er', x: 7.5, z: -12, width: 7, depth: 6, color: '#eef1f4', floors: [
     { level: 1, desc: 'คัดแยก / ห้องฉุกเฉิน', depts: ['คัดแยก (Triage)', 'ห้องฉุกเฉิน', 'ห้องหัตถการ'] },
     { level: 2, desc: 'สังเกตอาการ', depts: ['สังเกตอาการ', 'ICU ฉุกเฉิน'] },
     { level: 3, desc: 'ห้องผ่าตัดฉุกเฉิน', depts: ['ห้องผ่าตัด', 'ห้องพักฟื้น'] }] },
-  { id: 'diagnostics', name: 'อาคารศูนย์การแพทย์', kind: 'diagnostics', x: 11, z: -3.5, width: 6.5, depth: 6.5, color: '#e9eef2', floors: [
+  { id: 'diagnostics', name: 'อาคารศูนย์การแพทย์', shortName: 'ศูนย์การแพทย์', kind: 'diagnostics', x: 11, z: -3.5, width: 6.5, depth: 6.5, color: '#e9eef2', floors: [
     { level: 1, desc: 'ห้องปฏิบัติการ / เจาะเลือด', depts: ['ห้องปฏิบัติการ', 'ห้องเจาะเลือด'] },
     { level: 2, desc: 'รังสีวิทยา (เอกซเรย์)', depts: ['รังสีวิทยา'] },
     { level: 3, desc: 'ศูนย์หัวใจ', depts: ['ศูนย์หัวใจ', 'Echo / EKG'] }] },
-  { id: 'support', name: 'อาคารสนับสนุน', kind: 'support', x: 14, z: 5, width: 7, depth: 5, color: '#e4e9ed', floors: [
+  { id: 'support', name: 'อาคารสนับสนุน', shortName: 'อาคารสนับสนุน', kind: 'support', x: 14, z: 5, width: 7, depth: 5, color: '#e4e9ed', floors: [
     { level: 1, desc: 'คลังพัสดุ / ซักฟอก', depts: ['คลังพัสดุ', 'ซักฟอก', 'โรงครัว'] },
     { level: 2, desc: 'สำนักงาน / IT', depts: ['สำนักงาน', 'ศูนย์ IT'] }] },
 ];
@@ -88,7 +88,7 @@ export function sampleFacility(layout: Layout = {}): FacilityData {
   const point = (p: Omit<ServicePoint, 'active'>) => { points.push({ ...p, active: !off.has(p.id) }); };
 
   for (const b of BUILDINGS) {
-    buildings.push({ id: b.id, name: b.name, shortName: b.name.match(/\((.+)\)/)?.[1] ?? b.name, kind: b.kind, map: { x: b.x, z: b.z, width: b.width, depth: b.depth, color: b.color }, active: true });
+    buildings.push({ id: b.id, name: b.name, shortName: b.shortName, kind: b.kind, map: { x: b.x, z: b.z, width: b.width, depth: b.depth, color: b.color }, active: true });
     for (const f of b.floors) {
       const floorId = `${b.id}-${f.level}`;
       floors.push({ id: floorId, buildingId: b.id, level: f.level, name: `ชั้น ${f.level}`, description: f.desc, active: true });
@@ -125,7 +125,8 @@ export function sampleFacility(layout: Layout = {}): FacilityData {
         }
         // Every other department: its counters / beds, and its rooms along the back wall.
         for (const c of COUNTERS.filter((x) => x.dept === id)) {
-          group({ id: `counter:${c.kind}`, name: c.name, pointKind: 'counter', pointNoun: c.noun, steps: [c.kind], serves: c.kind === 'triage' ? 'department' : 'all', minOpen: 1 });
+          group({ id: `counter:${c.kind}`, name: c.name, pointKind: 'counter', pointNoun: c.noun, steps: [c.kind], serves: c.kind === 'triage' ? 'department' : 'all', minOpen: 1,
+            ...(c.kind === 'lab' ? { options: { arrange: 'booths' as const } } : {}) });
           for (let k = 0; k < c.n; k++) point({ id: `counter:${c.kind}:${k + 1}`, groupId: `counter:${c.kind}`, number: k + 1 });
         }
         if (b.id === 'diagnostics' && f.level === 2) {
@@ -142,14 +143,14 @@ export function sampleFacility(layout: Layout = {}): FacilityData {
           dept.features = { booking: false, appointments: false, walkIn: true };
           dept.firstGroupId = 'counter:triage';
           // Two treatment beds in every treatment room of the floor.
-          group({ id: 'beds:er', name: 'เตียงรักษา ER', pointKind: 'bed', pointNoun: 'เตียง', steps: ['treatment'] });
+          group({ id: 'beds:er', name: 'เตียงรักษา ER', pointKind: 'bed', pointNoun: 'เตียง', steps: ['treatment'], options: { triage: [3, 5] } });
           rooms.flatMap((r) => [0, 1].map((side) => ({ r, side }))).forEach(({ r, side }, k) => {
             const tag = `${r.number}-${side ? 'B' : 'A'}`;
             point({ id: `er-${tag}`, groupId: 'beds:er', number: k + 1, name: `เตียง ER ${tag}`, inRoomId: `room:er-${r.number}` });
           });
         }
         if (id === 'er-1-2') {
-          group({ id: 'beds:er-resus', name: 'เตียงกู้ชีพ', pointKind: 'bed', pointNoun: 'เตียงกู้ชีพ', steps: ['treatment'] });
+          group({ id: 'beds:er-resus', name: 'เตียงกู้ชีพ', pointKind: 'bed', pointNoun: 'เตียงกู้ชีพ', steps: ['treatment'], options: { triage: [1, 2] } });
           [1, 2].forEach((k) => point({ id: `er-resus-${k}`, groupId: 'beds:er-resus', number: k }));
         }
       });

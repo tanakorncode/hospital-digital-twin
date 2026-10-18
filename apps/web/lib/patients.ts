@@ -1,7 +1,10 @@
 // Simulated patient journeys for one day (demo). Real journeys would be assembled from events that
 // existing systems already record (kiosk ticket, queue call, vital signs, HIS orders, LIS, pharmacy,
 // cashier), so no extra data entry for doctors or nurses. No names: an opaque id, queue number and HN.
-import { buildings, buildingStats, builtInDeptCount, counterSpot, floorRooms, isDoctorRoom, findRoom, isOff, kiosks, layoutRevision, roomOpenIntervals, roomSpot, waitingSpot, type Room, type Spot, getServiceHours, opdOpenMin } from './scene-data';
+import { bandIndex, buildings, builtInDeptCount, counterSpot, floorBands, floorRooms, floorY, isDoctorRoom, findRoom, isOff, kiosks, layoutRevision, parkingLots, roomOpenIntervals, roomSpot, waitingSpot,
+  type Room, type Spot, getServiceHours, opdOpenMin } from './scene-data';
+import { buildingShort, erDepartment, fBuildings, fDepartment, fDepartments, fFloor, fFloors, fGroup, fPoints, groupsForStep, groupsOf, pointFloor, pointLabel, pointsOf,
+  onFacility, type FGroup, type FPoint } from './facility';
 
 export type StepKind = 'kiosk'|'registration'|'screening'|'exam'|'lab'|'labResult'|'xray'|'followup'|'pharmacy'|'finance'|'triage'|'treatment'|'admit'|'ward'|'leave';
 // Wording while waiting for the step, and while being served.
@@ -39,7 +42,7 @@ export type Patient = {
   age:Age; female:boolean; seed:number;
   ward?:{bed:string; day:number; dischargeAt?:number}; // inpatients: bed, day of stay, planned discharge today
   clinicKey?:string; // OPD clinic (queue group for screening and exam)
-  bed?:{level:number; bed:string; from:number; to?:number}; // ward bed held (inpatients, and admitted ER patients)
+  bed?:{buildingId?:string; level:number; bed:string; from:number; to?:number}; // ward bed held (inpatients, and admitted ER patients)
   triage?:Triage; // ER only
   // Real patient (live data mode): built from a server visit, not simulated — no HN here, steps only as far as ordered.
   live?:boolean; priority?:PriorityKey;
@@ -69,87 +72,148 @@ const hashOf = (str:string) => { let h = 2166136261; for (let i=0;i<str.length;i
 
 // Sized so tracked patients fill the floors about as densely as the crowd they replace.
 const OPD_PER_DAY = 520, ER_PER_DAY = 60;
-export const BEDS_PER_FLOOR = 16, OCCUPIED_PER_FLOOR = 14, CLEANING_MIN = 45;
-const ENTRANCE = {x:-8,y:0,z:8.2}, PARKING = {x:5,y:0,z:14.2};
+// Demo: every ward floor starts the day with all but two of its beds taken.
+export const FREE_AT_START = 2, CLEANING_MIN = 45;
+// The main entrance (in front of the registration building) and the car park patients leave to.
+const regBuilding = () => buildings.find(b=>b.id===servicePlace('registration')?.buildingId) ?? buildings[0];
+const entrance = ():Spot => { const b = regBuilding(); return b ? {x:b.x-b.width/4,y:0,z:b.z+b.depth/2+1.7} : {x:0,y:0,z:0}; };
+const parking = ():Spot => { const l = parkingLots[0]; if (l) return {x:(l[0]+l[2])/2,y:0,z:Math.min(l[1]+3,(l[1]+l[3])/2)}; const e = entrance(); return {x:e.x,y:0,z:e.z+6}; };
+let ENTRANCE:Spot = {x:0,y:0,z:0}, PARKING:Spot = {x:0,y:0,z:0}; // set below, once the facility helpers exist
 const DAY = 24*60; // OPD counters open at opdOpenMin(); queues before that wait for opening
-const where = (id:string, level:number, text:string) => `${text} · ${id==='opd'?'OPD':id==='er'?'ER':id==='diagnostics'?'ศูนย์การแพทย์':'อาคารผู้ป่วยใน'} ชั้น ${level}`;
+const where = (id:string|undefined, level:number|undefined, text:string) => id ? `${text} · ${buildingShort(id)} ชั้น ${level}` : text;
+
+// ---- Where each service is, from the facility -------------------------------------------------------------------
+// The group that serves a visit step everywhere (registration, pharmacy, cashier, lab, x-ray, ER triage): its building,
+// floor, waiting band and department. ER treatment: the emergency department's treatment beds.
+export type ServicePlace = {buildingId:string; level:number; band:number; name:string; group:FGroup};
+let placeCache:{rev:number; map:Map<string,ServicePlace|undefined>}|null = null;
+export function servicePlace(step:StepKind|'er'):ServicePlace|undefined {
+  if (placeCache?.rev!==layoutRevision()) placeCache = {rev:layoutRevision(),map:new Map()};
+  if (placeCache.map.has(step)) return placeCache.map.get(step);
+  const er = erDepartment();
+  const g = step==='er' ? (er ? groupsOf(er.id).find(x=>x.steps.includes('treatment')) ?? groupsOf(er.id)[0] : undefined) : groupsForStep(step,{shared:true})[0];
+  const fl = fFloor(g?.floorId), d = g && fDepartment(g.departmentId);
+  const out = g && fl && d ? {buildingId:fl.buildingId,level:fl.level,band:Math.max(0,bandIndex(fl.buildingId,fl.level,d.id)),name:d.name,group:g} : undefined;
+  placeCache.map.set(step,out);
+  return out;
+}
+
 
 // ---- Capacity: how many staffed service points each step has. The what-if view changes these. ----
 export type Capacity = {registration:number; screening:number; lab:number; xray:number; rxPrep:number; pharmacy:number; finance:number; triage:number; erBeds:number; extraRooms:Record<string,number>};
 export type CapacityKey = Exclude<keyof Capacity,'extraRooms'>;
-export const DEFAULT_CAPACITY:Capacity = {registration:5,screening:2,lab:3,xray:3,rxPrep:3,pharmacy:3,finance:4,triage:1,erBeds:8,extraRooms:{}};
+// The facility's counters / beds per step (rebuilt with the facility). screening: the baseline the what-if view moves
+// every clinic's own number of screening counters by; rxPrep: pharmacists preparing prescriptions (not a counter).
+export const SCREENING_BASE = 2;
+export const DEFAULT_CAPACITY:Capacity = {registration:0,screening:SCREENING_BASE,lab:0,xray:0,rxPrep:3,pharmacy:0,finance:0,triage:0,erBeds:0,extraRooms:{}};
+const stepPoints = (step:StepKind) => groupsForStep(step,{shared:true}).flatMap(g=>pointsOf(g.id));
+const critical = (g?:FGroup) => !!g?.options?.triage && g.options.triage[0]<=2;
+function rebuildCapacity() {
+  for (const k of ['registration','lab','xray','pharmacy','finance','triage'] as const) DEFAULT_CAPACITY[k] = stepPoints(k).length;
+  DEFAULT_CAPACITY.erBeds = erBedSpots().length;
+}
 export const capacityText:Record<CapacityKey,string> = {registration:'ช่องลงทะเบียน',screening:'พยาบาลซักประวัติ / คลินิก',lab:'จุดเจาะเลือด',xray:'ห้องเอกซเรย์',
   rxPrep:'เภสัชกรจัดยา',pharmacy:'ช่องจ่ายยา',finance:'ช่องการเงิน',triage:'พยาบาลคัดแยก ER',erBeds:'เตียงรักษา ER'};
 
-// OPD clinics on floors 2–4, one queue letter each.
-export type Clinic = {key:string; letter:string; level:number; deptIndex:number; dept:string; rooms:Room[]; custom?:boolean};
-// Screening counters per clinic: the busiest clinics get one more nurse counter.
-export const screeningCounters = (c:{dept:string}, cap=DEFAULT_CAPACITY.screening) => Math.max(1,cap+(c.dept==='ศัลยกรรม' || c.dept==='อายุรกรรมทั่วไป' ? 1 : 0));
-export const screeningStationId = (clinicKey:string, i:number) => i===0 ? `screen:${clinicKey}` : `screen:${clinicKey}:${i+1}`;
-// Letters: built-in clinics first (A, B, C… by floor), departments added in Settings after them, so adding one never
-// renames the queues of the others.
+// OPD clinics: the facility's clinic departments with at least one exam room. level / deptIndex: where the clinic's
+// patients wait (its first group's floor and band); buildingId: that building. letter: its queue letter.
+export type Clinic = {key:string; letter:string; buildingId:string; level:number; deptIndex:number; dept:string; rooms:Room[]; custom?:boolean};
+const examGroups = (deptId:string) => groupsOf(deptId).filter(g=>g.steps.includes('exam') && g.pointKind==='room');
+const screenGroups = (deptId:string) => groupsOf(deptId).filter(g=>g.steps.includes('screening'));
+// Screening counters of a clinic: its own number in the facility, moved by the what-if view's baseline change.
+const screenPoints = (key:string) => screenGroups(key).flatMap(g=>pointsOf(g.id));
+export const screeningCounters = (c:{key:string}, cap=SCREENING_BASE) => Math.max(1,screenPoints(c.key).length+cap-SCREENING_BASE);
+// The i-th screening counter's station id (a counter the what-if view adds has an id of its own).
+export const screeningStationId = (clinicKey:string, i:number) => screenPoints(clinicKey)[i]?.id ?? `screen:${clinicKey}:${i+1}`;
 let clinicCache:{rev:number; list:Clinic[]}|null = null;
 export function opdClinics():Clinic[] {
   if (clinicCache?.rev===layoutRevision()) return clinicCache.list;
-  const list = (buildingStats.opd?.floors ?? []).filter(f=>f.level>1).sort((a,b)=>a.level-b.level)
-    .flatMap(f=>f.depts.map((dept,i)=>({key:`opd-${f.level}-${i}`,letter:'',level:f.level,deptIndex:i,dept,custom:i>=builtInDeptCount(f.level),rooms:floorRooms('opd',f.level).filter(x=>x.deptIndex===i && isDoctorRoom(x))})))
-    .filter(c=>c.rooms.length);
-  [...list.filter(c=>!c.custom),...list.filter(c=>c.custom)].forEach((c,i)=>{ c.letter = String.fromCharCode(65+i); });
+  const list = fDepartments().filter(d=>d.type==='clinic').flatMap<Clinic>(d=>{
+    const rooms = examGroups(d.id).flatMap(g=>pointsOf(g.id)).map(p=>findRoom(p.id)).filter((r):r is Room=>!!r);
+    const home = fGroup(d.firstGroupId) ?? screenGroups(d.id)[0] ?? examGroups(d.id)[0], fl = fFloor(home?.floorId);
+    if (!rooms.length || !fl) return [];
+    const custom = /^opd-\d-\d+$/.test(d.id) && Number(d.id.split('-')[2])>=builtInDeptCount(Number(d.id.split('-')[1]));
+    return [{key:d.id,letter:d.queuePrefix ?? '',buildingId:fl.buildingId,level:fl.level,deptIndex:Math.max(0,bandIndex(fl.buildingId,fl.level,d.id)),dept:d.name,rooms,custom}];
+  });
   clinicCache = {rev:layoutRevision(),list};
   return list;
 }
 // Switched on in Settings, with at least one exam room and one screening counter on.
 export const clinicRoomsOn = (c:Clinic) => c.rooms.filter(r=>!isOff(`room:${r.id}`));
-export const clinicScreensOn = (c:Clinic, cap=DEFAULT_CAPACITY.screening) => Array.from({length:screeningCounters(c,cap)},(_,i)=>i).filter(i=>!isOff(screeningStationId(c.key,i)));
+export const clinicScreensOn = (c:Clinic, cap=SCREENING_BASE) => Array.from({length:screeningCounters(c,cap)},(_,i)=>i).filter(i=>!isOff(screeningStationId(c.key,i)));
 export const clinicOpen = (c:Clinic) => !isOff(`dept:${c.dept}`) && clinicRoomsOn(c).length>0 && clinicScreensOn(c).length>0;
 
-// Inpatient beds, positioned exactly where the 3D floor plan draws them: two per room along the back wall,
-// then the rest in a row in the open ward at the front. The plan and the bed board both use this list.
-export type WardBed = {id:string; level:number; index:number; bed:string; dept:string; spot:Spot};
+// ---- Where points stand ------------------------------------------------------------------------------------------
+// Beds: inside their room (spread across it), else in a row at the front — across the whole floor for an open ward,
+// across the department's band otherwise (resuscitation bays). Booths (blood draw): spread across the band.
+const bedRow = (k:number, m:number) => m<=1 ? 0.5 : 0.3+0.42*k/(m-1);
+const bandSpan = (buildingId:string, level:number, deptId:string) => { const b = buildings.find(x=>x.id===buildingId)!, n = Math.max(1,floorBands(buildingId,level).length), w = b.width/n;
+  return {b,w,x0:b.x-b.width/2+Math.max(0,bandIndex(buildingId,level,deptId))*w}; };
+export function boothSpot(g:FGroup, i:number, n:number):Spot {
+  const fl = fFloor(g.floorId)!, {b,w,x0} = bandSpan(fl.buildingId,fl.level,g.departmentId);
+  return {x:x0+(i+0.5)*w/n,y:floorY(fl.level),z:b.z-b.depth/2+b.depth*0.42+1.2+0.95};
+}
+type BedSpot = {p:FPoint; g:FGroup; buildingId:string; level:number; index:number; count:number; spot:Spot; room?:Room};
+let bedCache:{rev:number; list:BedSpot[]}|null = null;
+function bedSpots():BedSpot[] {
+  if (bedCache?.rev===layoutRevision()) return bedCache.list;
+  const list:BedSpot[] = [];
+  for (const bl of fBuildings()) for (const fl of fFloors(bl.id)) {
+    const b = buildings.find(x=>x.id===bl.id); if (!b) continue;
+    const beds = fPoints().filter(p=>fGroup(p.groupId)?.pointKind==='bed' && pointFloor(p)?.id===fl.id).map(p=>({p,g:fGroup(p.groupId)!,room:p.inRoomId ? findRoom(p.inRoomId) : undefined}));
+    const rooms = floorRooms(bl.id,fl.level), rw = b.width/Math.max(1,rooms.length), y = floorY(fl.level), bands = floorBands(bl.id,fl.level);
+    const band = (g:FGroup) => Math.max(0,bands.findIndex(x=>x.deptId===g.departmentId));
+    const inRoom = beds.filter(x=>x.room).sort((a,c)=>a.room!.index-c.room!.index || a.p.number-c.p.number);
+    const open = beds.filter(x=>!x.room).sort((a,c)=>band(a.g)-band(c.g) || a.p.number-c.p.number);
+    const placed:BedSpot[] = [];
+    inRoom.forEach(x=>{ const mates = inRoom.filter(o=>o.room===x.room), k = mates.indexOf(x);
+      placed.push({...x,buildingId:bl.id,level:fl.level,index:0,count:0,spot:{x:b.x-b.width/2+x.room!.index*rw+rw*bedRow(k,mates.length),y,z:b.z-b.depth/2+0.9}}); });
+    const wardRow = open.filter(x=>x.g.steps.includes('ward'));
+    wardRow.forEach((x,j)=>placed.push({...x,buildingId:bl.id,level:fl.level,index:0,count:0,spot:{x:b.x-b.width/2+0.55+j*((b.width-1.1)/Math.max(1,wardRow.length-1)),y,z:b.z+b.depth/2-0.8}}));
+    open.filter(x=>!x.g.steps.includes('ward')).forEach(x=>{ const mates = open.filter(o=>o.g===x.g), k = mates.indexOf(x), {w,x0} = bandSpan(bl.id,fl.level,x.g.departmentId);
+      placed.push({...x,buildingId:bl.id,level:fl.level,index:0,count:0,spot:{x:x0+w*bedRow(k,mates.length),y,z:b.z+b.depth/2-0.8}}); });
+    placed.forEach((x,i)=>{ x.index = i; x.count = placed.length; });
+    list.push(...placed);
+  }
+  bedCache = {rev:layoutRevision(),list};
+  return list;
+}
+// Where a queue station's patient stands: across the desk in a room, at the counter, at a booth, beside a bed.
+export function stationSpot(p:FPoint):Spot|undefined {
+  const g = fGroup(p.groupId), fl = pointFloor(p); if (!g || !fl) return undefined;
+  if (g.pointKind==='room') { const r = findRoom(p.id); return r ? roomSpot(r.id) : undefined; }
+  if (g.pointKind==='bed') return bedSpots().find(x=>x.p.id===p.id)?.spot;
+  const list = pointsOf(g.id), i = Math.max(0,list.findIndex(x=>x.id===p.id));
+  return g.options?.arrange==='booths' ? boothSpot(g,i,list.length) : counterSpot(fl.buildingId,fl.level,Math.max(0,bandIndex(fl.buildingId,fl.level,g.departmentId)),(i+0.5)/list.length);
+}
+
+// Inpatient beds (the facility's ward beds), where the 3D floor plan draws them; the plan and the bed board use this list.
+// index: the bed's place on its floor (beds in rooms first) · floorBeds: how many beds that floor has.
+export type WardBed = {id:string; buildingId:string; level:number; index:number; floorBeds:number; bed:string; dept:string; spot:Spot};
+// Listed top floor first, as the bed board shows the wards.
 export function wardBeds():WardBed[] {
-  const b = buildings.find(x=>x.id==='inpatient');
-  if (!b) return [];
-  return (buildingStats.inpatient?.floors ?? []).flatMap(f=>{
-    const rooms = floorRooms('inpatient',f.level), rw = b.width/rooms.length, y = (f.level-1)*0.8+0.11;
-    const inRooms = rooms.flatMap(room=>[0,1].map(side=>({room,side}))).slice(0,BEDS_PER_FLOOR), wardCount = BEDS_PER_FLOOR-inRooms.length;
-    return Array.from({length:BEDS_PER_FLOOR},(_,i)=>{
-      if (i<inRooms.length) {
-        const {room,side} = inRooms[i];
-        return {id:`bed-${f.level}-${i}`,level:f.level,index:i,bed:`${room.number}-${side?'B':'A'}`,dept:f.depts[room.deptIndex] ?? f.desc,
-          spot:{x:b.x-b.width/2+room.index*rw+rw*(side?0.72:0.3),y,z:b.z-b.depth/2+0.9}};
-      }
-      const j = i-inRooms.length;
-      return {id:`bed-${f.level}-${i}`,level:f.level,index:i,bed:`${f.level}W-${j+1}`,dept:f.depts[Math.min(f.depts.length-1,Math.floor(j/wardCount*f.depts.length))] ?? f.desc,
-        spot:{x:b.x-b.width/2+0.55+j*((b.width-1.1)/Math.max(1,wardCount-1)),y,z:b.z+b.depth/2-0.8}};
-    });
-  });
+  const bOrder = new Map(buildings.map((b,i)=>[b.id,i]));
+  const all = bedSpots().filter(x=>x.g.steps.includes('ward')).sort((a,b)=>bOrder.get(a.buildingId)!-bOrder.get(b.buildingId)! || b.level-a.level || a.index-b.index);
+  return all.map(x=>{ const mates = all.filter(o=>o.buildingId===x.buildingId && o.level===x.level);
+    return {id:x.p.id,buildingId:x.buildingId,level:x.level,index:mates.indexOf(x),floorBeds:mates.length,bed:pointLabel(x.p),dept:fDepartment(x.g.departmentId)?.name ?? '',spot:x.spot}; });
 }
 
-// ER treatment beds (two per room, where the 3D plan draws them) and the two resuscitation bays at the front.
-export type UnitSpot = {id:string; name:string; spot:Spot; room?:Room};
-export function erBedSpots():UnitSpot[] {
-  const b = buildings.find(x=>x.id==='er'), all = floorRooms('er',1);
-  if (!b || !all.length) return [];
-  const rw = b.width/all.length;
-  return all.filter(isDoctorRoom).flatMap(room=>[0,1].map(side=>({id:`er-${room.number}-${side?'B':'A'}`,name:`เตียง ER ${room.number}-${side?'B':'A'}`,room,
-    spot:{x:b.x-b.width/2+room.index*rw+rw*(side?0.72:0.3),y:0.11,z:b.z-b.depth/2+0.9}})));
-}
-export function erResusSpots():UnitSpot[] {
-  const b = buildings.find(x=>x.id==='er'), n = buildingStats.er?.floors.find(f=>f.level===1)?.depts.length ?? 3;
-  if (!b) return [];
-  const w = b.width/n, x0 = b.x-b.width/2+(n-1)*w;
-  return [0,1].map(i=>({id:`er-resus-${i+1}`,name:`เตียงกู้ชีพ ${i+1}`,spot:{x:x0+w*(i?0.72:0.3),y:0.11,z:b.z+b.depth/2-0.8}}));
-}
+// ER treatment beds (the emergency department's) and the resuscitation bays (treatment beds for triage 1–2).
+export type UnitSpot = {id:string; name:string; spot:Spot; room?:Room; dept?:string};
+const treatmentBeds = (crit:boolean) => bedSpots().filter(x=>x.g.steps.includes('treatment') && critical(x.g)===crit)
+  .map(x=>({id:x.p.id,name:pointLabel(x.p),spot:x.spot,dept:fDepartment(x.g.departmentId)?.name,...(x.room?{room:x.room}:{})}));
+export const erBedSpots = ():UnitSpot[] => treatmentBeds(false);
+export const erResusSpots = ():UnitSpot[] => treatmentBeds(true);
 
-// Medical centre: three separate blood-draw stations across the blood-draw zone (floor 1, patient seat at
-// `spot`), and the x-ray rooms along the back wall of floor 2.
-export function labStationSpots(n=3):UnitSpot[] {
-  const b = buildings.find(x=>x.id==='diagnostics'), depts = buildingStats.diagnostics?.floors.find(f=>f.level===1)?.depts ?? ['',''];
-  if (!b) return [];
-  const w = b.width/depts.length, x0 = b.x-b.width/2+Math.min(1,depts.length-1)*w, z = b.z-b.depth/2+b.depth*0.42+1.2+0.95;
-  return Array.from({length:n},(_,i)=>({id:`dx-lab-${i+1}`,name:`จุดเจาะเลือด ${i+1}`,spot:{x:x0+(i+0.5)*w/n,y:0.11,z}}));
+// Blood-draw stations (the lab group's points; `n` more or fewer for the what-if view) and the x-ray rooms.
+export function labStationSpots(n?:number):UnitSpot[] {
+  const g = groupsForStep('lab',{shared:true})[0]; if (!g || !fFloor(g.floorId)) return [];
+  const pts = pointsOf(g.id), count = n ?? pts.length;
+  return Array.from({length:count},(_,i)=>({id:pts[i]?.id ?? `${g.id}:${i+1}`,name:pts[i] ? pointLabel(pts[i]) : `${g.pointNoun} ${i+1}`,
+    spot:g.options?.arrange==='booths' ? boothSpot(g,i,count) : stationSpot(pts[i] ?? pts[0])!}));
 }
-export const xrayRoomSpots = ():UnitSpot[] => floorRooms('diagnostics',2).map(room=>({id:room.id,name:room.name,room,spot:roomSpot(room.id)}));
+export const xrayRoomSpots = ():UnitSpot[] => groupsForStep('xray',{shared:true}).flatMap(g=>pointsOf(g.id)).map(p=>findRoom(p.id)).filter((r):r is Room=>!!r)
+  .map(room=>({id:room.id,name:room.name,room,spot:roomSpot(room.id)}));
 
 // ER triage (5 levels as used by Thai EDs). Targets are example time-to-treatment goals for the board.
 export const triageLevels = [
@@ -164,10 +228,10 @@ export type Triage = 1|2|3|4|5;
 // ---- Queue simulation ----------------------------------------------------------------------------------
 // Each step queues FIFO for a pool of servers (counters, rooms, beds). Exam rooms only call patients while
 // the roster has a doctor in (roomOpenIntervals), so lunch gaps and missing afternoon clinics show up as waits.
-type Server = {free:number; open:[number,number][]; idx:number; count:number; room?:Room; spot?:Spot; bed?:WardBed};
+type Server = {free:number; open:[number,number][]; idx:number; count:number; room?:Room; spot?:Spot; bed?:WardBed; station?:string; label?:string};
 type StageKind = StepKind|'rx'; // 'rx' = prescription being prepared; shown as part of the pharmacy wait
 type Stage = {kind:StageKind; pool?:string; dur:number; delay?:number; walk:number; place:(srv?:Server)=>Place};
-type Plan = {flow:'opd'|'er'; arrival:number; stages:Stage[]; missExam?:boolean; admitLevel?:number; admitPrep?:number;
+type Plan = {flow:'opd'|'er'; arrival:number; stages:Stage[]; missExam?:boolean; admitFloor?:string; admitPrep?:number;
   profile:Omit<Patient,'id'|'queue'|'steps'|'roomId'|'missed'|'bed'>; clinic?:Clinic; closed?:boolean};
 const startOn = (s:Server, t:number) => { t = Math.max(t,s.free); for (const [a,b] of s.open) if (t<b) return Math.max(t,a); return Infinity; };
 function pickServer(servers:Server[], t:number, prefer?:Server) {
@@ -187,7 +251,17 @@ export function generatePatients(dayKey:string, opts:GenerateOptions={}):Patient
   const pickW = <T,>(items:[T,number][]) => { let x = r()*items.reduce((n,[,w])=>n+w,0); for (const [v,w] of items) { if ((x-=w)<0) return v; } return items[0][0]; };
   const ageOf = ():Age => pickW<Age>([['child',1],['adult',3],['middle',3],['elderly',3]]);
   const hnOf = (base:number) => `${base+Math.floor(r()*3)}-${String(Math.floor(r()*900000)+100000)}`;
-  const clinics = opdClinics(), beds = wardBeds(), erRooms = floorRooms('er',1).filter(isDoctorRoom);
+  ENTRANCE = entrance(); PARKING = parking();
+  const clinics = opdClinics(), beds = wardBeds(), erAt = servicePlace('er'), erRooms = erAt ? floorRooms(erAt.buildingId,erAt.level).filter(isDoctorRoom) : [];
+  const erDept = erDepartment(), erName = erDept?.name ?? 'ห้องฉุกเฉิน';
+  // Kiosks: OPD patients use the ones by the registration building (the first busiest), walk-in ER patients the one
+  // nearest the ER; a kiosk belongs to the building it stands nearest to.
+  const nearest = (x:number, z:number) => buildings.reduce((a,b)=>Math.hypot(b.x-x,b.z-z)<Math.hypot(a.x-x,a.z-z) ? b : a,buildings[0]);
+  const kioskOf = (buildingId?:string) => kiosks.filter(k=>(k.buildingId ?? nearest(k.x,k.z)?.id)===buildingId);
+  const opdKiosks = kioskOf(servicePlace('registration')?.buildingId).map((k,i):[string,number]=>[k.id,i===0?4:3]);
+  const erKiosk = kioskOf(erAt?.buildingId)[0]?.id;
+  // Ward floors (where admitted ER patients go), in building and floor order.
+  const wardFloors = [...new Map(beds.map(b=>[`${b.buildingId}:${b.level}`,{key:`${b.buildingId}:${b.level}`,buildingId:b.buildingId,level:b.level}])).values()].reverse();
   // OPD patients start arriving before the 07:00 opening (the well-known pre-dawn queue).
   // Arrivals follow the OPD hours: some come up to 2 hours before opening; the usual curve is stretched over opening → last arrival.
   const {opdOpen:o, opdClose:c} = getServiceHours(), curve = [0.35,0.75,1,0.95,0.8,0.45,0.6,0.55,0.4], span = Math.max(1,c-o);
@@ -206,14 +280,25 @@ export function generatePatients(dayKey:string, opts:GenerateOptions={}):Patient
     const live = on ?? Array.from({length:n},(_,i)=>i).filter(i=>!isOff(`counter:${kind}:${i+1}`));
     pools.set(key,(live.length ? live : Array.from({length:n},(_,i)=>i)).map(i=>({free:0,open,idx:i,count:n})));
   };
+  // A shared step's servers: its points in the facility (`n` of them; a what-if count above that adds counters to the
+  // first group), each with its station and spot. Points switched off take no patients, unless every one is off.
+  const stepPool = (kind:StepKind, n:number, open:[number,number][]) => {
+    const groups = groupsForStep(kind,{shared:true}), pts = groups.flatMap(g=>pointsOf(g.id).map(p=>({p,g}))).slice(0,n);
+    const list:Server[] = pts.map(({p},i)=>({free:0,open,idx:i,count:n,station:p.id,label:pointLabel(p),spot:stationSpot(p),room:findRoom(p.id)}));
+    const g = groups[0], fl = fFloor(g?.floorId);
+    for (let i=list.length; i<n && g && fl; i++) list.push({free:0,open,idx:i,count:n,label:`${g.pointNoun} ${i+1}`,
+      spot:g.options?.arrange==='booths' ? boothSpot(g,i,n) : counterSpot(fl.buildingId,fl.level,Math.max(0,bandIndex(fl.buildingId,fl.level,g.departmentId)),(i+0.5)/n)});
+    const on = list.filter(x=>!x.station || !isOff(x.station));
+    pools.set(kind,on.length ? on : list);
+  };
   const allDay:[number,number][] = [[0,DAY]], counters:[number,number][] = [[opdOpenMin(),DAY]];
   kiosks.forEach(k=>pool(`kiosk:${k.id}`,1,allDay));
-  counterPool('registration','registration',cap.registration,counters); counterPool('lab','lab',cap.lab,counters); counterPool('xray','xray',cap.xray,counters);
-  // Pharmacy and cashier stay open around the clock for the ER; registration, lab and x-ray open at 07:00.
-  pool('rx',cap.rxPrep,allDay); counterPool('pharmacy','pharmacy',cap.pharmacy,allDay); counterPool('finance','finance',cap.finance,allDay);
+  stepPool('registration',cap.registration,counters); stepPool('lab',cap.lab,counters); stepPool('xray',cap.xray,counters);
+  // Pharmacy and cashier stay open around the clock for the ER; registration, lab and x-ray open with the OPD.
+  pool('rx',cap.rxPrep,allDay); stepPool('pharmacy',cap.pharmacy,allDay); stepPool('finance',cap.finance,allDay);
   const erSpots = erBedSpots(), resusSpots = erResusSpots();
-  counterPool('triage','triage',cap.triage,allDay); pool('resus',2,allDay,i=>({room:erRooms[0],spot:resusSpots[i].spot}));
-  pool('erBed',cap.erBeds,allDay,i=>({room:erSpots[i%erSpots.length].room,spot:erSpots[i%erSpots.length].spot}));
+  stepPool('triage',cap.triage,allDay); pool('resus',resusSpots.length,allDay,i=>({room:erRooms[0],spot:resusSpots[i].spot}));
+  pool('erBed',erSpots.length ? cap.erBeds : 0,allDay,i=>({room:erSpots[i%erSpots.length].room,spot:erSpots[i%erSpots.length].spot}));
   clinics.forEach(c=>{
     counterPool(`screening:${c.key}`,'',screeningCounters(c,cap.screening),counters,clinicScreensOn(c,cap.screening));
     const extra = cap.extraRooms[c.key] ?? 0, rooms = clinicRoomsOn(c).length ? clinicRoomsOn(c) : c.rooms;
@@ -222,75 +307,85 @@ export function generatePatients(dayKey:string, opts:GenerateOptions={}):Patient
   });
 
   // -- inpatients already in bed (also fixes when each ward bed frees up)
-  const out:Patient[] = [], wardPools = new Map<number,Server[]>();
+  const out:Patient[] = [], wardPools = new Map<string,Server[]>();
   beds.forEach(b=>{
-    if (!wardPools.has(b.level)) wardPools.set(b.level,[]);
-    const srv:Server = {free:0,open:allDay,idx:b.index,count:BEDS_PER_FLOOR,bed:b,spot:b.spot};
-    wardPools.get(b.level)!.push(srv);
-    if (b.index>=OCCUPIED_PER_FLOOR) return;
-    const age = pickW<Age>([['child',b.level===2?6:0.5],['adult',2],['middle',3],['elderly',4]]), female = r()<0.5;
+    const key = `${b.buildingId}:${b.level}`;
+    if (!wardPools.has(key)) wardPools.set(key,[]);
+    const srv:Server = {free:0,open:allDay,idx:b.index,count:b.floorBeds,bed:b,spot:b.spot};
+    wardPools.get(key)!.push(srv);
+    if (b.index>=b.floorBeds-FREE_AT_START) return;
+    const children = /กุมาร|ทารก|เด็ก/.test(b.dept); // a children's ward
+    const age = pickW<Age>([['child',children?6:0.5],['adult',2],['middle',3],['elderly',4]]), female = r()<0.5;
     const dischargeAt = r()<0.15 ? Math.round(between(11,16)*60) : undefined;
     srv.free = dischargeAt ? dischargeAt+CLEANING_MIN : Infinity; // bed is cleaned before the next admission
-    const place:Place = {where:where('inpatient',b.level,`${b.dept} · เตียง ${b.bed}`),buildingId:'inpatient',level:b.level,serve:b.spot,wait:b.spot};
+    const place:Place = {where:where(b.buildingId,b.level,`${b.dept} · เตียง ${b.bed}`),buildingId:b.buildingId,level:b.level,serve:b.spot,wait:b.spot};
     const steps:Step[] = [{kind:'ward',start:0,called:0,end:dischargeAt ?? DAY,place}];
     if (dischargeAt) steps.push({kind:'leave',start:dischargeAt,called:dischargeAt,end:dischargeAt+between(8,12),place:{where:'ทางออก → ลานจอดรถ',serve:PARKING,wait:ENTRANCE}});
-    out.push({id:`w-${b.level}${String(b.index+1).padStart(2,'0')}`,queue:`IPD-${b.bed}`,hn:hnOf(60),flow:'ipd',dept:b.dept,deptWhere:where('inpatient',b.level,b.dept),
+    out.push({id:`w-${b.level}${String(b.index+1).padStart(2,'0')}`,queue:`IPD-${b.bed}`,hn:hnOf(60),flow:'ipd',dept:b.dept,deptWhere:where(b.buildingId,b.level,b.dept),
       arrival:0,steps,age,female,seed:Math.floor(r()*1e9),ward:{bed:b.bed,day:1+Math.floor(r()*9),dischargeAt},bed:{level:b.level,bed:b.bed,from:0,to:dischargeAt}});
   });
-  wardPools.forEach((list,level)=>pools.set(`ward:${level}`,list));
+  wardPools.forEach((list,key)=>pools.set(`ward:${key}`,list));
 
   // -- plans (all random draws happen here, so a different capacity replays the very same patients)
   const counterAt = (id:string, level:number, deptIndex:number, text:string) => { const wu = r(), wv = r();
     return (srv?:Server):Place => ({where:where(id,level,text),buildingId:id,level,serve:counterSpot(id,level,deptIndex,srv?(srv.idx+0.5)/srv.count:0.5),wait:waitingSpot(id,level,deptIndex,wu,wv)}); };
-  const kioskStage = (kioskId:string):Stage => { const k = kiosks.find(x=>x.id===kioskId)!, y = k.level ? (k.level-1)*0.8+0.11 : 0, dx = between(-0.2,0.2), dz = between(0,1.2);
+  // A shared step's place: its server's spot, waiting in the group's band (where it says the department's name).
+  const serviceAt = (kind:StepKind) => { const wu = r(), wv = r(), at = servicePlace(kind);
+    return (srv?:Server):Place => !at ? {where:stepText[kind].serve,serve:ENTRANCE,wait:ENTRANCE}
+      : {where:where(at.buildingId,at.level,at.name),buildingId:at.buildingId,level:at.level,serve:srv?.spot ?? counterSpot(at.buildingId,at.level,at.band,0.5),wait:waitingSpot(at.buildingId,at.level,at.band,wu,wv)}; };
+  const kioskStage = (kioskId:string):Stage => { const k = kiosks.find(x=>x.id===kioskId)!, y = k.level ? floorY(k.level) : 0, dx = between(-0.2,0.2), dz = between(0,1.2);
     return {kind:'kiosk',pool:`kiosk:${kioskId}`,dur:between(0.6,1.2),walk:0,place:()=>({where:k.name,buildingId:k.buildingId,level:k.level,serve:{x:k.x,y,z:k.z+0.4},wait:{x:k.x+dx,y,z:k.z+0.75+dz}})}; };
   const leaveStage = ():Stage => ({kind:'leave',dur:between(6,10),walk:0,place:()=>({where:'ทางออก → ลานจอดรถ',serve:PARKING,wait:ENTRANCE})});
   const walk = () => between(1,3);
-  // Lab stations / x-ray rooms: the server index picks the physical station or room the patient goes to.
-  const labs = labStationSpots(Math.max(1,cap.lab)), xrays = xrayRoomSpots();
-  const labPlace = (wu:number, wv:number) => (srv?:Server):Place => { const st = labs[(srv?.idx ?? 0)%labs.length];
-    return {where:where('diagnostics',1,st.name),buildingId:'diagnostics',level:1,serve:st.spot,wait:waitingSpot('diagnostics',1,1,wu,wv)}; };
-  const xrayPlace = (wu:number, wv:number) => (srv?:Server):Place => { const rm = xrays[(srv?.idx ?? 0)%xrays.length];
-    return {where:where('diagnostics',2,rm.name),buildingId:'diagnostics',level:2,serve:rm.spot,wait:waitingSpot('diagnostics',2,0,wu,wv)}; };
+  // Lab stations / x-ray rooms: the server is the physical station or room the patient goes to (and its name).
+  const pointPlace = (kind:StepKind) => (wu:number, wv:number) => (srv?:Server):Place => { const at = servicePlace(kind), first = pools.get(kind)?.[0];
+    if (!at) return {where:stepText[kind].serve,serve:ENTRANCE,wait:ENTRANCE};
+    return {where:where(at.buildingId,at.level,(srv ?? first)?.label ?? at.name),buildingId:at.buildingId,level:at.level,serve:(srv ?? first)?.spot ?? counterSpot(at.buildingId,at.level,at.band,0.5),
+      wait:waitingSpot(at.buildingId,at.level,at.band,wu,wv)}; };
+  const labPlace = pointPlace('lab'), xrayPlace = pointPlace('xray');
   const plans:Plan[] = [];
   for (let i=0;i<Math.round(OPD_PER_DAY*volume);i++) {
     const age = ageOf(), female = r()<0.5, c = clinics[Math.floor(r()*clinics.length)], arrival = pickW(opdHours)*60+between(0,60);
-    const kioskId = pickW<string>([['k-main-1',4],['k-main-2',3],['k-opd-lobby',3]]);
-    const clinicWait = waitingSpot('opd',c.level,c.deptIndex,r(),r());
-    const room = (text:string) => (srv?:Server):Place => ({where:where('opd',c.level,`${text} ${srv?.room?.number ?? ''}`.trim()),buildingId:'opd',level:c.level,serve:roomSpot((srv?.room ?? c.rooms[0]).id),wait:clinicWait});
-    const screen = counterAt('opd',c.level,c.deptIndex,`ซักประวัติ ${c.dept}`);
-    const stages:Stage[] = [kioskStage(kioskId),
-      {kind:'registration',pool:'registration',dur:between(2.5,4),walk:walk(),place:counterAt('opd',1,0,'ลงทะเบียน')},
+    const kioskId = opdKiosks.length ? pickW<string>(opdKiosks) : (r(), undefined);
+    const clinicWait = waitingSpot(c.buildingId,c.level,c.deptIndex,r(),r());
+    const room = (text:string) => (srv?:Server):Place => { const rm = srv?.room ?? c.rooms[0];
+      return {where:where(rm.buildingId,rm.level,`${text} ${srv?.room?.number ?? ''}`.trim()),buildingId:rm.buildingId,level:rm.level,serve:roomSpot(rm.id),wait:clinicWait}; };
+    const screen = counterAt(c.buildingId,c.level,c.deptIndex,`ซักประวัติ ${c.dept}`);
+    const stages:Stage[] = [...(kioskId ? [kioskStage(kioskId)] : []),
+      {kind:'registration',pool:'registration',dur:between(2.5,4),walk:walk(),place:serviceAt('registration')},
       {kind:'screening',pool:`screening:${c.key}`,dur:between(4,6),walk:walk(),place:srv=>({...screen(srv),wait:clinicWait})},
       {kind:'exam',pool:`exam:${c.key}`,dur:between(6,10),walk:walk(),place:room('ห้องตรวจ')}];
     const extra = r();
     if (extra<0.35) stages.push({kind:'lab',pool:'lab',dur:between(3,5),walk:between(3,6),place:labPlace(r(),r())},
-      {kind:'labResult',dur:0,delay:between(30,60),walk:0,place:()=>({where:where('opd',c.level,`พื้นที่รอ ${c.dept}`),buildingId:'opd',level:c.level,serve:clinicWait,wait:clinicWait})},
+      {kind:'labResult',dur:0,delay:between(30,60),walk:0,place:()=>({where:where(c.buildingId,c.level,`พื้นที่รอ ${c.dept}`),buildingId:c.buildingId,level:c.level,serve:clinicWait,wait:clinicWait})},
       {kind:'followup',pool:`exam:${c.key}`,dur:between(4,6),walk:walk(),place:room('ห้องตรวจ')});
     else if (extra<0.5) stages.push({kind:'xray',pool:'xray',dur:between(8,12),walk:between(3,6),place:xrayPlace(r(),r())},
       {kind:'followup',pool:`exam:${c.key}`,dur:between(4,6),walk:between(3,6),place:room('ห้องตรวจ')});
-    if (r()<0.95) { const ph = counterAt('opd',1,1,'ห้องยา');
+    if (r()<0.95) { const ph = serviceAt('pharmacy');
       stages.push({kind:'rx',pool:'rx',dur:between(2,4),walk:walk(),place:ph},{kind:'pharmacy',pool:'pharmacy',dur:between(2,4),walk:0,place:ph}); }
-    stages.push({kind:'finance',pool:'finance',dur:between(1.5,3),walk:walk(),place:counterAt('opd',1,2,'การเงิน')},leaveStage());
+    stages.push({kind:'finance',pool:'finance',dur:between(1.5,3),walk:walk(),place:serviceAt('finance')},leaveStage());
     // A department switched off today has no patients; the plan is still drawn so everyone else stays the same.
-    plans.push({flow:'opd',arrival,stages,clinic:c,closed:!clinicOpen(c),missExam:r()<0.06,profile:{hn:hnOf(65),flow:'opd',clinicKey:c.key,dept:c.dept,deptWhere:where('opd',c.level,c.dept),arrival,kioskId,age,female,
+    plans.push({flow:'opd',arrival,stages,clinic:c,closed:!clinicOpen(c),missExam:r()<0.06,profile:{hn:hnOf(65),flow:'opd',clinicKey:c.key,dept:c.dept,deptWhere:where(c.buildingId,c.level,c.dept),arrival,kioskId,age,female,
       seed:Math.floor(r()*1e9),help:age==='elderly'&&r()<0.3?'รถเข็น':r()<0.03?'ผู้ช่วยพาไปจุดบริการ':undefined}});
   }
   for (let i=0;i<Math.round(ER_PER_DAY*volume);i++) {
     const age = ageOf(), female = r()<0.5, arrival = pickW(erHours)*60+between(0,60), walkIn = r()<0.55;
-    const triage = pickW<Triage>([[1,1],[2,8],[3,35],[4,40],[5,16]]), erWait = waitingSpot('er',1,1,r(),r());
-    const stages:Stage[] = walkIn ? [kioskStage('k-er')] : [];
-    stages.push({kind:'triage',pool:'triage',dur:between(3,6),walk:walkIn?walk():0,place:counterAt('er',1,0,'คัดแยก (Triage)')});
-    const bay = (srv?:Server):Place => ({where:where('er',1,triage<=2?'ห้องกู้ชีพ':`ห้องรักษา ${srv?.room?.number ?? ''}`.trim()),buildingId:'er',level:1,serve:srv?.spot ?? roomSpot((srv?.room ?? erRooms[0]).id),wait:erWait});
+    const triage = pickW<Triage>([[1,1],[2,8],[3,35],[4,40],[5,16]]), erWait = erAt ? waitingSpot(erAt.buildingId,erAt.level,erAt.band,r(),r()) : (r(), r(), ENTRANCE);
+    const stages:Stage[] = walkIn && erKiosk ? [kioskStage(erKiosk)] : [];
+    stages.push({kind:'triage',pool:'triage',dur:between(3,6),walk:walkIn?walk():0,place:serviceAt('triage')});
+    const bay = (srv?:Server):Place => { const rm = srv?.room ?? erRooms[0];
+      return {where:where(erAt?.buildingId,erAt?.level,triage<=2?'ห้องกู้ชีพ':`ห้องรักษา ${srv?.room?.number ?? ''}`.trim()),buildingId:erAt?.buildingId,level:erAt?.level,
+        serve:srv?.spot ?? (rm ? roomSpot(rm.id) : erWait),wait:erWait}; };
     stages.push({kind:'treatment',pool:triage<=2?'resus':'erBed',dur:triage<=2?between(60,120):between(30,90),walk:0,place:bay});
-    const admit = r() < (triage<=2?0.7:triage===3?0.22:0.05);
-    const admitLevel = 1+Math.floor(r()*5), admitPrep = between(30,60);
-    if (admit) stages.push({kind:'admit',pool:`ward:${admitLevel}`,dur:0,walk:0,place:srv=>({where:where('inpatient',srv?.bed?.level ?? admitLevel,srv?.bed?`เตียง ${srv.bed.bed}`:'รอเตียง'),buildingId:'inpatient',level:srv?.bed?.level ?? admitLevel,serve:srv?.spot ?? erWait,wait:erWait})});
-    else { const ph = counterAt('opd',1,1,'ห้องยา');
+    const admit = r() < (triage<=2?0.7:triage===3?0.22:0.05) && wardFloors.length>0;
+    const ward = wardFloors[Math.floor(r()*wardFloors.length)], admitPrep = between(30,60);
+    if (admit) stages.push({kind:'admit',pool:`ward:${ward.key}`,dur:0,walk:0,place:srv=>({where:where(srv?.bed?.buildingId ?? ward.buildingId,srv?.bed?.level ?? ward.level,srv?.bed?`เตียง ${srv.bed.bed}`:'รอเตียง'),
+      buildingId:srv?.bed?.buildingId ?? ward.buildingId,level:srv?.bed?.level ?? ward.level,serve:srv?.spot ?? erWait,wait:erWait})});
+    else { const ph = serviceAt('pharmacy');
       stages.push({kind:'rx',pool:'rx',dur:between(2,4),walk:walk(),place:ph},{kind:'pharmacy',pool:'pharmacy',dur:between(2,4),walk:0,place:ph},
-        {kind:'finance',pool:'finance',dur:between(1.5,3),walk:walk(),place:counterAt('opd',1,2,'การเงิน')},leaveStage()); }
-    plans.push({flow:'er',arrival,stages,admitLevel:admit?admitLevel:undefined,admitPrep,profile:{hn:hnOf(65),flow:'er',dept:'ห้องฉุกเฉิน',deptWhere:where('er',1,'ห้องฉุกเฉิน'),arrival,
-      kioskId:walkIn?'k-er':undefined,triage,age,female,seed:Math.floor(r()*1e9),help:age==='elderly'&&r()<0.4?'รถเข็น':undefined}});
+        {kind:'finance',pool:'finance',dur:between(1.5,3),walk:walk(),place:serviceAt('finance')},leaveStage()); }
+    plans.push({flow:'er',arrival,stages,admitFloor:admit?ward.key:undefined,admitPrep,profile:{hn:hnOf(65),flow:'er',dept:erName,deptWhere:where(erAt?.buildingId,erAt?.level,erName),arrival,
+      kioskId:walkIn?erKiosk:undefined,triage,age,female,seed:Math.floor(r()*1e9),help:age==='elderly'&&r()<0.4?'รถเข็น':undefined}});
   }
 
   // -- run: always serve the patient who became ready earliest (FIFO across the whole hospital)
@@ -318,10 +413,10 @@ export function generatePatients(dayKey:string, opts:GenerateOptions={}):Patient
         pick.srv.free = res.end;
         if (st.kind==='exam') a.exam = pick.srv;
         // Admitted ER patients keep their ER bed until a ward bed is ready — the boarding problem.
-        if (st.kind==='treatment' && a.p.admitLevel) {
+        if (st.kind==='treatment' && a.p.admitFloor) {
           // Bed coordination: the preferred ward if it has a bed within the hour, otherwise the earliest bed on any ward.
           const ready = res.end+(a.p.admitPrep??45);
-          let bedPick = pickServer(pools.get(`ward:${a.p.admitLevel}`)!,ready);
+          let bedPick = pickServer(pools.get(`ward:${a.p.admitFloor}`)!,ready);
           if (!bedPick || bedPick.at>ready+60) {
             const anyWard = [...wardPools.values()].flat(), alt = pickServer(anyWard,ready);
             if (alt && (!bedPick || alt.at<bedPick.at)) bedPick = alt;
@@ -340,11 +435,10 @@ export function generatePatients(dayKey:string, opts:GenerateOptions={}):Patient
   }
 
   // -- assemble steps; prescription prep merges into the pharmacy wait
-  const counterKinds:StageKind[] = ['registration','lab','xray','pharmacy','finance','triage'];
   const stationOf = (x:Res, plan:Plan) => !x.srv ? undefined
     : (x.kind==='exam'||x.kind==='followup') && x.srv.room ? `room:${x.srv.room.id}`
     : x.kind==='screening' && plan.clinic ? screeningStationId(plan.clinic.key,x.srv.idx)
-    : counterKinds.includes(x.kind) ? `counter:${x.kind}:${x.srv.idx+1}` : undefined;
+    : x.srv.station;
   const toSteps = (res:Res[], plan:Plan):Step[] => {
     const steps:Step[] = [];
     res.forEach((x,i)=>{
@@ -352,7 +446,7 @@ export function generatePatients(dayKey:string, opts:GenerateOptions={}):Patient
       const prev = res[i-1], merged = x.kind==='pharmacy' && prev?.kind==='rx', start = merged ? prev.start : x.start;
       const place = x.stage.place(x.srv);
       // Everything is clamped to the simulated day (late-night ER visits run past midnight).
-      const step:Step = {kind:x.kind as StepKind,start:Math.min(start,DAY),called:Math.min(x.called,DAY),end:Math.min(x.end,DAY),place:x.wait?{...place,wait:x.wait,waitArea:{buildingId:'er',level:1}}:place,stationId:stationOf(x,plan)};
+      const step:Step = {kind:x.kind as StepKind,start:Math.min(start,DAY),called:Math.min(x.called,DAY),end:Math.min(x.end,DAY),place:x.wait?{...place,wait:x.wait,waitArea:{buildingId:erAt?.buildingId,level:erAt?.level}}:place,stationId:stationOf(x,plan)};
       // Follow-up with the same doctor: queued for that room only; about 4 in 10 have an appointment that must stay with them.
       if (merged) step.ready = Math.min(prev.end,DAY);
       const exam = res.find(e=>e.kind==='exam');
@@ -367,9 +461,9 @@ export function generatePatients(dayKey:string, opts:GenerateOptions={}):Patient
   run.slice().sort((x,y)=>x.p.arrival-y.p.arrival).forEach((x,k)=>{
     if (x.p.closed) return;
     const admit = x.res.find(s=>s.kind==='admit');
-    out.push({...x.p.profile,id:`${x.p.flow==='er'?'e':'p'}-${String(k+1).padStart(4,'0')}`,queue:nextQueue(x.p.flow==='er'?'ER':x.p.clinic!.letter),
+    out.push({...x.p.profile,id:`${x.p.flow==='er'?'e':'p'}-${String(k+1).padStart(4,'0')}`,queue:nextQueue(x.p.flow==='er'?erDept?.queuePrefix ?? 'ER':x.p.clinic!.letter),
       steps:toSteps(x.res,x.p),roomId:(x.exam ?? x.res.find(s=>s.kind==='treatment')?.srv)?.room?.id,missed:x.missed,
-      bed:admit?.srv?.bed ? {level:admit.srv.bed.level,bed:admit.srv.bed.bed,from:admit.called} : undefined});
+      bed:admit?.srv?.bed ? {buildingId:admit.srv.bed.buildingId,level:admit.srv.bed.level,bed:admit.srv.bed.bed,from:admit.called} : undefined});
   });
   return out;
 }
@@ -486,7 +580,7 @@ export function livePatients(visits:LiveVisit[], events:DoneEvent[]):Patient[] {
       return step;
     });
     if (prev!==undefined && steps.length) steps.push({kind:'leave',start:prev,called:prev,end:prev+8,place:{where:'ทางออก → ลานจอดรถ',serve:PARKING,wait:ENTRANCE}});
-    const deptWhere = c ? where('opd',c.level,c.dept) : where('er',1,'ห้องฉุกเฉิน');
+    const er = servicePlace('er'), deptWhere = c ? where(c.buildingId,c.level,c.dept) : where(er?.buildingId,er?.level,erDepartment()?.name ?? 'ห้องฉุกเฉิน');
     return {id:v.id,queue:v.queue,hn:'',flow:v.flow,dept:v.dept,deptWhere,arrival:v.arrival,steps,clinicKey:v.clinicKey,
       age:v.priority==='elderly'?'elderly':'adult',female:v.priority==='pregnant' || seed%2===0,seed,
       help:v.priority==='wheelchair'?'รถเข็น':undefined,triage:v.flow==='er' && v.triage ? v.triage as Triage : undefined,live:true,priority:v.priority,booked:v.bookedSlot};
@@ -496,15 +590,18 @@ export function livePatients(visits:LiveVisit[], events:DoneEvent[]):Patient[] {
 function livePlace(kind:StepKind, c:Clinic|undefined, r:()=>number):Place {
   const counter = (id:string, level:number, deptIndex:number, text:string):Place => ({where:where(id,level,text),buildingId:id,level,serve:counterSpot(id,level,deptIndex,0.5),wait:waitingSpot(id,level,deptIndex,r(),r())});
   if ((kind==='screening' || kind==='exam' || kind==='followup') && c) {
-    const wait = waitingSpot('opd',c.level,c.deptIndex,r(),r());
-    return kind==='screening' ? {...counter('opd',c.level,c.deptIndex,`ซักประวัติ ${c.dept}`),wait}
-      : {where:where('opd',c.level,`ห้องตรวจ ${c.dept}`),buildingId:'opd',level:c.level,serve:c.rooms[0] ? roomSpot(c.rooms[0].id) : wait,wait};
+    const wait = waitingSpot(c.buildingId,c.level,c.deptIndex,r(),r());
+    return kind==='screening' ? {...counter(c.buildingId,c.level,c.deptIndex,`ซักประวัติ ${c.dept}`),wait}
+      : {where:where(c.buildingId,c.level,`ห้องตรวจ ${c.dept}`),buildingId:c.buildingId,level:c.level,serve:c.rooms[0] ? roomSpot(c.rooms[0].id) : wait,wait};
   }
-  if (kind==='lab') { const st = labStationSpots()[0]; return {where:where('diagnostics',1,st.name),buildingId:'diagnostics',level:1,serve:st.spot,wait:waitingSpot('diagnostics',1,1,r(),r())}; }
-  if (kind==='xray') { const rm = xrayRoomSpots()[0]; return {where:where('diagnostics',2,rm.name),buildingId:'diagnostics',level:2,serve:rm.spot,wait:waitingSpot('diagnostics',2,0,r(),r())}; }
-  if (kind==='pharmacy') return counter('opd',1,1,'ห้องยา');
-  if (kind==='finance') return counter('opd',1,2,'การเงิน');
-  if (kind==='triage') return counter('er',1,0,'คัดแยก (Triage)');
-  if (kind==='treatment') { const wait = waitingSpot('er',1,1,r(),r()); return {where:where('er',1,'ห้องรักษา'),buildingId:'er',level:1,serve:erBedSpots()[0]?.spot ?? wait,wait}; }
-  return counter('opd',1,0,'ลงทะเบียน');
+  if (kind==='lab' || kind==='xray') { const at = servicePlace(kind), first = kind==='lab' ? labStationSpots()[0] : xrayRoomSpots()[0];
+    if (at) return {where:where(at.buildingId,at.level,first?.name ?? at.name),buildingId:at.buildingId,level:at.level,serve:first?.spot ?? counterSpot(at.buildingId,at.level,at.band,0.5),wait:waitingSpot(at.buildingId,at.level,at.band,r(),r())}; }
+  if (kind==='treatment') { const at = servicePlace('er');
+    if (at) { const wait = waitingSpot(at.buildingId,at.level,at.band,r(),r()); return {where:where(at.buildingId,at.level,'ห้องรักษา'),buildingId:at.buildingId,level:at.level,serve:erBedSpots()[0]?.spot ?? wait,wait}; } }
+  const at = servicePlace(['pharmacy','finance','triage'].includes(kind) ? kind : 'registration');
+  return at ? counter(at.buildingId,at.level,at.band,at.name) : {where:stepText[kind].serve,serve:ENTRANCE,wait:ENTRANCE};
 }
+
+// Facility-derived figures follow every new facility.
+rebuildCapacity(); ENTRANCE = entrance(); PARKING = parking();
+onFacility(()=>{ rebuildCapacity(); ENTRANCE = entrance(); PARKING = parking(); });

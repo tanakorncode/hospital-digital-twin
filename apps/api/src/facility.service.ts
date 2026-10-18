@@ -32,7 +32,12 @@ export class FacilityService {
     if (!this.store.db.prepare('SELECT 1 FROM facility_versions LIMIT 1').get()) {
       const layout = this.store.getKv<QueueSettings>('queue.settings')?.layout;
       this.write(sampleFacility(layout ?? {}), 'system', 'seed', 'ผังเริ่มต้น (จากผังเดิมและการตั้งค่าแผนก)');
-    } else this.load();
+    } else {
+      this.load();
+      // Until someone publishes by hand, the facility follows the sample hospital and the layout: a newer sample (more
+      // fields, fixed ids) reaches installations that have not edited their facility yet.
+      this.syncFromLayout(this.store.getKv<QueueSettings>('queue.settings')?.layout, 'system');
+    }
   }
 
   // ---- Reading ----------------------------------------------------------------------------------------------------
@@ -184,8 +189,8 @@ export class FacilityService {
       data.floors.forEach((x, i) => f.run(x.id, x.buildingId, x.level, x.name, x.description ?? '', i, x.active ? 1 : 0, x.retiredAt ?? null));
       const d = db.prepare('INSERT INTO facility_departments (id, name, short_name, type, queue_prefix, features_json, first_group_id, sort, active, retired_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
       data.departments.forEach((x, i) => d.run(x.id, x.name, x.shortName ?? null, x.type, x.queuePrefix ?? null, JSON.stringify(x.features), x.firstGroupId ?? null, i, x.active ? 1 : 0, x.retiredAt ?? null));
-      const g = db.prepare('INSERT INTO facility_service_groups (id, department_id, name, floor_id, point_kind, point_noun, steps_json, serves, min_open, sort, active, retired_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-      data.groups.forEach((x, i) => g.run(x.id, x.departmentId, x.name, x.floorId, x.pointKind, x.pointNoun, JSON.stringify(x.steps), x.serves, x.minOpen, i, x.active ? 1 : 0, x.retiredAt ?? null));
+      const g = db.prepare('INSERT INTO facility_service_groups (id, department_id, name, floor_id, point_kind, point_noun, steps_json, serves, min_open, options_json, sort, active, retired_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+      data.groups.forEach((x, i) => g.run(x.id, x.departmentId, x.name, x.floorId, x.pointKind, x.pointNoun, JSON.stringify(x.steps), x.serves, x.minOpen, x.options ? JSON.stringify(x.options) : null, i, x.active ? 1 : 0, x.retiredAt ?? null));
       const p = db.prepare('INSERT INTO facility_service_points (id, group_id, number, name, room_code, floor_id, room_kind, in_room_id, map_json, sort, active, retired_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
       data.points.forEach((x, i) => p.run(x.id, x.groupId, x.number, x.name ?? null, x.roomCode ?? null, x.floorId ?? null, x.roomKind ?? null, x.inRoomId ?? null, x.map ? JSON.stringify(x.map) : null, i, x.active ? 1 : 0, x.retiredAt ?? null));
       db.prepare('INSERT INTO facility_site (id, site_json) VALUES (1, ?)').run(JSON.stringify(data.site));
@@ -204,8 +209,9 @@ export class FacilityService {
       floors: all('facility_floors').map((r) => ({ id: r.id as string, buildingId: r.building_id as string, level: r.level as number, name: r.name as string, description: r.description as string, ...state(r) })),
       departments: all('facility_departments').map((r) => strip({ id: r.id as string, name: r.name as string, shortName: opt(r.short_name as string | null), type: r.type as never,
         queuePrefix: opt(r.queue_prefix as string | null), features: JSON.parse(r.features_json as string), firstGroupId: opt(r.first_group_id as string | null), ...state(r) })),
-      groups: all('facility_service_groups').map((r) => ({ id: r.id as string, departmentId: r.department_id as string, name: r.name as string, floorId: (r.floor_id as string | null) ?? null,
-        pointKind: r.point_kind as never, pointNoun: r.point_noun as string, steps: JSON.parse(r.steps_json as string), serves: r.serves as never, minOpen: r.min_open as number, ...state(r) })),
+      groups: all('facility_service_groups').map((r) => strip({ id: r.id as string, departmentId: r.department_id as string, name: r.name as string, floorId: (r.floor_id as string | null) ?? null,
+        pointKind: r.point_kind as never, pointNoun: r.point_noun as string, steps: JSON.parse(r.steps_json as string), serves: r.serves as never, minOpen: r.min_open as number,
+        options: r.options_json ? JSON.parse(r.options_json as string) : undefined, ...state(r) })),
       points: all('facility_service_points').map((r) => strip({ id: r.id as string, groupId: r.group_id as string, number: r.number as number, name: opt(r.name as string | null),
         roomCode: opt(r.room_code as string | null), floorId: opt(r.floor_id as string | null), roomKind: opt(r.room_kind as never), inRoomId: opt(r.in_room_id as string | null),
         map: r.map_json ? JSON.parse(r.map_json as string) : undefined, ...state(r) })),

@@ -5,55 +5,66 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { io, type Socket } from 'socket.io-client';
 import { apiSocket } from './api-url';
-import { DEFAULT_CAPACITY, NO_SHOW, generatePatients, labStationSpots, livePatients, opdClinics, patientAt, patientToken, screeningCounters, screeningStationId, xrayRoomSpots, type LiveVisit, type Patient, type PatientState, type StepKind } from './patients';
-import { buildings, counterSpot, doctorName, isOff, layoutRevision, roomDutyAt, roomSpot, setLayout, setServiceHours, waitingSpot, type Layout, type Spot } from './scene-data';
+import { NO_SHOW, generatePatients, livePatients, opdClinics, patientAt, patientToken, servicePlace, stationSpot, type LiveVisit, type Patient, type PatientState, type StepKind } from './patients';
+import { doctorName, findRoom, isOff, layoutRevision, roomDutyAt, setLayout, setServiceHours, waitingSpot, type Layout, type Spot } from './scene-data';
+import { buildingShort, fDepartment, fDepartments, fGroup, fGroups, facilityRevision, onFacility, pointFloor, pointLabel, pointsOf, storeFacility } from './facility';
+import { useFacility } from './use-facility';
 
 const DAY = 24*60;
 
 // ---- Stations: where queue staff work ----------------------------------------------------------------
 export type Station = {id:string; label:string; section:string; group:string; kinds:StepKind[]; buildingId:string; level:number; spot:Spot; roomId?:string; clinicKey?:string};
-const counters:[StepKind,string,string,number,(i:number,n:number)=>{spot:Spot;buildingId:string;level:number;label?:string}][] = [
-  ['registration','ลงทะเบียน','ช่องลงทะเบียน',DEFAULT_CAPACITY.registration,(i,n)=>({spot:counterSpot('opd',1,0,(i+0.5)/n),buildingId:'opd',level:1})],
-  ['pharmacy','ห้องยา','ช่องจ่ายยา',DEFAULT_CAPACITY.pharmacy,(i,n)=>({spot:counterSpot('opd',1,1,(i+0.5)/n),buildingId:'opd',level:1})],
-  ['finance','การเงิน','ช่องการเงิน',DEFAULT_CAPACITY.finance,(i,n)=>({spot:counterSpot('opd',1,2,(i+0.5)/n),buildingId:'opd',level:1})],
-  ['lab','ห้องเจาะเลือด','จุดเจาะเลือด',DEFAULT_CAPACITY.lab,i=>({spot:labStationSpots()[i].spot,buildingId:'diagnostics',level:1})],
-  ['xray','รังสีวิทยา','ห้องเอกซเรย์',DEFAULT_CAPACITY.xray,i=>{ const r = xrayRoomSpots()[i]; return {spot:r.spot,buildingId:'diagnostics',level:2,label:r.name}; }],
-  ['triage','ห้องฉุกเฉิน','จุดคัดแยก',DEFAULT_CAPACITY.triage,(i,n)=>({spot:counterSpot('er',1,0,(i+0.5)/n),buildingId:'er',level:1})],
-];
+// Steps a queue station serves (beds, kiosks and wards are not queue stations).
+const STATION_STEPS:StepKind[] = ['registration','screening','exam','followup','lab','xray','pharmacy','finance','triage'];
+const isQueueGroup = (g:{pointKind:string; steps:string[]}) => (g.pointKind==='room' || g.pointKind==='counter') && g.steps.some(x=>(STATION_STEPS as string[]).includes(x));
+// Queue groups in the order lists show them: clinics, then the shared services, then the emergency department's.
+function orderedQueueGroups() {
+  const order = new Map(fDepartments().map((d,i)=>[d.id,i])), rank = (deptId:string) => { const t = fDepartment(deptId)?.type; return t==='clinic' ? 0 : t==='emergency' ? 2 : 1; };
+  return fGroups().filter(isQueueGroup).sort((a,b)=>rank(a.departmentId)-rank(b.departmentId) || order.get(a.departmentId)!-order.get(b.departmentId)!);
+}
 // everyStation: every room and counter, including those switched off in Settings (the Settings page lists them).
 // allStations: the ones in use — what pickers, moves, the assistant and the boards work with.
 let stationCache:{rev:number; every:Station[]; on:Station[]}|null = null;
 export function everyStation():Station[] { return stationsNow().every; }
 export function allStations():Station[] { return stationsNow().on; }
-export const stationOff = (st:Station) => isOff(st.id) || (!!st.clinicKey && isOff(`dept:${opdClinics().find(c=>c.key===st.clinicKey)?.dept}`));
+export const stationOff = (st:Station) => { const d = fDepartment(fGroup(st.group)?.departmentId); return isOff(st.id) || (!!d && isOff(`dept:${d.name}`)); };
 function stationsNow() {
   if (stationCache?.rev===layoutRevision()) return stationCache;
+  // Every point of a queue group in the facility (clinics, then shared services, then the ER's).
   const list:Station[] = [];
-  opdClinics().forEach(c=>{
-    const n = screeningCounters(c);
-    for (let i=0;i<n;i++) list.push({id:screeningStationId(c.key,i),label:`ซักประวัติ ${c.dept} ${i+1}`,section:`OPD ชั้น ${c.level} · ${c.dept}`,group:`screening:${c.key}`,kinds:['screening'],
-      buildingId:'opd',level:c.level,spot:counterSpot('opd',c.level,c.deptIndex,(i+0.5)/n),clinicKey:c.key});
-    c.rooms.forEach(room=>list.push({id:`room:${room.id}`,label:room.name,section:`OPD ชั้น ${c.level} · ${c.dept}`,group:`exam:${c.key}`,kinds:['exam','followup'],
-      buildingId:'opd',level:c.level,spot:roomSpot(room.id),roomId:room.id,clinicKey:c.key}));
-  });
-  counters.forEach(([kind,section,name,n,at])=>{ for (let i=0;i<n;i++) { const a = at(i,n);
-    list.push({id:`counter:${kind}:${i+1}`,label:a.label ?? `${name} ${i+1}`,section,group:`counter:${kind}`,kinds:[kind],buildingId:a.buildingId,level:a.level,spot:a.spot}); } });
+  const clinic = (deptId:string) => fDepartment(deptId)?.type==='clinic';
+  const groups = orderedQueueGroups();
+  for (const g of groups) {
+    const d = fDepartment(g.departmentId)!, isClinic = clinic(d.id);
+    for (const p of pointsOf(g.id)) {
+      const fl = pointFloor(p), spot = stationSpot(p); if (!fl || !spot) continue;
+      const room = g.pointKind==='room' && g.steps.includes('exam') ? findRoom(p.id) : undefined;
+      list.push({id:p.id,label:pointLabel(p),section:isClinic ? `${buildingShort(fl.buildingId)} ชั้น ${fl.level} · ${d.name}` : d.name,group:g.id,kinds:g.steps.filter(x=>(STATION_STEPS as string[]).includes(x)) as StepKind[],
+        buildingId:fl.buildingId,level:fl.level,spot,...(room ? {roomId:room.id} : {}),...(isClinic ? {clinicKey:d.id} : {})});
+    }
+  }
   return stationCache = {rev:layoutRevision(),every:list,on:list.filter(st=>!stationOff(st))};
 }
-export const counterServices = counters.map(([kind,section,name])=>({kind,section,name}));
+// The shared services (one per step they serve): registration, pharmacy, cashier, lab, x-ray, triage.
+export type CounterService = {kind:StepKind; section:string; name:string; group:string};
+export const counterServices:CounterService[] = [];
+function rebuildServices() {
+  counterServices.splice(0,counterServices.length,...orderedQueueGroups().filter(g=>fDepartment(g.departmentId)?.type!=='clinic')
+    .map(g=>({kind:g.steps[0] as StepKind,section:fDepartment(g.departmentId)!.name,name:g.name,group:g.id})));
+}
 export const stationById = (id?:string) => id ? allStations().find(s=>s.id===id) : undefined;
 // Which queue a patient's step belongs to (clinic queues are shared by the clinic's rooms).
 export function groupOf(p:Patient, kind:StepKind) {
-  if (kind==='exam' || kind==='followup') return p.clinicKey ? `exam:${p.clinicKey}` : undefined;
-  if (kind==='screening') return p.clinicKey ? `screening:${p.clinicKey}` : undefined;
-  return ['registration','pharmacy','finance','lab','xray','triage'].includes(kind) ? `counter:${kind}` : undefined;
+  if (kind==='exam' || kind==='followup' || kind==='screening') { if (!p.clinicKey) return undefined;
+    const step = kind==='followup' ? 'exam' : kind;
+    return fGroups().find(g=>g.departmentId===p.clinicKey && g.steps.includes(step) && isQueueGroup(g))?.id; }
+  return (STATION_STEPS as string[]).includes(kind) ? servicePlace(kind)?.group.id : undefined;
 }
 export function stationDoctor(st:Station, minute:number) {
   if (!st.roomId) return undefined;
   const d = roomDutyAt(st.roomId,minute/60);
   return d?.current && d.status!=='vacant' ? {name:doctorName(d.current.doctor,true),status:d.status} : {name:'',status:d?.status ?? 'vacant'};
 }
-const buildingShort = (id:string) => id==='opd'?'OPD':id==='er'?'ER':id==='diagnostics'?'ศูนย์การแพทย์':buildings.find(b=>b.id===id)?.name ?? id;
 export const stationWhere = (st:Station) => `${st.label} · ${buildingShort(st.buildingId)} ชั้น ${st.level}`;
 // Stations of one queue group share a waiting area: moving between them never sends the patient anywhere.
 export const sameZone = (a:Station, b:Station) => a.group===b.group;
@@ -64,7 +75,7 @@ export function moveNote(from:Station|undefined, to:Station) {
   return from && from.buildingId===to.buildingId && from.level===to.level ? `ไปรอที่${zone} (ชั้นเดียวกัน)` : `ไปรอที่${zone} · ${buildingShort(to.buildingId)} ชั้น ${to.level}`;
 }
 const clinicWaitSpot = (clinicKey:string, seed:string) => { const c = opdClinics().find(x=>x.key===clinicKey); if (!c) return undefined;
-  const h = hash(seed); return waitingSpot('opd',c.level,c.deptIndex,(h%1000)/1000,((h>>10)%1000)/1000); };
+  const h = hash(seed); return waitingSpot(c.buildingId,c.level,c.deptIndex,(h%1000)/1000,((h>>10)%1000)/1000); };
 
 // ---- Events ------------------------------------------------------------------------------------------------
 // lock/unlock: keep a patient with this room (the assistant never moves them) · pause/resume: a station stops taking
@@ -217,8 +228,14 @@ export function helpRequests(events:QueueEvent[]):HelpRequest[] {
 export function openReports(events:QueueEvent[]) { return helpRequests(events).filter(h=>!h.closed && !h.assigned).map(h=>h.report); }
 export const PORTER_TOPIC = 'ต้องการรถเข็น / ผู้ช่วย';
 // Porters (wheelchair / patient transport) on duty — staff, not patients. Base = where they wait between jobs.
-export const porters = [{id:'po-1',name:'เวรเปล 1',buildingId:'opd',level:1},{id:'po-2',name:'เวรเปล 2',buildingId:'opd',level:1},
-  {id:'po-3',name:'เวรเปล 3',buildingId:'diagnostics',level:1},{id:'po-4',name:'เวรเปล 4',buildingId:'er',level:1}];
+// Demo roster: two at registration, one at the lab, one at ER triage.
+export const porters:{id:string; name:string; buildingId:string; level:number}[] = [];
+function rebuildPorters() {
+  const at = (['registration','registration','lab','triage'] as StepKind[]).map(k=>servicePlace(k)).filter((x):x is NonNullable<typeof x>=>!!x);
+  porters.splice(0,porters.length,...at.map((x,i)=>({id:`po-${i+1}`,name:`เวรเปล ${i+1}`,buildingId:x.buildingId,level:x.level})));
+}
+rebuildServices(); rebuildPorters();
+onFacility(()=>{ rebuildServices(); rebuildPorters(); });
 
 // ---- Settings: hospital defaults → per service group → per station ----------------------------------------
 // A group (one clinic's exam rooms, one clinic's screening counters, all pharmacy counters…) uses the hospital
@@ -233,9 +250,9 @@ export type DataMode = 'demo'|'live';
 export type SettingsPatch = {system?:Partial<QueueRules>; groups?:Record<string,Partial<Record<keyof QueueRules,QueueRules[keyof QueueRules]|null>>|null>; stations?:Record<string,{cap?:number|null}|null>; hours?:{opdOpen:number; opdClose:number}|null; demoOffset?:number|null; layout?:Layout|null; dataMode?:DataMode|null};
 export const DEFAULT_RULES:QueueRules = {mode:'suggest',cap:12,stallMin:5,slowFactor:2,imbalance:4};
 export const DEFAULT_SETTINGS:QueueSettings = {system:DEFAULT_RULES,groups:{},stations:{}};
-// The simulated day is built on the OPD hours and the layout: every screen applies them before generating patients
-// and regenerates when worldKey changes.
-export const worldKey = (s:QueueSettings) => JSON.stringify([s.hours ?? null,s.layout ?? null]);
+// The simulated day is built on the OPD hours and the facility: every screen applies them before generating patients
+// and regenerates when worldKey changes (a new facility arrives with a new revision).
+export const worldKey = (s:QueueSettings) => JSON.stringify([s.hours ?? null,facilityRevision()]);
 let liveMode = false;
 export function applyWorld(s:QueueSettings) { setServiceHours(s.hours); setLayout(s.layout); liveMode = s.dataMode==='live'; }
 export const isLive = (s:QueueSettings) => s.dataMode==='live';
@@ -275,7 +292,7 @@ export function queueGroups():QueueGroup[] {
   const map = new Map<string,Station[]>();
   allStations().forEach(st=>map.set(st.group,[...(map.get(st.group) ?? []),st]));
   const list = [...map.entries()].map(([id,list])=>{ const st = list[0], dept = st.section.split(' · ').slice(-1)[0];
-    const name = id.startsWith('exam:') ? `ห้องตรวจ ${dept}` : id.startsWith('screening:') ? `ซักประวัติ ${dept}` : st.section;
+    const name = st.clinicKey ? fGroup(id)?.name ?? dept : st.section; // the facility's group name ("ห้องตรวจศัลยกรรม")
     return {id,name,section:st.clinicKey?st.section.split(' · ')[0]:'จุดบริการร่วม',stations:list}; });
   groupCache = {rev:layoutRevision(),list};
   return list;
@@ -393,7 +410,8 @@ export type UserInput = {id?:number; username?:string; name?:string; role?:Role;
 type Res = {ok:boolean; reason?:string; auth?:boolean};
 const sessionKey = 'hdt.session';
 const loadToken = () => { try { return localStorage.getItem(sessionKey) ?? ''; } catch { return ''; } };
-export type QueueSync = {events:QueueEvent[]; online:boolean; send:(cmd:QueueCommand)=>Promise<Res>;
+// facilityRev: bumps when a new facility (lib/facility.ts) arrives — memoised work keys on it.
+export type QueueSync = {facilityRev:number; events:QueueEvent[]; online:boolean; send:(cmd:QueueCommand)=>Promise<Res>;
   settings:QueueSettings; saveSettings:(patch:SettingsPatch, audit:{at:number; scope:string; summary:string; by?:string})=>Promise<Res>;
   // authReady: the API has said who this session is (null = not signed in). Offline there is no sign-in.
   user:AuthUser|null; authReady:boolean; login:(username:string, password:string)=>Promise<Res>; logout:()=>void;
@@ -455,6 +473,7 @@ export function useQueueEvents():QueueSync {
   const [apptRev,setApptRev] = useState(0);
   const [visits,setVisits] = useState<LiveVisit[]>([]);
   const socket = useRef<Socket|null>(null);
+  const facilityRev = useFacility(); // this browser's last facility now; the socket sends the current one
   useEffect(()=>{
     setEvents(loadLocal()); setSettings(loadSettings());
     // The session token rides in the handshake (read again on every reconnect).
@@ -472,6 +491,7 @@ export function useQueueEvents():QueueSync {
     s.on('connect_error',()=>setOnline(false));
     s.on('queue:events',(list:QueueEvent[])=>{ setEvents(list); saveLocal(list); });
     s.on('queue:event',(e:QueueEvent)=>setEvents(prev=>{ if (prev.some(x=>x.id===e.id)) return prev; const next = [...prev,e]; saveLocal(next); return next; }));
+    s.on('facility:updated',(f:unknown)=>storeFacility(f));
     s.on('queue:settings',(v:QueueSettings)=>{ const m = mergeSettings(DEFAULT_SETTINGS,v); setSettings(m); try { localStorage.setItem(settingsKey,JSON.stringify(m)); } catch { /* ignore */ } });
     return ()=>{ s.close(); };
   },[]);
@@ -517,7 +537,7 @@ export function useQueueEvents():QueueSync {
   const addVisitStep = useCallback((visitId:string, kind:StepKind, at:number, key:string)=>request<VisitRes>('visit:step',{visitId,kind,at,key}),[request]);
   const cancelVisit = useCallback((visitId:string, reason:string)=>request<VisitRes>('visit:cancel',{visitId,reason}),[request]);
   const api = useCallback(<T extends Res>(event:string, body:unknown)=>request<T & {code?:string}>(event,body),[request]) as QueueSync['api'];
-  return {events,online,send,settings,saveSettings,user,authReady,login,logout,listUsers,saveUser,resolveTicket,familyTicket,features,lineLink,visits,enterVisit,addVisitStep,cancelVisit,api,bookingRev,apptRev,kioskHelp};
+  return {facilityRev,events,online,send,settings,saveSettings,user,authReady,login,logout,listUsers,saveUser,resolveTicket,familyTicket,features,lineLink,visits,enterVisit,addVisitStep,cancelVisit,api,bookingRev,apptRev,kioskHelp};
 }
 
 // Thai announcement, read character by character so queue numbers are unambiguous.

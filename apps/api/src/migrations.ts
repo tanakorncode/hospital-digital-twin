@@ -512,4 +512,13 @@ export const MIGRATIONS: Migration[] = [
         updated_at TEXT NOT NULL);
     `,
   },
+  {
+    version: 13,
+    name: 'facility group options',
+    sql: `
+      -- How a service group is set out and whom it takes: arrange = one long counter (staff side by side) or separate
+      -- booths across the area (blood draw); triage = the ER triage levels a bed group takes (resuscitation: 1–2).
+      ALTER TABLE facility_service_groups ADD COLUMN options_json TEXT;
+    `,
+  },
 ];

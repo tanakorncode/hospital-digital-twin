@@ -1,19 +1,21 @@
 // Command-centre analytics. Everything here works on counts per service and time — no names, no HN, no clinical
 // data — so it can be handed to an AI service or a data warehouse without exposing any patient.
-import { fmtDur, fmtMin, opdClinics, patientAt, stepText, type Patient, type PatientState, type StepKind } from './patients';
+import { fmtDur, fmtMin, opdClinics, patientAt, servicePlace, stepText, type Patient, type PatientState, type StepKind } from './patients';
+import { erDepartment, fGroup } from './facility';
 import { allStations, openReports, stationDoctor, type AssistView, type QueueEvent } from './queue';
 import { roomOpenIntervals, roomShifts } from './scene-data';
 
 // One "service" = a clinic (screening → exam → follow-up) or a shared service point (registration, lab, pharmacy…).
 export const serviceKeyOf = (s:PatientState) => s.p.flow==='er' && ['triage','treatment','admit'].includes(s.step.kind) ? 'er'
  : s.p.clinicKey && ['screening','exam','followup','labResult'].includes(s.step.kind) ? `clinic:${s.p.clinicKey}` : s.step.kind;
-const svcName:Record<string,string> = {registration:'ลงทะเบียน',lab:'ห้องเจาะเลือด',xray:'รังสีวิทยา',pharmacy:'ห้องยา',finance:'การเงิน',er:'ห้องฉุกเฉิน'};
+// A shared service by its department's name in the facility (ER: the emergency department).
+const svcName = (key:string) => key==='er' ? erDepartment()?.name : servicePlace(key as StepKind)?.name;
 const clinics = {get:(key:string)=>opdClinics().find(c=>c.key===key)}; // live: departments can be added in Settings
-export const serviceName = (key:string) => key.startsWith('clinic:') ? clinics.get(key.slice(7))?.dept ?? key : svcName[key] ?? stepText[key as StepKind]?.serve ?? key;
+export const serviceName = (key:string) => key.startsWith('clinic:') ? clinics.get(key.slice(7))?.dept ?? key : svcName(key) ?? stepText[key as StepKind]?.serve ?? key;
 // Stations that serve a service now (rooms only while a doctor is in).
 export function serviceStations(key:string, minute:number) {
  const list = key.startsWith('clinic:') ? allStations().filter(st=>st.clinicKey===key.slice(7) && st.kinds.includes('exam'))
-  : allStations().filter(st=>st.group===`counter:${key==='er'?'triage':key}`);
+  : allStations().filter(st=>st.kinds.includes((key==='er'?'triage':key) as StepKind) && !st.clinicKey);
  return list.filter(st=>!st.roomId || stationDoctor(st,minute)?.status==='active');
 }
 const isWaiting = (s:PatientState, m:number) => m<s.step.called && s.status!=='done';
@@ -63,13 +65,13 @@ const groupKeyOf = (s:PatientState) => { const k = s.step.kind;
  if ((k==='exam'||k==='followup') && s.p.clinicKey) return `exam:${s.p.clinicKey}`;
  if (k==='screening' && s.p.clinicKey) return `screening:${s.p.clinicKey}`;
  return ['registration','pharmacy','finance','lab','xray'].includes(k) ? `counter:${k}` : undefined; };
-const groupName = (g:string) => { const [kind,key] = g.split(':'); const c = clinics.get(key);
- return kind==='exam' ? `ห้องตรวจ${c?.dept ?? ''}` : kind==='screening' ? `ซักประวัติ${c?.dept ?? ''}` : svcName[key] ?? key; };
+// A queue group's name: the facility's ("ห้องตรวจศัลยกรรม"); a shared service by its department.
+const groupName = (g:string) => { const grp = fGroup(g); if (!grp) return g; return opdClinics().some(c=>c.key===grp.departmentId) ? grp.name : svcName(grp.steps[0]) ?? grp.name; };
 const groupServers = (g:string, m:number) => allStations().filter(st=>st.group===g && (!st.roomId || stationDoctor(st,m)?.status==='active')).length;
 // Who can cover for whom, and what a lent person does without a new counter.
 const pools:{name:string; match:(g:string)=>boolean; staff:string; task:string}[] = [
- {name:'nurse',match:g=>g.startsWith('screening:'),staff:'พยาบาลซักประวัติ',task:'วัดสัญญาณชีพและซักประวัติเบื้องต้นในพื้นที่รอ ใช้เครื่องวัดแบบพกพา ไม่ต้องตั้งช่องใหม่'},
- {name:'clerk',match:g=>g==='counter:registration'||g==='counter:finance',staff:'เจ้าหน้าที่ลงทะเบียน/การเงิน',task:'ช่วยตรวจสิทธิ์และเอกสารที่หน้าคิว หรือแนะนำการใช้ตู้ Kiosk ไม่ต้องเปิดช่องเพิ่ม'},
+ {name:'nurse',match:g=>!!fGroup(g)?.steps.includes('screening'),staff:'พยาบาลซักประวัติ',task:'วัดสัญญาณชีพและซักประวัติเบื้องต้นในพื้นที่รอ ใช้เครื่องวัดแบบพกพา ไม่ต้องตั้งช่องใหม่'},
+ {name:'clerk',match:g=>{ const k = fGroup(g)?.steps[0]; return k==='registration' || k==='finance'; },staff:'เจ้าหน้าที่ลงทะเบียน/การเงิน',task:'ช่วยตรวจสิทธิ์และเอกสารที่หน้าคิว หรือแนะนำการใช้ตู้ Kiosk ไม่ต้องเปิดช่องเพิ่ม'},
 ];
 const per = (peak:number, servers:number) => peak/Math.max(1,servers);
 const confOf = (s:ServiceFc):Advice['confidence'] => { const p = s.points.find(x=>x.t===s.peakAt); const w = p && s.peak ? ((p.hi ?? s.peak)-(p.lo ?? s.peak))/Math.max(1,s.peak) : 1; return w<0.5 ? 'สูง' : w<0.9 ? 'ปานกลาง' : 'ต่ำ'; };

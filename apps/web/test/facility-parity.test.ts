@@ -3,12 +3,20 @@ import { afterEach, test } from 'node:test';
 import { sampleFacility } from '../../api/src/facility-template';
 import { erBedSpots, erResusSpots, labStationSpots, opdClinics, wardBeds } from '../lib/patients';
 import { everyStation } from '../lib/queue';
-import { buildingStats, buildings, floorRooms, kiosks, setLayout, type Layout } from '../lib/scene-data';
+import { buildingStats, buildings, floorRooms, kiosks, type Layout } from '../lib/scene-data';
+import { sampleFacility as webSample } from '../lib/facility';
+import { useLayout } from './facility-helpers';
 
-// The API's facility model starts from the sample hospital (apps/api/src/facility-template.ts). It must hold exactly
-// the ids this app already makes from its own constants and the Settings layout — clinic keys, queue letters, rooms,
-// queue stations, beds, kiosks — or bookings, appointments, doctor sessions, visits and queue events would lose their place.
-afterEach(() => setLayout(undefined));
+// The app draws and simulates the hospital from the facility model (lib/facility.ts). These check that what it
+// builds from a facility — clinics, queue letters, rooms, queue stations, beds, kiosks, buildings — is exactly what the
+// facility says, for the sample hospital as shipped and after the Settings layout changed it; and that the app's own
+// copy of the sample (used before the API's facility arrives) is the API's sample.
+afterEach(() => useLayout(undefined));
+
+test('the app ships the API\'s sample hospital (run `pnpm --filter api facility:sample` after changing it)', () => {
+  const { version: _v, publishedAt: _p, ...web } = webSample();
+  assert.deepEqual(JSON.parse(JSON.stringify(web)), JSON.parse(JSON.stringify(sampleFacility())));
+});
 
 const LAYOUTS: [string, Layout][] = [
   ['as shipped', {}],
@@ -17,7 +25,7 @@ const LAYOUTS: [string, Layout][] = [
 ];
 
 for (const [what, layout] of LAYOUTS) test(`the facility model has the app's ids (${what})`, () => {
-  setLayout(layout);
+  useLayout(layout);
   const f = sampleFacility(layout);
   const point = new Map(f.points.map((p) => [p.id, p])), group = new Map(f.groups.map((g) => [g.id, g])), dept = new Map(f.departments.map((d) => [d.id, d]));
 

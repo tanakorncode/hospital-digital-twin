@@ -6,7 +6,8 @@
     "start:dev": "nest start --watch",
     "build": "nest build",
     "test": "node --import tsx --test test/*.test.ts",
-    "typecheck": "tsc --noEmit -p ."
+    "typecheck": "tsc --noEmit -p .",
+    "facility:sample": "node --import tsx scripts/facility-sample.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.15",

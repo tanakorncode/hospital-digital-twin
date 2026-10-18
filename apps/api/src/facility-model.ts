@@ -28,8 +28,11 @@ export type Department = { id: string; name: string; shortName?: string; type: D
 // pointNoun: what the group's points are called — ห้องตรวจ · ห้อง · ช่องบริการ · ช่อง · เตียง · จุด · โต๊ะ … (a point
 // without its own name is "<pointNoun> <number>"). serves: this department's patients, or everyone (shared counters).
 // floorId null = outdoors on the site (kiosks at the gate). minOpen: open points the group needs while the department is open.
+// options.arrange: counters as one long counter (staff side by side, the default) or separate booths spread across the
+// area · options.triage: the ER triage levels [from, to] a treatment group takes (resuscitation bays: [1, 2]).
+export type GroupOptions = { arrange?: 'counter' | 'booths'; triage?: [number, number] };
 export type ServiceGroup = { id: string; departmentId: string; name: string; floorId: string | null; pointKind: PointKind; pointNoun: string;
-  steps: StepKind[]; serves: 'department' | 'all'; minOpen: number; active: boolean; retiredAt?: string };
+  steps: StepKind[]; serves: 'department' | 'all'; minOpen: number; options?: GroupOptions; active: boolean; retiredAt?: string };
 // roomCode: the number on the door (announcements, signs). floorId: only when the point is on another floor than its
 // group. inRoomId: a bed inside a room. map: a fixed spot (kiosks; drag-to-place later) — none = laid out automatically.
 export type ServicePoint = { id: string; groupId: string; number: number; name?: string; roomCode?: string; floorId?: string; roomKind?: RoomKind;
@@ -80,14 +83,14 @@ export const pointName = (ix: FacilityIndex, p: ServicePoint) => p.name || `${ix
 export function doctorRooms(ix: FacilityIndex, departmentId: string): ServicePoint[] {
   return (ix.groupsOf.get(departmentId) ?? []).filter((g) => g.pointKind === 'room' && g.steps.includes('exam')).flatMap((g) => ix.pointsOf.get(g.id) ?? []);
 }
-// A queue station as patients read it on a sign or in a LINE message: the point's own name, or "<noun> <number>" with
-// the group's name in front when the noun alone does not say where ("ห้องตรวจ 302", "ช่องจ่ายยา 2",
-// "ซักประวัติศัลยกรรม ช่องบริการ 2").
+// A queue station as patients read it on a sign or in a LINE message: the point's own name, or "<noun> <number>" — a
+// counter with the group's name in front when the noun alone does not say where ("ห้องตรวจ 302", "ช่องจ่ายยา 2",
+// "ซักประวัติศัลยกรรม ช่องบริการ 2"); rooms and beds go by their sign.
 export function stationLabel(ix: FacilityIndex, id: string): string | undefined {
   const p = ix.point.get(id), g = p && ix.group.get(p.groupId);
   if (!p || !g) return undefined;
   if (p.name) return p.name;
-  return g.name.includes(g.pointNoun) ? `${g.pointNoun} ${p.number}` : `${g.name} ${g.pointNoun} ${p.number}`;
+  return g.pointKind !== 'counter' || g.name.includes(g.pointNoun) ? `${g.pointNoun} ${p.number}` : `${g.name} ${g.pointNoun} ${p.number}`;
 }
 export const departmentOfPoint = (ix: FacilityIndex, p: ServicePoint) => ix.group.get(p.groupId)?.departmentId;
 
@@ -176,6 +179,11 @@ export function validateFacility(input: unknown): { data?: FacilityData; issues:
     if (!Array.isArray(g.steps) || g.steps.length > 6 || g.steps.some((s) => !STEP_KINDS.includes(s))) err('ขั้นตอนที่กลุ่มให้บริการไม่ถูกต้อง', g.id);
     if (g.serves !== 'department' && g.serves !== 'all') err('กลุ่มนี้ให้บริการใครไม่ถูกต้อง', g.id);
     if (!Number.isInteger(g.minOpen) || g.minOpen < 0 || g.minOpen > 50) err('จำนวนจุดที่ต้องเปิดอย่างน้อยไม่ถูกต้อง', g.id);
+    const o = g.options as GroupOptions | undefined;
+    if (o !== undefined && (!o || typeof o !== 'object' || Array.isArray(o) || Object.keys(o).some((k) => k !== 'arrange' && k !== 'triage')
+      || (o.arrange !== undefined && o.arrange !== 'counter' && o.arrange !== 'booths')
+      || (o.triage !== undefined && !(Array.isArray(o.triage) && o.triage.length === 2 && o.triage.every((n) => Number.isInteger(n) && n >= 1 && n <= 5) && o.triage[0] <= o.triage[1]))))
+      err('ตัวเลือกของกลุ่มบริการไม่ถูกต้อง', g.id);
     if (!isBool(g.active) || !isRetired(g.retiredAt)) err('สถานะกลุ่มบริการไม่ถูกต้อง', g.id);
   }
   const groupKind = new Map(d.groups.map((g) => [g.id, g.pointKind]));

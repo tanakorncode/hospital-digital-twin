@@ -1,39 +1,51 @@
+import { facility, facilityRevision, fBuildings, fDepartment, fFloors, fGroup, fPoint, fPoints, floorAt, fGroups, isActive, onFacility, pointLabel, sampleFacility,
+  type FBuilding, type FPoint } from './facility';
+
+// The hospital as drawn and simulated comes from the facility model (lib/facility.ts) — buildings, floors, the
+// departments on each floor, rooms, kiosks and the ground around the buildings. The lists below are rebuilt in place
+// whenever a new facility arrives, so modules that imported them keep reading the current hospital.
 export type BuildingKind = 'opd' | 'er' | 'inpatient' | 'diagnostics' | 'support';
 export type BuildingSpec = { id:string; name:string; kind:BuildingKind; x:number; z:number; width:number; depth:number; floors:number; color:string; };
 // World units; the camera looks from +x/+z, so smaller x+z sits further back on screen.
-export const buildings: BuildingSpec[] = [
-  {id:'opd',name:'อาคารผู้ป่วยนอก (OPD)',kind:'opd',x:-5,z:2.5,width:12,depth:8,floors:4,color:'#e8eef3'},
-  {id:'inpatient',name:'อาคารผู้ป่วยใน',kind:'inpatient',x:-4,z:-10,width:10,depth:5.5,floors:5,color:'#eef2f5'},
-  {id:'er',name:'อาคารฉุกเฉิน',kind:'er',x:7.5,z:-12,width:7,depth:6,floors:3,color:'#eef1f4'},
-  {id:'diagnostics',name:'อาคารศูนย์การแพทย์',kind:'diagnostics',x:11,z:-3.5,width:6.5,depth:6.5,floors:3,color:'#e9eef2'},
-  {id:'support',name:'อาคารสนับสนุน',kind:'support',x:14,z:5,width:7,depth:5,floors:2,color:'#e4e9ed'},
-];
+export const buildings: BuildingSpec[] = [];
 export type FloorInfo = { level:number; desc:string; count:number; depts:string[] };
 export type BuildingStats = { waiting:number; avgWait:number; rooms:[number,number]; floors:FloorInfo[] };
-export const buildingStats: Record<string,BuildingStats> = {
-  opd:{waiting:396,avgWait:52,rooms:[21,30],floors:[
-   {level:4,desc:'พิเศษ / คลินิกเฉพาะทาง',count:120,depts:['คลินิกพิเศษ','ตา','หู คอ จมูก']},
-   {level:3,desc:'แผนกตรวจรักษา',count:186,depts:['ศัลยกรรม','ออร์โธปิดิกส์','สูติ-นรีเวช']},
-   {level:2,desc:'ห้องตรวจอายุรกรรม',count:243,depts:['อายุรกรรมทั่วไป','อายุรกรรมเฉพาะทาง','คลินิกเบาหวาน']},
-   {level:1,desc:'ลงทะเบียน / ห้องยา',count:396,depts:['ลงทะเบียน','ห้องยา','การเงิน']}]},
-  inpatient:{waiting:48,avgWait:15,rooms:[212,240],floors:[
-   {level:5,desc:'หอผู้ป่วยพิเศษ',count:38,depts:['หอพิเศษ A','หอพิเศษ B']},
-   {level:4,desc:'หอผู้ป่วยศัลยกรรม',count:52,depts:['ศัลยกรรมชาย','ศัลยกรรมหญิง']},
-   {level:3,desc:'หอผู้ป่วยอายุรกรรม',count:61,depts:['อายุรกรรมชาย','อายุรกรรมหญิง']},
-   {level:2,desc:'หอผู้ป่วยเด็ก',count:34,depts:['กุมารเวช','ทารกแรกเกิด']},
-   {level:1,desc:'หอผู้ป่วยรับใหม่ / อายุรกรรมรวม',count:48,depts:['หอผู้ป่วยรับใหม่','อายุรกรรมรวม']}]},
-  er:{waiting:27,avgWait:12,rooms:[9,12],floors:[
-   {level:3,desc:'ห้องผ่าตัดฉุกเฉิน',count:6,depts:['ห้องผ่าตัด','ห้องพักฟื้น']},
-   {level:2,desc:'สังเกตอาการ',count:18,depts:['สังเกตอาการ','ICU ฉุกเฉิน']},
-   {level:1,desc:'คัดแยก / ห้องฉุกเฉิน',count:27,depts:['คัดแยก (Triage)','ห้องฉุกเฉิน','ห้องหัตถการ']}]},
-  diagnostics:{waiting:84,avgWait:24,rooms:[11,16],floors:[
-   {level:3,desc:'ศูนย์หัวใจ',count:22,depts:['ศูนย์หัวใจ','Echo / EKG']},
-   {level:2,desc:'รังสีวิทยา (เอกซเรย์)',count:31,depts:['รังสีวิทยา']},
-   {level:1,desc:'ห้องปฏิบัติการ / เจาะเลือด',count:84,depts:['ห้องปฏิบัติการ','ห้องเจาะเลือด']}]},
-  support:{waiting:0,avgWait:0,rooms:[0,0],floors:[
-   {level:2,desc:'สำนักงาน / IT',count:42,depts:['สำนักงาน','ศูนย์ IT']},
-   {level:1,desc:'คลังพัสดุ / ซักฟอก',count:18,depts:['คลังพัสดุ','ซักฟอก','โรงครัว']}]},
-};
+// floors: every floor with its departments in band order (a department is on a floor when one of its groups — or a
+// room / counter / bed of it — is there). waiting / avgWait / rooms / count are demo figures (the busiest hour) for the
+// sample hospital; a building or floor added later starts from a plain estimate. Real counts replace them in live mode.
+export const buildingStats: Record<string,BuildingStats> = {};
+const DEMO_BUILDING:Record<string,[number,number,[number,number]]> = {opd:[396,52,[21,30]],inpatient:[48,15,[212,240]],er:[27,12,[9,12]],diagnostics:[84,24,[11,16]],support:[0,0,[0,0]]};
+const DEMO_FLOOR:Record<string,number> = {'opd-4':120,'opd-3':186,'opd-2':243,'opd-1':396,'inpatient-5':38,'inpatient-4':52,'inpatient-3':61,'inpatient-2':34,'inpatient-1':48,
+  'er-3':6,'er-2':18,'er-1':27,'diagnostics-3':22,'diagnostics-2':31,'diagnostics-1':84,'support-2':42,'support-1':18};
+const kindFor = (b:FBuilding):BuildingKind => b.kind==='other' ? 'support' : b.kind;
+// The departments on a floor, in band order (department order).
+type Band = {deptId:string; name:string};
+const bandsOf = new Map<string,Band[]>(); // floor id → bands
+export const floorBands = (buildingId:string, level:number) => bandsOf.get(floorAt(buildingId,level)?.id ?? '') ?? [];
+// Band index of a department on a floor (−1: not there).
+export const bandIndex = (buildingId:string, level:number, deptId:string) => floorBands(buildingId,level).findIndex(x=>x.deptId===deptId);
+function rebuildPlan() {
+  const f = facility(), order = new Map(f.departments.map((d,i)=>[d.id,i]));
+  bandsOf.clear();
+  const on = new Map<string,Set<string>>();
+  const add = (floorId:string|null|undefined, deptId:string) => { if (!floorId) return; if (!on.has(floorId)) on.set(floorId,new Set()); on.get(floorId)!.add(deptId); };
+  for (const g of fGroups()) if (g.pointKind!=='kiosk') add(g.floorId,g.departmentId);
+  for (const p of fPoints()) { const g = fGroup(p.groupId)!; if (g.pointKind!=='kiosk' && p.floorId) add(p.floorId,g.departmentId); }
+  for (const [floorId,ids] of on) bandsOf.set(floorId,[...ids].filter(id=>fDepartment(id)).sort((a,b)=>order.get(a)!-order.get(b)!).map(id=>({deptId:id,name:fDepartment(id)!.name})));
+  buildings.splice(0,buildings.length,...fBuildings().map(b=>({id:b.id,name:b.name,kind:kindFor(b),x:b.map.x,z:b.map.z,width:b.map.width,depth:b.map.depth,
+    floors:Math.max(1,...fFloors(b.id).map(x=>x.level)),color:b.map.color})));
+  for (const k of Object.keys(buildingStats)) delete buildingStats[k];
+  for (const b of fBuildings()) {
+    const floors = fFloors(b.id).slice().reverse().map(x=>{ const bands = bandsOf.get(x.id) ?? [];
+      return {level:x.level,desc:x.description,count:DEMO_FLOOR[x.id] ?? 20*Math.max(1,bands.length),depts:bands.map(d=>d.name)}; });
+    const [waiting,avgWait,rooms] = DEMO_BUILDING[b.id] ?? [0,0,[0,0] as [number,number]];
+    buildingStats[b.id] = {waiting,avgWait,rooms,floors};
+  }
+  roads.splice(0,roads.length,...f.site.roads.map(r=>[...r] as Rect));
+  parkingLots.splice(0,parkingLots.length,...f.site.parking.map(r=>[...r] as Rect));
+  fillerBuildings.splice(0,fillerBuildings.length,...f.site.fillers.map(x=>({id:x.id,name:'',kind:'diagnostics' as BuildingKind,x:x.x,z:x.z,width:x.width,depth:x.depth,floors:x.floors,color:x.color})));
+  rebuildRooms(); rebuildKiosks();
+}
 // Density = number of people in one area (a floor or a department zone), on one scale everywhere.
 // Demo thresholds; the hospital should set real ones (e.g. per m² or against each zone's capacity).
 export const DENSITY_LOW = 100, DENSITY_HIGH = 200, DENSITY_MAX = 300;
@@ -81,27 +93,10 @@ export const demoFlows = [
 ] as const;
 // Ground layout shared by the 3D scene and the mini map: [x0,z0,x1,z1] rectangles in world units.
 export type Rect = [x0:number,z0:number,x1:number,z1:number];
-export const roads:Rect[] = [
- [-80,8,80,10],        // front avenue
- [1.9,-80,3.7,80],     // central spine
- [-80,-5.3,1.9,-3.7],  // OPD ↔ inpatient lane
- [3.7,-8.6,80,-7.2],   // ER ↔ diagnostics lane
- [-15,-80,-13.2,80],   // west road
- [20.2,-80,22,80],     // east road
-];
-export const parkingLots:Rect[] = [[-1,11.2,11,17.4],[-24,11.2,-16.5,17.4]];
-// Unlabelled neighbouring blocks that frame the campus.
-export const fillerBuildings:BuildingSpec[] = [
- {id:'f1',name:'',kind:'diagnostics',x:-21,z:-9,width:6,depth:5,floors:3,color:'#e6ebef'},
- {id:'f2',name:'',kind:'diagnostics',x:-22,z:1,width:5,depth:6,floors:2,color:'#e9edf1'},
- {id:'f3',name:'',kind:'diagnostics',x:-6,z:-25,width:9,depth:5,floors:4,color:'#e6ebef'},
- {id:'f4',name:'',kind:'diagnostics',x:9,z:-24,width:7,depth:6,floors:3,color:'#e9edf1'},
- {id:'f5',name:'',kind:'diagnostics',x:16,z:-15.5,width:5,depth:5,floors:2,color:'#e4e9ed'},
- {id:'f6',name:'',kind:'diagnostics',x:29,z:-6,width:6,depth:5,floors:3,color:'#e9edf1'},
- {id:'f7',name:'',kind:'diagnostics',x:28,z:3,width:5,depth:6,floors:2,color:'#e6ebef'},
- {id:'f8',name:'',kind:'diagnostics',x:-30,z:-20,width:7,depth:5,floors:3,color:'#e9edf1'},
- {id:'f9',name:'',kind:'diagnostics',x:-4,z:-36,width:8,depth:5,floors:3,color:'#e6ebef'},
-];
+// Ground around the buildings (facility site): roads, car parks, unlabelled neighbouring blocks that frame the campus.
+export const roads:Rect[] = [];
+export const parkingLots:Rect[] = [];
+export const fillerBuildings:BuildingSpec[] = [];
 // Who the little figures on the map are; their clothing colour encodes the type.
 // Nurses wear white with a banded cap (accent = band colour); doctors wear green scrubs and a scrub cap.
 export const personTypes = [
@@ -128,31 +123,31 @@ let serviceHours:ServiceHours = {...DEFAULT_HOURS};
 export function setServiceHours(h?:ServiceHours) { serviceHours = {...(h ?? DEFAULT_HOURS)}; }
 export const getServiceHours = () => serviceHours;
 
-// ---- Layout from Settings: departments added on the OPD clinic floors (2–4), and departments, exam rooms and
-// counters switched off. Ids: `dept:<name>` for a department, the queue station id for a room or counter.
-// The floor's rooms are shared out between its departments, so a new department takes rooms from its neighbours.
+// ---- Switched on / off ------------------------------------------------------------------------------------------
+// From the facility: `dept:<name>` for a department, a point's id (queue station, room, bed) for that point — off
+// when it, its group, its floor or its building is switched off (its department has its own `dept:` switch).
+export const isOff = (id:string) => {
+  if (id.startsWith('dept:')) { const d = facility().departments.find(x=>x.name===id.slice(5) && !x.retiredAt); return !!d && !isActive(d); }
+  const p = fPoint(id) ?? fPoint(`room:${id}`); if (!p) return false;
+  const g = fGroup(p.groupId), fl = p.floorId ?? g?.floorId, floor = fl ? facility().floors.find(x=>x.id===fl) : undefined;
+  return !isActive(p) || !isActive(g) || (!!floor && (!isActive(floor) || !isActive(facility().buildings.find(b=>b.id===floor.buildingId))));
+};
+// Bumps on every new facility: memoised lists of rooms / stations / clinics key on it.
+export const layoutRevision = () => facilityRevision();
+
+// ---- The old Settings "layout" (แผนกและจุดบริการ), until the facility settings page replaces it --------------------
+// The API re-makes the facility from it; here it is only what that page edits. Departments added on the OPD clinic
+// floors (2–4), renamed (by clinic key), exam rooms shared out ('opd-<floor>' → counts in department order), room names.
 export type CustomDept = {name:string; level:number};
-// names: a department renamed in Settings, by its clinic key (opd-<floor>-<index>); the key itself never changes.
-// split: exam rooms per department of an OPD floor ('opd-<floor>' → counts in department order); roomNames: a room's
-// display name by id (opd-205). Ids never change.
 export type Layout = {off?:string[]; depts?:CustomDept[]; names?:Record<string,string>; split?:Record<string,number[]>; roomNames?:Record<string,string>};
 export const CLINIC_FLOORS = [2,3,4];
-const builtInDepts = new Map(Object.entries(buildingStats).flatMap(([id,s])=>s.floors.map(f=>[`${id}:${f.level}`,[...f.depts]] as [string,string[]])));
-export const builtInDeptCount = (level:number) => builtInDepts.get(`opd:${level}`)?.length ?? 0;
-let layoutOff = new Set<string>(), layoutDepts:CustomDept[] = [], layoutNames:Record<string,string> = {}, layoutSplit:Record<string,number[]> = {}, layoutRoomNames:Record<string,string> = {}, layoutKey = '', layoutRev = 0;
-export function setLayout(l?:Layout) {
-  const key = JSON.stringify([l?.depts ?? [],[...(l?.off ?? [])].sort(),l?.names ?? {},l?.split ?? {},l?.roomNames ?? {}]);
-  if (key===layoutKey) return;
-  layoutKey = key; layoutRev++;
-  layoutOff = new Set(l?.off ?? []); layoutDepts = [...(l?.depts ?? [])]; layoutNames = {...(l?.names ?? {})}; layoutSplit = {...(l?.split ?? {})}; layoutRoomNames = {...(l?.roomNames ?? {})};
-  buildingStats.opd?.floors.forEach(f=>{ f.depts = [...(builtInDepts.get(`opd:${f.level}`) ?? f.depts).map((n,i)=>layoutNames[`opd-${f.level}-${i}`] ?? n),...layoutDepts.filter(d=>d.level===f.level).map(d=>d.name)]; });
-}
-// Bumps on every layout change: memoised lists of rooms / stations / clinics key on it.
-export const layoutRevision = () => layoutRev;
-export const isOff = (id:string) => layoutOff.has(id);
+let layoutDepts:CustomDept[] = [];
+export function setLayout(l?:Layout) { layoutDepts = [...(l?.depts ?? [])]; }
 export const customDepts = () => layoutDepts;
-// The name a built-in OPD department had before any rename (for "คืนชื่อเดิม").
-export const builtInDeptName = (level:number, index:number) => builtInDepts.get(`opd:${level}`)?.[index];
+// The sample hospital's own OPD departments (what the layout page counts from, and "คืนชื่อเดิม").
+const builtIn = (level:number) => sampleFacility().departments.filter(d=>d.id.startsWith(`opd-${level}-`));
+export const builtInDeptCount = (level:number) => builtIn(level).length;
+export const builtInDeptName = (level:number, index:number) => sampleFacility().departments.find(d=>d.id===`opd-${level}-${index}`)?.name;
 export const opdOpenMin = () => serviceHours.opdOpen*60, opdLastArrivalMin = () => serviceHours.opdClose*60;
 const dailyProfile:Record<BuildingKind,number[]> = {
   //            00   01   02   03   04   05   06   07   08   09   10   11   12   13   14   15   16   17   18   19   20   21   22   23
@@ -238,34 +233,38 @@ export function peakWindow(series:ScopePoint[]) {
 }
 export const fmtHour = (h:number) => `${String(Math.floor(h)).padStart(2,'0')}:${String(Math.floor((h%1)*60)).padStart(2,'0')}`;
 
-// ---- Rooms and doctor duty roster (demo) ----------------------------------------------------------
-// Rooms along the back wall of each floor, numbered level*100+n. The same formula drives the 3D plan.
+// ---- Rooms --------------------------------------------------------------------------------------------------------
+// Rooms along the back wall of each floor: the room points of the facility on that floor, in band order, equal widths.
+// A room's id is how records name it: `opd-201` for the point `room:opd-201` (and building + room number for rooms
+// that are queue stations under another id, such as the x-ray rooms), else the point's own id.
 export type RoomKind = 'exam'|'scan'|'treatment'|'ward'|'office';
-export type Room = {id:string; buildingId:string; level:number; index:number; count:number; number:number; name:string; kind:RoomKind; dept:string; deptIndex:number};
-const roomTitle:Record<RoomKind,string> = {exam:'ห้องตรวจ',scan:'ห้องสแกน',treatment:'ห้องรักษา',ward:'ห้องพัก',office:'สำนักงาน'};
+export type Room = {id:string; buildingId:string; level:number; index:number; count:number; number:number; name:string; kind:RoomKind; dept:string; deptIndex:number; pointId:string};
+// The sample hospital's rule for how many rooms fit a floor (the old layout page still shares out that many).
 export const roomsPerFloor = (b:BuildingSpec) => Math.max(3,Math.round(b.width/2));
-export function floorRooms(buildingId:string, level:number):Room[] {
-  const b = buildings.find(x=>x.id===buildingId);
-  if (!b) return [];
-  const n = roomsPerFloor(b), depts = buildingStats[buildingId]?.floors.find(f=>f.level===level)?.depts ?? [''];
-  // A split from Settings counts only while it still fits the floor (same departments, every room given out).
-  const s = layoutSplit[`${buildingId}-${level}`], split = s && s.length===depts.length && s.every(x=>x>=1) && s.reduce((a,x)=>a+x,0)===n ? s : undefined;
-  return Array.from({length:n},(_,k)=>{
-    // Medical centre: floor 1 = laboratory rooms, floor 2 = x-ray rooms, floor 3 = scan / exam rooms alternating.
-    const kind:RoomKind = b.kind==='opd'?'exam':b.kind==='er'?'treatment':b.kind==='inpatient'?'ward':b.kind==='support'?'office'
-      : level===1?'office':level===2||k%2===0?'scan':'exam';
-    const title = b.kind==='diagnostics' && level===1 ? 'ห้องปฏิบัติการ' : b.kind==='diagnostics' && level===2 ? 'ห้องเอกซเรย์' : roomTitle[kind];
-    // Rooms go to departments as set in Settings (split), else by even bands — a room belongs to the band its centre is in.
-    const deptIndex = split ? split.findIndex((_,i)=>k<split.slice(0,i+1).reduce((a,x)=>a+x,0)) : Math.min(depts.length-1,Math.floor((k+0.5)/n*depts.length)), number = level*100+k+1;
-    const id = `${b.id}-${number}`;
-    return {id,buildingId,level,index:k,count:n,number,name:layoutRoomNames[id] ?? `${title} ${number}`,kind,dept:depts[deptIndex],deptIndex};
-  });
+const roomsByFloor = new Map<string,Room[]>(), roomById = new Map<string,Room>();
+const roomIdOf = (p:FPoint, buildingId:string) => p.id.startsWith('room:') ? p.id.slice(5) : p.roomCode ? `${buildingId}-${p.roomCode}` : p.id;
+function rebuildRooms() {
+  roomsByFloor.clear(); roomById.clear();
+  for (const b of fBuildings()) for (const fl of fFloors(b.id)) {
+    const bands = bandsOf.get(fl.id) ?? [], band = new Map(bands.map((x,i)=>[x.deptId,i]));
+    const list = fPoints().map(p=>({p,g:fGroup(p.groupId)!})).filter(({p,g})=>g.pointKind==='room' && (p.floorId ?? g.floorId)===fl.id)
+      .map(({p,g})=>({p,g,band:band.get(g.departmentId) ?? 0}));
+    const gOrder = new Map(facility().groups.map((g,i)=>[g.id,i]));
+    list.sort((a,b)=>a.band-b.band || gOrder.get(a.g.id)!-gOrder.get(b.g.id)! || a.p.number-b.p.number);
+    const rooms = list.map(({p,g,band:deptIndex},k):Room=>{
+      const number = /^\d+$/.test(p.roomCode ?? '') ? Number(p.roomCode) : p.number;
+      const kind:RoomKind = p.roomKind==='lab' ? 'office' : p.roomKind ?? (g.steps.includes('exam') ? 'exam' : b.kind==='er' ? 'treatment' : b.kind==='inpatient' ? 'ward' : 'office');
+      return {id:roomIdOf(p,b.id),buildingId:b.id,level:fl.level,index:k,count:list.length,number,name:pointLabel(p),kind,dept:bands[deptIndex]?.name ?? '',deptIndex,pointId:p.id};
+    });
+    roomsByFloor.set(`${b.id}:${fl.level}`,rooms);
+    for (const r of rooms) { roomById.set(r.id,r); roomById.set(r.pointId,r); }
+  }
 }
-export const findRoom = (id:string) => { const [b,num] = [id.slice(0,id.lastIndexOf('-')),Number(id.slice(id.lastIndexOf('-')+1))]; return floorRooms(b,Math.floor(num/100)).find(r=>r.id===id); };
+export const floorRooms = (buildingId:string, level:number):Room[] => roomsByFloor.get(`${buildingId}:${level}`) ?? [];
+export const findRoom = (id:string) => roomById.get(id);
 export const isDoctorRoom = (r:Room) => r.kind==='exam' || r.kind==='treatment';
 
-// Demo roster with invented names. Real data should come from the duty-roster system / HIS and can be
-// pushed live (LiveSnapshot.duty), which overrides the roster for the current hour.
+// ---- Doctor duty roster (demo) ---------------------------------------------------------------------------------
 export type Doctor = {title:'นพ.'|'พญ.'; first:string; last:string};
 export type Shift = {from:number; to:number; doctor:Doctor};
 export type DutyStatus = 'active'|'break'|'vacant';
@@ -330,7 +329,7 @@ export const dutyLabel:Record<DutyStatus,string> = {active:'ตรวจอย�
 export const FLOOR_H = 0.8;
 export type Spot = {x:number; y:number; z:number};
 const bld = (id:string) => buildings.find(b=>b.id===id)!;
-const floorY = (level:number) => (level-1)*FLOOR_H+0.11;
+export const floorY = (level:number) => (level-1)*FLOOR_H+0.11;
 function bandOf(id:string, level:number, deptIndex:number) {
   const b = bld(id), n = buildingStats[id]?.floors.find(f=>f.level===level)?.depts.length ?? 1, w = b.width/n;
   const x0 = b.x-b.width/2+deptIndex*w;
@@ -369,13 +368,15 @@ export function roomSpot(roomId:string):Spot {
 // ---- Queue-ticket kiosks (demo) -------------------------------------------------------------------------
 export type KioskStatus = 'online'|'paper-low'|'offline';
 export type Kiosk = {id:string; name:string; x:number; z:number; level?:number; buildingId?:string; status:KioskStatus};
-export const kiosks:Kiosk[] = [
-  {id:'k-main-1',name:'Kiosk ทางเข้าหลัก 1',x:-10.0,z:7.0,status:'online'},
-  {id:'k-main-2',name:'Kiosk ทางเข้าหลัก 2',x:-6.3,z:7.0,status:'paper-low'},
-  {id:'k-opd-lobby',name:'Kiosk โถง OPD ชั้น 1',x:-8.2,z:3.2,level:1,buildingId:'opd',status:'online'},
-  {id:'k-er',name:'Kiosk หน้าห้องฉุกเฉิน',x:10.3,z:-8.82,status:'online'},
-  {id:'k-dx',name:'Kiosk ศูนย์การแพทย์',x:12.9,z:0.2,status:'online'},
-];
+// The facility's kiosk points (where they stand on the site, or on a floor). Their paper / network state is demo data.
+export const kiosks:Kiosk[] = [];
+const DEMO_KIOSK_STATUS:Record<string,KioskStatus> = {'k-main-2':'paper-low'};
+function rebuildKiosks() {
+  kiosks.splice(0,kiosks.length,...fPoints().filter(p=>fGroup(p.groupId)?.pointKind==='kiosk' && p.map).map<Kiosk>(p=>{
+    const fl = p.floorId ? facility().floors.find(x=>x.id===p.floorId) : undefined;
+    return {id:p.id,name:pointLabel(p),x:p.map!.x,z:p.map!.z,...(fl ? {level:fl.level,buildingId:fl.buildingId} : {}),status:isActive(p) ? DEMO_KIOSK_STATUS[p.id] ?? 'online' : 'offline'};
+  }));
+}
 export const kioskStatusLabel:Record<KioskStatus,string> = {online:'ออนไลน์','paper-low':'กระดาษใกล้หมด',offline:'ออฟไลน์'};
 export const kioskY = (k:Kiosk) => k.level ? floorY(k.level) : 0;
 
@@ -414,3 +415,7 @@ export function findDoctors(query:string, hour:number, limit=6):DoctorHit[] {
   const rank = (h:DoctorHit) => h.status==='active' ? 0 : h.status==='break' ? 1 : 2;
   return out.sort((a,b)=>rank(a)-rank(b) || a.from-b.from).slice(0,limit);
 }
+
+// Build from the facility now (the sample until the API's arrives) and again on every new facility.
+rebuildPlan();
+onFacility(rebuildPlan);

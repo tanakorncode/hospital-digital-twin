@@ -4,6 +4,7 @@ import { clinicOpen, fmtMin, opdClinics, patientAt, type PatientState } from '..
 import { dutyLabel, isOff, roomDutyAt } from '../../lib/scene-data';
 import { useDemoClock } from '../../lib/use-demo-clock';
 import { allStations, applyQueueEvents, basePatients, isLive, pausedUntil, stationById, useQueueEvents, worldKey } from '../../lib/queue';
+import { buildingShort } from '../../lib/facility';
 import { counterZones, deptScreen, nowStates, screenData, screenDepts, stationScreen, type ScreenData, type StationScreen } from '../../lib/queue-screen';
 
 // Public queue screens. Queue numbers only — no names, no HN — because they hang in public areas.
@@ -33,9 +34,11 @@ export default function TvPage() {
     return d ? <StationTv d={d} m={m}/> : <TvMissing text={`ไม่พบจุดบริการ "${mode.id}" หรือถูกปิดใช้งานในหน้าตั้งค่า`}/>; }
   if (mode.kind==='dept') { const d = deptScreen(mode.name,nowStates(patients,m),m);
     return d ? <DeptTv d={d} m={m}/> : <TvMissing text={`ไม่พบแผนก "${mode.name}"`}/>; }
-  if (level===1) { const now1 = nowStates(patients,m);
-    return <main className="tv"><header className="tvHead"><div><h1>OPD ชั้น 1</h1><p>ลงทะเบียน · ห้องยา · การเงิน · ไม่แสดงชื่อเพื่อความเป็นส่วนตัว</p></div><strong className="tvClock">{fmtMin(m)}</strong></header>
-      <div className="tvGrid">{counterZones.map((_,i)=>{ const d = screenData(1,i,now1,m)!; return <DeptPanel key={i} d={d}/>; })}</div></main>; }
+  // The floor with the shared counters (registration, pharmacy, cashier): one panel per counter group.
+  const zones = counterZones().filter(z=>z.level===level);
+  if (zones.length && !clinics.length) { const now1 = nowStates(patients,m);
+    return <main className="tv"><header className="tvHead"><div><h1>{buildingShort(zones[0].buildingId)} ชั้น {level}</h1><p>{zones.map(z=>z.title).join(' · ')} · ไม่แสดงชื่อเพื่อความเป็นส่วนตัว</p></div><strong className="tvClock">{fmtMin(m)}</strong></header>
+      <div className="tvGrid">{zones.map(z=>{ const d = screenData(z.level,z.zone,now1,m,z.buildingId); return d ? <DeptPanel key={z.zone} d={d}/> : null; })}</div></main>; }
   const now = patients.map(p=>patientAt(p,m)).filter((s):s is PatientState=>!!s && s.p.flow==='opd');
   const isExam = (s:PatientState) => s.step.kind==='exam' || s.step.kind==='followup';
   const missed = now.filter(s=>s.status==='missed' && s.p.deptWhere.endsWith(`OPD ชั้น ${level}`));

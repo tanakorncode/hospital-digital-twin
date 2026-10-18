@@ -1,6 +1,7 @@
 'use client';
 import { apiBase } from './api-url';
-import { buildings, deptDirectory } from './scene-data';
+import { servicePlace } from './patients';
+import { buildingStats, buildings, deptDirectory } from './scene-data';
 
 // Wayfinding (stage 2.8): public places with stable codes that QR signs carry, and plain-Thai directions between them.
 // Places only — a sign or this page never holds anything about a patient.
@@ -25,8 +26,10 @@ export const signUrl = (code:string, kind:'at'|'to'='at') => `${typeof window===
 // the elderly; the place's own landmark (set by the hospital) finishes the route.
 export function directions(from:Destination|undefined, to:Destination):string[] {
  const steps:string[] = [];
- const start = from ?? {buildingId:'opd',level:1,nameTh:'ทางเข้าหลัก อาคารผู้ป่วยนอก'} as Destination;
- if (!from) steps.push('เริ่มจากทางเข้าหลัก อาคารผู้ป่วยนอก (OPD) ชั้น 1');
+ // Without a starting point: the main entrance — the ground floor of the building with registration.
+ const reg = servicePlace('registration'), entryB = reg?.buildingId ?? to.buildingId, entryL = Math.min(...(buildingStats[entryB]?.floors ?? [{level:1}]).map(f=>f.level));
+ const start = from ?? {buildingId:entryB,level:entryL,nameTh:`ทางเข้าหลัก ${buildingName(entryB)}`} as Destination;
+ if (!from) steps.push(`เริ่มจากทางเข้าหลัก ${buildingName(entryB)} ชั้น ${entryL}`);
  if (from && from.code===to.code) return ['คุณอยู่ที่นี่แล้ว'];
  if (start.buildingId!==to.buildingId) {
   if (start.level!==1) steps.push(`ใช้ลิฟต์หรือบันไดลงไปชั้น 1 ของ${buildingName(start.buildingId)}`);
