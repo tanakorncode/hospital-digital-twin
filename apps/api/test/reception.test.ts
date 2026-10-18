@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { AppError } from '../src/errors';
 import type { Answer, HelpRequest, TurnResponse } from '../src/reception.service';
-import { ADMIN_PASSWORD, makeApi, receptionController, signIn } from './helpers';
+import { ADMIN_PASSWORD, fakeSocket, makeApi, receptionController, signIn } from './helpers';
 
 // Digital Reception, Release A (no LLM): a kiosk signs in as a device, a visitor gets answers from rules and approved
 // content only, clinical / personal / emergency questions go to a person, and nothing typed is stored.
@@ -181,4 +181,25 @@ test(`queue: off until an administrator allows it; then the board and "my queue"
   assert.equal(say(sid, { type: 'text', text: 'ห้องยาอยู่ไหน' }).intent, 'wayfinding', 'the way there is unchanged');
   assert.equal(say(sid, { type: 'text', text: 'ขอดูนัดของฉัน' }).intent, 'personal', 'other personal things still go to staff');
   void codeOf;
+});
+
+test('the dashboard: kiosks on / off by when they were last heard from, calls for staff and use today — counts only', () => {
+  const { api, admin, ctl, made, auth, session } = setup();
+  const other = api.gateway.saveKiosk(admin, { name: 'ตู้ห้องยา', atCode: 'OPD-PHARMACY' }) as R; // registered, never switched on
+  const sid = session(); ctl.help(sid, auth);
+  type K = { id: string; name: string; place?: string; online: boolean; helpPending: boolean; sessionsToday: number; handoffsToday: number; lastSeenAt?: string };
+  type S = { ok: boolean; reception: { kiosks: K[] }; appointments: { total: number }; messages: { waiting: number; failed24h: number } };
+  const sum = () => api.gateway.dashboardSummary(admin) as unknown as S;
+  const k = (id: string) => sum().reception.kiosks.find((x) => x.id === id)!;
+  assert.deepEqual([k(made.device!.id).online, k(made.device!.id).place, k(made.device!.id).helpPending, k(made.device!.id).sessionsToday, k(made.device!.id).handoffsToday], [true, 'โถงหน้า OPD', true, 1, 1]);
+  assert.deepEqual([k(other.device!.id).online, k(other.device!.id).lastSeenAt], [false, undefined], 'never heard from');
+  // Quiet for 13 minutes (its session renews every 10): off.
+  const later = new Date(Date.now() + 13 * 60_000); api.kiosks.now = () => later;
+  assert.equal(k(made.device!.id).online, false);
+  // Heard from again (a call with its session): on.
+  api.kiosks.now = () => new Date(later.getTime() + 1000); ctl.start(`Bearer ${ctl.signIn('10.0.0.5', { credential: made.credential }).token}`);
+  assert.equal(k(made.device!.id).online, true);
+  const raw = JSON.stringify(sum());
+  assert.ok(!/hn|HN|profile|line/i.test(raw.replace(/online|helpPending|handoffs/g, '')), 'nothing about any patient');
+  assert.equal((api.gateway.dashboardSummary(fakeSocket()) as { code?: string }).code, 'AUTH_REQUIRED');
 });

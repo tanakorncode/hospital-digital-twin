@@ -2898,7 +2898,7 @@ input.bare[type=search]::-webkit-search-cancel-button{display:none}
 .ovLive{display:inline-flex;align-items:center;gap:6px;font-size:12px}
 .ovLive i{width:8px;height:8px;border-radius:50%;background:#16a34a;box-shadow:0 0 0 3px #16a34a33}
 .ovTiles{grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}
-@media (min-width:1200px){.ovTiles{grid-template-columns:repeat(5,minmax(0,1fr))}}
+@media (min-width:1200px){.ovTiles{grid-template-columns:repeat(6,minmax(0,1fr))}}
 .ovMore{align-self:flex-start;font-size:12.5px}
 .ovTile small{display:flex;align-items:center;gap:5px}
 .ovTile.ok{border-top-color:#16a34a}.ovTile.warn{border-top-color:#d97706}.ovTile.bad{border-top-color:#c92a2a}
@@ -2929,7 +2929,7 @@ input.bare[type=search]::-webkit-search-cancel-button{display:none}
 .ovSplit{display:flex;gap:2px;height:12px}
 .ovSplit i{display:block;min-width:0;border-radius:0 4px 4px 0}
 .ovSplit i:first-child{border-radius:0}
-.ovChip{display:inline-block;padding:1px 8px;border-radius:99px;font-size:11.5px;font-weight:700}
+.ovChip{display:inline-block;padding:1px 8px;border-radius:99px;font-size:11.5px;font-weight:700;white-space:nowrap}
 .ovChip.over{background:#ffe5e3;color:#c92a2a}.ovChip.near{background:#fef3c7;color:#92400e}.ovChip.ok{background:#e8f1fc;color:#184f95}
 .ovOver{font-style:normal;font-weight:600;color:#c92a2a;font-size:11px}
 .ovAttn{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;font-size:13px}
@@ -2948,3 +2948,9 @@ input.bare[type=search]::-webkit-search-cancel-button{display:none}
 .ovTable tbody tr:hover{background:#f5f8fb}
 .ovTable tr.warnRow td:last-child b{color:#c92a2a}
 .ovTable td.muted{max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ovSub{margin:4px 0 0;font-size:12.5px;color:#34495e}
+.ovSys{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:5px;font-size:13px}
+.ovSys li{display:grid;grid-template-columns:110px 1fr;gap:8px;padding:6px 10px;border-radius:8px;border-left:4px solid #94a3b8;background:#f8fafc;color:#34495e}
+.ovSys li b{color:#0f2340}
+.ovSys li.ok{border-left-color:#16a34a}.ovSys li.warn{border-left-color:#d97706;background:#fffbeb}.ovSys li.bad{border-left-color:#c92a2a;background:#fff5f4}.ovSys li.off{color:#94a3b8}
+.ovChip.bad{background:#ffe5e3;color:#c92a2a}.ovChip.warn{background:#fef3c7;color:#92400e}

@@ -389,6 +389,15 @@ export class AppointmentService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
+  // Today's appointments by clinic and status, and requests to move waiting for a decision — counts only (the dashboard).
+  dayCounts(day = localDate(this.now())): { rows: { clinic: string; status: ApptStatus; n: number }[]; pending: { clinic: string; n: number }[] } {
+    const [a, b] = dayRange(day);
+    return { rows: this.store.db.prepare(`SELECT a.clinic_code AS clinic, a.status, COUNT(*) AS n FROM appointments a JOIN appointment_slots s ON s.id = a.slot_id
+        WHERE s.starts_at >= ? AND s.starts_at < ? GROUP BY a.clinic_code, a.status`).all(a, b) as { clinic: string; status: ApptStatus; n: number }[],
+      pending: this.store.db.prepare(`SELECT a.clinic_code AS clinic, COUNT(*) AS n FROM appointment_reschedule_requests r JOIN appointments a ON a.id = r.appointment_id
+        WHERE r.status = 'PENDING' GROUP BY a.clinic_code`).all() as { clinic: string; n: number }[] };
+  }
+
   // ---- appointments -----------------------------------------------------------------------------------------------
   create(profileId: string, slotId: unknown, channel: 'STAFF' | 'LINE', by: string): Appointment {
     return this.store.tx(() => {

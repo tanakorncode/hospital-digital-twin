@@ -147,3 +147,15 @@ test('queue: the ER key covers every part of the ER (triage too); a shared servi
   assert.equal(q(rx, pharmacy).ok, true, 'pharmacy staff at the pharmacy');
   assert.equal(q(rx, medRoom).code, 'FORBIDDEN');
 });
+
+test('the dashboard counts today\'s appointments and bookings only for the account\'s clinics', () => {
+  const { api, admin, med, all, bslot, aslot } = setup();
+  for (const [c, hn] of [[MED, '65-000011'], [EYE, '65-000012'], [EYE, '65-000013']]) {
+    api.gateway.createAppt(all, { hn, slotId: aslot(c), key: key() });
+    api.gateway.createBooking(all, { hn, slotId: bslot(c), key: key() });
+  }
+  type S = { appointments: { total: number; confirmed: number }; bookings: { total: number } };
+  const s = (u: typeof med) => api.gateway.dashboardSummary(u) as unknown as S;
+  assert.deepEqual([s(admin).appointments.total, s(admin).bookings.total], [3, 3]);
+  assert.deepEqual([s(med).appointments.total, s(med).bookings.total], [1, 1], 'medicine only');
+});

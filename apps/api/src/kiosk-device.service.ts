@@ -14,7 +14,7 @@ type Row = { id: string; name: string; at_code: string | null; secret_hash: stri
 const toDevice = (r: Row): KioskDevice => ({ id: r.id, name: r.name, atCode: r.at_code ?? undefined, status: r.status, createdAt: r.created_at,
   rotatedAt: r.rotated_at ?? undefined, lastSeenAt: r.last_seen_at ?? undefined });
 const sha = (s: string) => createHash('sha256').update(s).digest('hex');
-const SESSION_MS = 15 * 60_000, MAX_DEVICES = 200;
+const SESSION_MS = 15 * 60_000, MAX_DEVICES = 200, ONLINE_MS = 12 * 60_000;
 const ID_RE = /^k-[a-z0-9]{8}$/;
 const DENIED = () => new AppError('AUTH_REQUIRED', 'ตู้นี้ยังไม่ได้ลงทะเบียน หรือรหัสตู้ถูกยกเลิก — ติดต่อผู้ดูแลระบบ');
 
@@ -73,7 +73,7 @@ export class KioskDeviceService {
     const [id, secret] = typeof credential === 'string' ? credential.trim().split('.') : [];
     const r = id && secret && ID_RE.test(id) ? this.row(id) : undefined;
     if (!r || r.status !== 'ACTIVE' || !same(sha(secret), r.secret_hash)) throw DENIED();
-    this.store.db.prepare('UPDATE kiosk_devices SET last_seen_at = ? WHERE id = ?').run(this.now().toISOString(), r.id);
+    this.seen(r, true);
     return { ...this.issue(r), kiosk: toDevice(r) };
   }
   // A still-valid token → a fresh one (the old one ends).
@@ -87,12 +87,24 @@ export class KioskDeviceService {
     return toDevice(this.check(token));
   }
 
+  // Last heard from: on sign-in and on every call with its session (at most once a minute). An idle kiosk still renews
+  // its session every 10 minutes, so one not heard from for longer than ONLINE_MS is off, unplugged or offline.
+  private seen(r: Row, always = false) {
+    const now = this.now();
+    if (!always && r.last_seen_at && now.getTime() - new Date(r.last_seen_at).getTime() < 60_000) return;
+    this.store.db.prepare('UPDATE kiosk_devices SET last_seen_at = ? WHERE id = ?').run(now.toISOString(), r.id);
+    r.last_seen_at = now.toISOString();
+  }
+  // Heard from recently enough to count as on (sessions renew every 10 minutes).
+  online(d: KioskDevice): boolean { return d.status === 'ACTIVE' && !!d.lastSeenAt && this.now().getTime() - new Date(d.lastSeenAt).getTime() <= ONLINE_MS; }
+
   private check(token: unknown): Row {
     if (typeof token !== 'string' || token.length < 20 || token.length > 100) throw DENIED();
     const s = this.sessions.get(sha(token));
     if (!s || s.expires < this.now().getTime()) { if (s) this.sessions.delete(sha(token)); throw DENIED(); }
     const r = this.row(s.kioskId);
     if (!r || r.status !== 'ACTIVE' || r.secret_hash !== s.secretHash) { this.sessions.delete(sha(token)); throw DENIED(); }
+    this.seen(r);
     return r;
   }
   private issue(r: Row) {

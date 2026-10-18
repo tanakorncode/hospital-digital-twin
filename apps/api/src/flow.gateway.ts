@@ -243,6 +243,32 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
     return { ok: true, metrics: metrics.snapshot() };
   }
 
+  // ---- The whole-hospital dashboard (แดชบอร์ด): what the screens cannot work out themselves — kiosks as devices, today's
+  // appointments and bookings, messages to patients. Counts only, nothing about any patient; clinics outside the
+  // account's departments are left out of the counts.
+  @SubscribeMessage('dashboard:summary')
+  dashboardSummary(@ConnectedSocket() client: Socket) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (overLimit(client, 'command')) return SLOW;
+    const usage = this.reception.usage(1).rows, used = (id: string, event: string) => usage.filter((u) => u.kioskId === id && u.event === event).reduce((n, u) => n + u.count, 0);
+    const help = new Set(this.reception.openHelp().map((h) => h.kioskId));
+    const kiosks = this.kiosks.list().filter((k) => k.status === 'ACTIVE').map((k) => ({ id: k.id, name: k.name, place: k.atCode ? this.wayfinding.get(k.atCode)?.nameTh ?? k.atCode : undefined,
+      lastSeenAt: k.lastSeenAt, online: this.kiosks.online(k), helpPending: help.has(k.id), sessionsToday: used(k.id, 'session_started'), handoffsToday: used(k.id, 'handoff_offered') + used(k.id, 'help_requested') }));
+    const appts = this.appts.dayCounts(), bookings = this.booking.dayCounts();
+    const sum = <T extends { n: number }>(l: T[], ok: (x: T) => boolean) => l.filter(ok).reduce((n, x) => n + x.n, 0);
+    const mineA = appts.rows.filter((r) => covers(me, r.clinic)), mineB = bookings.filter((r) => covers(me, r.service));
+    const er = this.facility.erDepartment()?.id, visits = this.visits.list().filter((v) => covers(me, v.flow === 'er' ? er : v.clinicKey));
+    return { ok: true, at: new Date().toISOString(),
+      reception: { enabled: this.features.on('reception'), kiosks },
+      appointments: { enabled: this.features.on('appointments'), total: sum(mineA, (r) => r.status !== 'CANCELLED'), confirmed: sum(mineA, (r) => r.status === 'CONFIRMED'),
+        checkedIn: sum(mineA, (r) => r.status === 'CHECKED_IN' || r.status === 'COMPLETED'), noShow: sum(mineA, (r) => r.status === 'NO_SHOW'), cancelled: sum(mineA, (r) => r.status === 'CANCELLED'),
+        movesPending: sum(appts.pending.filter((r) => covers(me, r.clinic)), () => true) },
+      bookings: { enabled: this.features.on('generalBooking'), total: sum(mineB, (r) => r.status !== 'CANCELLED'), confirmed: sum(mineB, (r) => r.status === 'CONFIRMED'),
+        checkedIn: sum(mineB, (r) => r.status === 'CHECKED_IN' || r.status === 'CONVERTED_TO_QUEUE'), expired: sum(mineB, (r) => r.status === 'EXPIRED'), cancelled: sum(mineB, (r) => r.status === 'CANCELLED') },
+      messages: { enabled: this.features.on('notifications'), ...this.notify.backlog() },
+      visits: { active: visits.filter((v) => v.status === 'active').length, cancelled: visits.filter((v) => v.status === 'cancelled').length } };
+  }
   // ---- Digital Reception (administrators): kiosks, approved answers, use; staff: take on a kiosk's call ----------------
   @SubscribeMessage('reception:kiosks')
   receptionKiosks(@ConnectedSocket() client: Socket) {

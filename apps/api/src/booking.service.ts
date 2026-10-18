@@ -284,6 +284,12 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
     return typeof slotId === 'string' ? (this.store.db.prepare('SELECT service_code AS c FROM booking_slots WHERE id = ?').get(slotId) as { c: string } | undefined)?.c : undefined;
   }
   // Staff lists: one day (optionally one service), or one booking by its code, or a patient's bookings by HN.
+  // Today's bookings by service and status — counts only (the dashboard).
+  dayCounts(day = localDate(this.now())): { service: string; status: BookingStatus; n: number }[] {
+    const a = localInstant(day, '00:00'), b = new Date(a); b.setDate(b.getDate() + 1);
+    return this.store.db.prepare(`SELECT b.service_code AS service, b.status, COUNT(*) AS n FROM bookings b JOIN booking_slots s ON s.id = b.slot_id
+      WHERE s.starts_at >= ? AND s.starts_at < ? GROUP BY b.service_code, b.status`).all(a.toISOString(), b.toISOString()) as { service: string; status: BookingStatus; n: number }[];
+  }
   list(f: { date?: unknown; serviceCode?: unknown; code?: unknown; hn?: unknown }): Booking[] {
     if (typeof f.code === 'string' && f.code.trim()) {
       const r = this.store.db.prepare(`${BOOKING_SELECT} WHERE b.booking_code = ?`).get(f.code.trim().toUpperCase()) as BookingRow | undefined;

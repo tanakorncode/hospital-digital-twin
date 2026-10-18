@@ -206,6 +206,12 @@ export class NotificationService implements OnModuleInit, OnModuleDestroy {
     return { counts, jobs: rows.map((r) => ({ id: r.id, template: r.template, status: r.status, attempts: r.attempt_count, lastError: r.last_error || undefined,
       scheduledAt: r.scheduled_at, sentAt: r.sent_at || undefined, relatedType: r.related_type ?? undefined, createdAt: r.created_at })) };
   }
+  // Messages due and not yet sent, and those that failed in the last 24 hours (counts only — the dashboard).
+  backlog(): { waiting: number; failed24h: number } {
+    const n = (sql: string, at: string) => (this.store.db.prepare(sql).get(at) as { n: number }).n, now = this.now();
+    return { waiting: n(`SELECT COUNT(*) AS n FROM notification_jobs WHERE status IN ('PENDING','RETRY') AND scheduled_at <= ?`, now.toISOString()),
+      failed24h: n(`SELECT COUNT(*) AS n FROM notification_jobs WHERE status = 'FAILED' AND updated_at > ?`, new Date(now.getTime() - 86_400_000).toISOString()) };
+  }
   retry(id: unknown) {
     const n = typeof id === 'string' ? this.store.db.prepare(`UPDATE notification_jobs SET status = 'PENDING', scheduled_at = ?, updated_at = ? WHERE id = ? AND status IN ('FAILED','SKIPPED')`)
       .run(this.now().toISOString(), this.now().toISOString(), id).changes : 0;

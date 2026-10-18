@@ -490,7 +490,8 @@ export default function HospitalDashboard() {
     onOpenSettings={g=>{ setSettingsFocus(g); setActiveNav('ตั้งค่า'); }} onOpenPlace={openPlaceOnMap}/>}
    {activeNav==='ศูนย์อัจฉริยะ' && <CommandPage base={liveData ? usualDay : basePatients} liveData={liveData} patients={patients} minute={minute} queue={{events:queueSync.events,send:queueSync.send,canAct:following}} assist={assist} timeNote={timeNote}/>}
    {activeNav==='แดชบอร์ด' && <OverviewBoard patients={patients} base={liveData ? usualDay : basePatients} liveData={liveData} minute={minute} assist={assist} events={queueSync.events}
-    alerts={opsAlerts} acked={id=>!!acks[id]} timeNote={timeNote} onOpenPatient={openOnMap} go={setActiveNav}/>}
+    alerts={opsAlerts} acked={id=>!!acks[id]} timeNote={timeNote} onOpenPatient={openOnMap} go={setActiveNav}
+    sys={{online:queueSync.online,api:queueSync.api,feed:live.status,feedSource:live.snapshot?.source,testing:clockOffset!==0,kioskHelp:queueSync.kioskHelp}}/>}
    {activeNav==='สถิติและรายงาน' && <StatsPage patients={patients} minute={minute} timeNote={timeNote} report={queueSync.online && queueSync.api ? {api:queueSync.api,user:queueSync.user} : undefined}/>}
    {activeNav==='การแจ้งเตือน' && <AlertsPage alerts={opsAlerts} rules={rules} onRules={saveRules} acks={acks} onAck={ackAlert} minute={minute} timeNote={timeNote} onOpenPatient={openOnMap}/>}
    {activeNav==='ผังโรงพยาบาล' && <CapacityPage patients={patients} minute={minute} timeNote={timeNote} onOpenPatient={openOnMap}/>}
