@@ -443,7 +443,7 @@ function FloorDetail({f,ctx}:{f:FFloor; ctx:Ctx}) {
     <Issues list={issuesAt.get(f.id)}/>
     <div className="facFields">
       <label><span>ชื่อชั้น (บนป้าย)</span><input value={f.name} disabled={!editable} onChange={e=>set(x=>{ x.name = e.target.value; })} maxLength={60}/></label>
-      <label><span>เลขชั้น</span><input type="number" min={-9} max={99} value={f.level} disabled={!editable} aria-invalid={levelTaken} onChange={e=>set(x=>{ x.level = Math.max(-9,Math.min(99,Math.round(Number(e.target.value)||0))); })}/>{levelTaken && <em className="facErr">มีชั้นนี้แล้ว</em>}</label>
+      <label><span>เลขชั้น</span><input type="number" min={1} max={99} value={f.level} disabled={!editable} aria-invalid={levelTaken} onChange={e=>set(x=>{ x.level = Math.max(1,Math.min(99,Math.round(Number(e.target.value)||1))); })}/>{levelTaken && <em className="facErr">มีชั้นนี้แล้ว</em>}</label>
       <label className="wide"><span>คำอธิบาย</span><input value={f.description} disabled={!editable} onChange={e=>set(x=>{ x.description = e.target.value; })} maxLength={120} placeholder="เช่น ห้องตรวจอายุรกรรม"/></label>
     </div>
     <FloorPreview data={data} floorId={f.id}/>

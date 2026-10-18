@@ -18,7 +18,7 @@ export type StepKind = (typeof STEP_KINDS)[number];
 
 export type MapBox = { x: number; z: number; width: number; depth: number; color: string };
 export type Building = { id: string; name: string; shortName: string; kind: BuildingKind; map: MapBox; active: boolean; retiredAt?: string };
-// level: … -1 = B1, 0 = G, 1, 2 … · name is what signs show ("ชั้น 2", editable).
+// level: 1, 2 … (the hospital has no basement; the map draws floors from 1 up) · name is what signs show ("ชั้น 2", editable).
 export type Floor = { id: string; buildingId: string; level: number; name: string; description: string; active: boolean; retiredAt?: string };
 export type Features = { booking: boolean; appointments: boolean; walkIn: boolean };
 // queuePrefix: the letter(s) of the department's queue numbers (unique). firstGroupId: where a patient waits after
@@ -149,7 +149,7 @@ export function validateFacility(input: unknown): { data?: FacilityData; issues:
   const levels = new Set<string>();
   for (const f of d.floors) {
     if (!bIds.has(f.buildingId)) err('ชั้นนี้ไม่อยู่ในอาคารใด', f.id);
-    if (!Number.isInteger(f.level) || f.level < -9 || f.level > 99) err('เลขชั้นไม่ถูกต้อง', f.id);
+    if (!Number.isInteger(f.level) || f.level < 1 || f.level > 99) err('เลขชั้นต้องเป็น 1 ขึ้นไป (ไม่มีชั้นใต้ดิน)', f.id);
     if (levels.has(`${f.buildingId}:${f.level}`)) err(`อาคารเดียวกันมีชั้น ${f.level} ซ้ำ`, f.id);
     levels.add(`${f.buildingId}:${f.level}`);
     if (!isStr(f.name, LIMITS.name) || !isStr(f.description ?? '', 120, true)) err('ระบุชื่อชั้น', f.id);

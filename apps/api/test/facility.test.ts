@@ -119,6 +119,7 @@ test('publishing refuses a facility that does not hold together', () => {
   assert.match(bad((d) => { d.departments.find((x) => x.id === 'opd-2-1')!.name = 'ศัลยกรรม'; }).reason!, /ชื่อแผนกซ้ำ/);
   assert.match(bad((d) => { d.points.find((x) => x.id === 'room:opd-201')!.number = 202; }).reason!, /เลขห้อง\/ช่องซ้ำ/);
   assert.equal(bad((d) => { d.floors = d.floors.filter((x) => x.id !== 'opd-3'); }).code, 'VALIDATION_ERROR', 'a floor that still has groups on it');
+  assert.match(bad((d) => { d.floors.find((x) => x.id === 'support-1')!.level = 0; }).reason!, /ไม่มีชั้นใต้ดิน/);
   assert.equal(api.facility.version(), 1);
   // Buildings on top of each other on the map: a warning.
   const over = data();
