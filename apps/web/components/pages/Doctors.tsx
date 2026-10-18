@@ -1,12 +1,12 @@
 'use client';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, CalendarDays, FileUp, Loader2, Plus, Stethoscope, UserRound } from 'lucide-react';
+import { ArrowLeft, FileUp, Loader2, Plus, Stethoscope, UserRound } from 'lucide-react';
 import { SearchBox } from '../SearchBox';
 import { ClinicPicker } from '../ClinicPicker';
 import { DoctorImport } from './DoctorImport';
 import { opdClinics, type Clinic } from '../../lib/patients';
 import type { QueueSync } from '../../lib/queue';
-import { SessionPlanner, usePolicies, type Provider } from './Appointments';
+import { SessionPlanner, usePolicies, type MadeSession, type Provider } from './Appointments';
 import { dayOf, timeOf } from './Booking';
 import { Switch } from '../Switch';
 
@@ -14,7 +14,7 @@ import { Switch } from '../Switch';
 // doctor's page (name, code, clinics, on / off; their sessions to come) and, from there, the doctor's schedule — the
 // same form as before, already set to this doctor. A doctor switched off keeps the sessions made; no new ones.
 type Api = QueueSync['api'];
-type Session = {id:string; clinicCode:string; startsAt:string; endsAt:string; status:'OPEN'|'CLOSED'|'CANCELLED'; capacity:number; reserved:number};
+type Session = MadeSession;
 const clinicLabel = (all:Clinic[], key:string) => { const c = all.find(x=>x.key===key); return c ? `${c.letter} · ${c.dept}` : key; };
 
 export function DoctorsPane({api,rev}:{api:Api; rev:number}) {
@@ -64,7 +64,6 @@ function DoctorPage({api,clinics,ready,doc,onSaved,onError,reload}:{api:Api; cli
   const [active,setActive] = useState(doc?.active ?? true);
   const [busy,setBusy] = useState(false);
   const [sessions,setSessions] = useState<Session[]|null>(null);
-  const [all,setAll] = useState(false); // every day to come, or the first few (so the schedule form stays near)
   const loadSessions = useCallback(async ()=>{ if (!doc) return; const r = await api<{ok:boolean; sessions?:Session[]}>('appt:provider:sessions',{code:doc.code}); setSessions(r.ok ? r.sessions ?? [] : []); },[api,doc]);
   useEffect(()=>{ void loadSessions(); },[loadSessions]);
   const changed = !doc || name.trim()!==doc.name || code.trim()!==doc.code || note.trim()!==(doc.note ?? '') || active!==doc.active || [...mine].sort().join()!==[...doc.clinics].sort().join();
@@ -75,8 +74,6 @@ function DoctorPage({api,clinics,ready,doc,onSaved,onError,reload}:{api:Api; cli
     setBusy(false);
     if (r.ok && r.provider) onSaved(r.provider,doc ? `บันทึกข้อมูล ${r.provider.name} แล้ว` : `เพิ่ม ${r.provider.name} แล้ว · สร้างตารางออกตรวจได้ด้านล่าง`); else onError(r.reason ?? 'บันทึกไม่สำเร็จ');
   };
-  // Sessions to come, by month and day.
-  const byDay = (sessions ?? []).reduce<Record<string,Session[]>>((m,s)=>{ const d = new Date(s.startsAt).toLocaleDateString('sv-SE'); (m[d] ??= []).push(s); return m; },{});
   return <>
     <div className="docHead"><div><h3><UserRound size={18}/> {doc ? doc.name : 'เพิ่มแพทย์'}</h3>{doc && <small className="muted">รหัส {doc.code}{doc.active ? '' : ' · ปิดใช้งาน'}</small>}</div>
       {doc && <Switch value={active} onChange={setActive} label="ใช้งานแพทย์ท่านนี้" text={['ใช้งาน','ปิดใช้งาน']}/>}</div>
@@ -90,14 +87,9 @@ function DoctorPage({api,clinics,ready,doc,onSaved,onError,reload}:{api:Api; cli
       {missing && <span className="pickHint">{missing}</span>}
       <button className="btn" disabled={busy || !!missing || !changed} onClick={()=>void save()}>{busy && <Loader2 size={15} className="spin"/>}{busy ? 'กำลังบันทึก…' : doc ? 'บันทึกข้อมูลแพทย์' : 'เพิ่มแพทย์'}</button></div>
     {doc && <>
-      <h4 className="setSub"><CalendarDays size={15}/> ตารางออกตรวจที่จะถึง <small>{sessions ? `${sessions.filter(s=>s.status!=='CANCELLED').length} ครั้ง` : ''} · ปิดรับหรือยกเลิกเป็นรายวันได้ที่ ตั้งค่า → นัดแพทย์</small></h4>
-      {sessions===null ? <p className="cmdNote"><Loader2 size={14} className="spin"/> กำลังโหลด…</p> : !sessions.length ? <p className="docNone">ยังไม่มีตารางออกตรวจ — สร้างได้ด้านล่าง</p>
-        : <><div className="docDays">{Object.entries(byDay).slice(0,all ? 60 : 6).map(([d,list])=><div key={d} className="docDay"><b>{dayOf(d)}</b>{list.map(s=><span key={s.id} className={s.status!=='OPEN'?'off':''}>
-          {timeOf(s.startsAt)}–{timeOf(s.endsAt)} · {clinicLabel(clinics,s.clinicCode)} · นัด {s.reserved}/{s.capacity}{s.status==='CLOSED' ? ' · ปิดรับ' : s.status==='CANCELLED' ? ' · ยกเลิก' : ''}</span>)}</div>)}
-          </div>{Object.keys(byDay).length>6 && <button className="linkBtn dark docMore" onClick={()=>setAll(x=>!x)}>{all ? 'ย่อ' : `ดูทั้งหมด (${Object.keys(byDay).length} วัน)`}</button>}</>}
       {!doc.active ? <p className="serviceNote">แพทย์ท่านนี้ปิดใช้งานอยู่ — เปิดใช้งานแล้วบันทึก จึงจะสร้างตารางใหม่ได้</p>
         : !ready.length ? <p className="serviceNote">ยังไม่มีคลินิกที่เปิดให้นัด — เปิดคลินิกที่ ตั้งค่า → นัดแพทย์ ก่อน แล้วจึงสร้างตารางออกตรวจ</p>
-        : <SessionPlanner api={api} clinics={ready} fixed={doc} say={()=>{}} onMade={()=>{ void loadSessions(); void reload(); }}/>}
+        : <SessionPlanner api={api} clinics={ready} fixed={doc} existing={sessions ?? []} say={()=>{}} onMade={()=>{ void loadSessions(); void reload(); }}/>}
     </>}
   </>;
 }

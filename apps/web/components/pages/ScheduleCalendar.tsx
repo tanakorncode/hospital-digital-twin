@@ -5,13 +5,14 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 // The days of a doctor's schedule, picked on a calendar (two months side by side), several at once:
 //   เลือกเป็นช่วง (default): click a first day, then a last day — every day between comes in (shown while pointing);
 //   เลือกทีละวัน: each click puts one day in. Either way a click on a chosen day takes it out (a holiday inside a range).
-// A weekday heading takes the whole column (both months shown); a month's "จ–ศ" its weekdays.
+// A weekday heading takes the whole column (both months shown); a month's "จ–ศ" its weekdays. marks: days that already
+// have sessions (date → their hours), shown with a green dot.
 const HEAD = ['จ','อ','พ','พฤ','ศ','ส','อา'], WD = [1,2,3,4,5,6,0]; // Monday first
 const iso = (d:Date) => d.toLocaleDateString('sv-SE');
 const monthName = (d:Date) => d.toLocaleDateString('th-TH',{month:'long',year:'numeric'});
 
 // onChange gets updates from the latest list (quick clicks in a row each count).
-export function ScheduleCalendar({value,onChange,min}:{value:string[]; onChange:Dispatch<SetStateAction<string[]>>; min:string}) {
+export function ScheduleCalendar({value,onChange,min,marks={}}:{value:string[]; onChange:Dispatch<SetStateAction<string[]>>; min:string; marks?:Record<string,string>}) {
   const [mode,setMode] = useState<'range'|'single'>('range');
   const [anchor,setAnchor] = useState<string|null>(null), [hover,setHover] = useState<string|null>(null); // a range's first day, waiting for its last
   const [start,setStart] = useState(()=>{ const d = new Date(`${min}T12:00:00`); d.setDate(1); return d; });
@@ -52,8 +53,10 @@ export function ScheduleCalendar({value,onChange,min}:{value:string[]; onChange:
           {days.map(d=>{ const past = d<min;
             return <button key={d} type="button" role="gridcell" aria-selected={on(d)} disabled={past}
               className={'schedCalDay'+(on(d)?' on':'')+(past?' past':'')+(d===anchor?' anchor':'')+(preview?.has(d) && !on(d)?' preview':'')}
-              onMouseEnter={()=>setHover(d)} onMouseLeave={()=>setHover(h=>h===d ? null : h)} onClick={()=>click(d)}><span>{Number(d.slice(8))}</span></button>; })}
+              title={marks[d] ? `มีตารางอยู่แล้ว ${marks[d]}` : undefined}
+              onMouseEnter={()=>setHover(d)} onMouseLeave={()=>setHover(h=>h===d ? null : h)} onClick={()=>click(d)}><span>{Number(d.slice(8))}</span>{marks[d] && !past && <i className="schedCalMade" aria-label="มีตารางแล้ว"/>}</button>; })}
         </div>
       </div>; })}</div>
+    {Object.keys(marks).length>0 && <div className="schedCalLegend"><i className="schedCalMade"/> มีตารางอยู่แล้ว (ชี้ที่วันเพื่อดูเวลา) <i className="schedCalSel"/> เลือกเพื่อสร้างใหม่</div>}
   </div>;
 }

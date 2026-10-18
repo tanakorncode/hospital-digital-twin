@@ -2843,3 +2843,27 @@ input.bare[type=search]::-webkit-search-cancel-button{display:none}
 .schedCalDay.anchor{box-shadow:0 0 0 3px #1677ff55}
 .schedCalHint{flex:1;text-align:center}
 .schedCalNav{flex-wrap:wrap}
+.schedCalMade{display:block;width:6px;height:6px;border-radius:50%;background:#10b981}
+.schedCalDay.on .schedCalMade{background:#fff}
+.schedCalLegend{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:12px;color:#64748b}
+.schedCalLegend .schedCalMade{display:inline-block}
+.schedCalSel{display:inline-block;width:12px;height:12px;border-radius:4px;background:#1677ff;margin-left:10px}
+.schedMadeNote{color:#047857;font-size:12px}.schedMadeWarn{color:#b45309;font-size:12px;font-weight:600}
+/* The doctor's sessions made before, in the calendar's day rows */
+.schedMadeBar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:6px 10px;border-radius:10px;background:#ecfdf5;font-size:12.5px;color:#065f46}
+.schedMadeBar>span{display:inline-flex;align-items:center;gap:6px}.schedMadeBar .schedCalMade{display:inline-block}
+.schedExisting{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:4px 8px;border-radius:8px;background:#f0fdf4;font-size:13px}
+.schedExisting .schedCalMade{display:inline-block}.schedExisting b{color:#065f46}
+.schedExisting.closed{background:#f8fafc}.schedExisting.closed b{color:#64748b}
+.schedExistActs{display:inline-flex;gap:12px;margin-left:6px;font-size:12.5px}
+.schedCancel{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}
+.schedCancel input{min-width:220px;height:32px!important;padding:0 8px!important;border:1px solid #fca5a5!important;border-radius:8px!important;background:#fff!important}
+/* The picked days: an easy read (ดูภาพรวม) or the rows to edit */
+.schedListHead{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.schedListHead b{font-size:13.5px;color:#0f2340}
+.schedView{font-size:13px}.schedView tbody tr{cursor:pointer}.schedView tbody tr:hover{background:#f4f8ff}
+.schedView tr.bad{background:#fffdf5}
+.schedViewWeek td{background:#f8fafc;color:#64748b;font-size:12px;font-weight:700;cursor:default}
+.schedChip{display:inline-block;margin:2px 6px 2px 0;padding:2px 8px;border-radius:999px;font-size:12px;white-space:nowrap}
+.schedChip.made{background:#dcfce7;color:#065f46}.schedChip.made.closed{background:#f1f5f9;color:#64748b}
+.schedChip.new{background:#dbeafe;color:#1d4ed8;font-weight:600}
