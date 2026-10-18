@@ -23,7 +23,8 @@ const slotText:Record<Slot['status'],string> = {OPEN:'เปิด',CLOSED:'ป�
 export const today = () => new Date().toLocaleDateString('sv-SE');
 export const addDays = (d:string, n:number) => { const x = new Date(`${d}T12:00:00`); x.setDate(x.getDate()+n); return x.toLocaleDateString('sv-SE'); };
 export const timeOf = (iso:string) => new Date(iso).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'});
-export const dayOf = (iso:string) => new Date(iso.length===10 ? `${iso}T12:00:00` : iso).toLocaleDateString('th-TH',{weekday:'short',day:'numeric',month:'short'});
+// No date (an empty list's first day): nothing, rather than a crash.
+export const dayOf = (iso:string|undefined) => !iso ? '' : new Date(iso.length===10 ? `${iso}T12:00:00` : iso).toLocaleDateString('th-TH',{weekday:'short',day:'numeric',month:'short'});
 export const weekdayNames = ['อา','จ','อ','พ','พฤ','ศ','ส'];
 const clinicName = (c:Clinic) => `${c.letter} · ${c.dept}`;
 

@@ -244,8 +244,10 @@ export function SessionPlanner({api,clinics,say,fixed,onMade,existing=[]}:{api:A
    </div></section>
   <div className={'schedSum'+(missing?' wait':'')}>
    {missing ? <span className="pickHint">{missing}</span> : <div>
-    <b>{pName} · {clinicName(clinics.find(c=>c.key===clinic)!)} · {dates.length} วัน</b>
-    <span>{dayOf(dates[0])} – {dayOf(dates[dates.length-1])} · {sessionsN} ครั้งออกตรวจ · รับนัดได้รวม <b>{total} คน</b></span></div>}
+    {/* the days getting new hours — picked on the calendar, or a day with sessions given more */}
+    {(()=>{ const newDays = rows.filter(r=>r.ranges.length).map(r=>r.date);
+     return <><b>{pName} · {clinicName(clinics.find(c=>c.key===clinic)!)} · เพิ่ม {newDays.length} วัน</b>
+      <span>{dayOf(newDays[0])}{newDays.length>1 ? ` – ${dayOf(newDays[newDays.length-1])}` : ''} · {sessionsN} ครั้งออกตรวจ · รับนัดได้รวม <b>{total} คน</b></span></>; })()}</div>}
    <button className="btn" disabled={busy || !!missing} onClick={()=>void make()}>{busy ? <Loader2 size={15} className="spin"/> : <CalendarPlus size={15}/>} {busy?'กำลังสร้าง…':'สร้างตาราง'}</button>
   </div>
   {done && <p className={'setToast'+(done.bad?' bad':'')} role="status">{done.text}</p>}
