@@ -1075,8 +1075,14 @@ kbd{margin-left:6px;padding:1px 6px;border-radius:5px;background:#ffffff33;borde
 .ovWait b{font-size:13.5px;color:#0f2340;font-variant-numeric:tabular-nums}
 .ovWait.mid i{background:#f5a524}
 .ovWait.long i{background:#e5484d}.ovWait.long b{color:#c92a2a}
-.ovOk{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
-.ovChip{display:inline-flex;align-items:center;gap:6px;padding:3px 9px 3px 4px;border:1px solid #e3eaf1;border-radius:9px;background:#fff;font:inherit;font-size:12.5px;color:#1d3350;cursor:pointer}
+.ovOk{display:flex;flex-direction:column;gap:6px}
+.ovOkHead{display:flex;align-items:center;gap:8px}
+.ovOkGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:6px}
+.ovChip{display:flex;align-items:center;gap:8px;min-width:0;padding:4px 10px 4px 5px;border:1px solid #e3eaf1;border-radius:9px;background:#fff;font:inherit;font-size:12.5px;color:#1d3350;cursor:pointer;text-align:left}
+.ovChipName{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ovChip b.ovChipN{flex:none;font-size:13px}.ovChipN small{font-weight:500;font-size:11px;color:#7a8ca0}
+.ovChip.idle{color:#7a8ca0;background:#f8fafc}.ovChip.idle b.ovChipN{color:#9fb0c2}
+.ovChip.more{justify-content:center;color:#1d4ed8;font-weight:600;background:#f5f8fe;border-style:dashed}
 .ovChip .spBadge{width:20px;height:20px;font-size:11px;border-radius:6px}
 .ovChip b{color:#0f2340;font-variant-numeric:tabular-nums}
 .ovChip:hover{border-color:#9cc0f5}
@@ -2895,70 +2901,70 @@ input.bare[type=search]::-webkit-search-cancel-button{display:none}
 .schedChip.made{background:#dcfce7;color:#065f46}.schedChip.made.closed{background:#f1f5f9;color:#64748b}
 .schedChip.new{background:#dbeafe;color:#1d4ed8;font-weight:600}
 
-/* ---- แดชบอร์ดทั้งโรงพยาบาล (OverviewBoard) ---- */
-.ovPage .pageHead h2{display:flex;align-items:center;gap:8px}
-.ovLive{display:inline-flex;align-items:center;gap:6px;font-size:12px}
-.ovLive i{width:8px;height:8px;border-radius:50%;background:#16a34a;box-shadow:0 0 0 3px #16a34a33}
-.ovTiles{grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}
-@media (min-width:1200px){.ovTiles{grid-template-columns:repeat(6,minmax(0,1fr))}}
-.ovMore{align-self:flex-start;font-size:12.5px}
-.ovTile small{display:flex;align-items:center;gap:5px}
-.ovTile.ok{border-top-color:#16a34a}.ovTile.warn{border-top-color:#d97706}.ovTile.bad{border-top-color:#c92a2a}
-.ovTile.bad b{color:#c92a2a}
-.ovTop{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);grid-template-rows:360px;gap:12px}
+/* ---- แดชบอร์ดทั้งโรงพยาบาล (OverviewBoard) — own `dash*` names: the queue overview already uses `ov*` ---- */
+.dashPage .pageHead h2{display:flex;align-items:center;gap:8px}
+.dashLive{display:inline-flex;align-items:center;gap:6px;font-size:12px}
+.dashLive i{width:8px;height:8px;border-radius:50%;background:#16a34a;box-shadow:0 0 0 3px #16a34a33}
+.dashTiles{grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}
+@media (min-width:1200px){.dashTiles{grid-template-columns:repeat(6,minmax(0,1fr))}}
+.dashMore{align-self:flex-start;font-size:12.5px}
+.dashTile small{display:flex;align-items:center;gap:5px}
+.dashTile.ok{border-top-color:#16a34a}.dashTile.warn{border-top-color:#d97706}.dashTile.bad{border-top-color:#c92a2a}
+.dashTile.bad b{color:#c92a2a}
+.dashTop{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);grid-template-rows:360px;gap:12px}
 /* the same height every time: the chart fills its panel; a long "ต้องดูตอนนี้" list scrolls inside its own */
-.ovTop>.ovPanel{min-height:0}
-.ovTop .fcChart{flex:1;min-height:0!important}
-.ovTop .ovAttn{flex:1;min-height:0;overflow-y:auto}
-@media (max-width:1100px){.ovTop{grid-template-columns:minmax(0,1fr);grid-template-rows:auto}.ovTop .fcChart{flex:none;height:260px}.ovTop .ovAttn{flex:none;max-height:320px}}
+.dashTop>.dashPanel{min-height:0}
+.dashTop .fcChart{flex:1;min-height:0!important}
+.dashTop .dashAttn{flex:1;min-height:0;overflow-y:auto}
+@media (max-width:1100px){.dashTop{grid-template-columns:minmax(0,1fr);grid-template-rows:auto}.dashTop .fcChart{flex:none;height:260px}.dashTop .dashAttn{flex:none;max-height:320px}}
 /* the rest flows into as many columns as fit, each panel its own height (no gaps under short ones) */
-.ovGrid{column-width:360px;column-gap:12px}
-.ovGrid>.ovPanel{break-inside:avoid;margin:0 0 12px;width:100%;box-sizing:border-box}
-.ovPanel{display:flex;flex-direction:column;gap:8px;padding:12px 14px}
-.ovGo{align-self:flex-start;margin-top:auto}
-.ovPanel .panelHead{flex-wrap:wrap}
-.ovPanel .panelHead h3{display:flex;align-items:center;gap:6px;font-size:14.5px;color:#0f2340}
-.ovPanel .panelHead .panelMeta{margin-right:auto;color:#60738a;font-size:12px}
-.ovPanel .panelHead>button,.ovPanel .panelHead>.cmdLegend,.ovPanel .panelHead>.vizLegend{margin-left:auto}
-.ovPanel .note{margin:0;font-size:11.5px;color:#60738a}
-.ovPanel .hbar{grid-template-columns:minmax(90px,150px) minmax(0,1fr) auto}
+.dashGrid{column-width:360px;column-gap:12px}
+.dashGrid>.dashPanel{break-inside:avoid;margin:0 0 12px;width:100%;box-sizing:border-box}
+.dashPanel{display:flex;flex-direction:column;gap:8px;padding:12px 14px}
+.dashGo{align-self:flex-start;margin-top:auto}
+.dashPanel .panelHead{flex-wrap:wrap}
+.dashPanel .panelHead h3{display:flex;align-items:center;gap:6px;font-size:14.5px;color:#0f2340}
+.dashPanel .panelHead .panelMeta{margin-right:auto;color:#60738a;font-size:12px}
+.dashPanel .panelHead>button,.dashPanel .panelHead>.cmdLegend,.dashPanel .panelHead>.vizLegend{margin-left:auto}
+.dashPanel .note{margin:0;font-size:11.5px;color:#60738a}
+.dashPanel .hbar{grid-template-columns:minmax(90px,150px) minmax(0,1fr) auto}
 .vizLegend.inline{margin:0;gap:10px}
-.ovLegendList{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;font-size:12px;color:#34495e}
-.ovLegendList span{display:inline-flex;align-items:center;gap:5px}
-.ovLegendList i{width:11px;height:11px;border-radius:3px}
-.ovLegendList b{font-variant-numeric:tabular-nums;color:#0f2340}
-.ovStack{display:flex;gap:2px;height:22px;border-radius:6px;overflow:hidden;background:#eef2f6}
-.ovStack i{display:block;min-width:4px}
-.ovGauge{position:relative;display:block;height:12px;border-radius:6px;background:#eef2f6;overflow:hidden}
-.ovGauge i{display:block;height:100%;border-radius:0 6px 6px 0}
-.ovGauge em{position:absolute;top:-2px;bottom:-2px;left:80%;width:0;border-left:1.5px dashed #92400e99}
-.ovSplit{display:flex;gap:2px;height:12px}
-.ovSplit i{display:block;min-width:0;border-radius:0 4px 4px 0}
-.ovSplit i:first-child{border-radius:0}
-.ovChip{display:inline-block;padding:1px 8px;border-radius:99px;font-size:11.5px;font-weight:700;white-space:nowrap}
-.ovChip.over{background:#ffe5e3;color:#c92a2a}.ovChip.near{background:#fef3c7;color:#92400e}.ovChip.ok{background:#e8f1fc;color:#184f95}
-.ovOver{font-style:normal;font-weight:600;color:#c92a2a;font-size:11px}
-.ovAttn{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;font-size:13px}
-.ovAttn li{padding:7px 10px;border-radius:8px;border-left:4px solid #94a3b8;background:#f8fafc;color:#34495e}
-.ovAttn li b{color:#0f2340;margin-right:4px}
-.ovAttn li.bad{border-left-color:#c92a2a;background:#fff5f4}.ovAttn li.warn{border-left-color:#d97706;background:#fffbeb}.ovAttn li.ok{border-left-color:#16a34a;background:#f0fdf4}
-.ovMini{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;font-size:12.5px}
-.ovMini li{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap}
-.ovMini li i{width:9px;height:9px;border-radius:50%;flex:none;align-self:center}
-.ovHeat{display:grid;gap:3px;font-size:12px}
-.ovHeatHead{text-align:center;font-weight:700;color:#34495e;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ovHeatRow{color:#60738a;align-self:center}
-.ovHeatCell{display:flex;align-items:center;justify-content:center;height:30px;border-radius:6px;font-weight:700;color:#0f2340;font-variant-numeric:tabular-nums}
-.ovHeatCell.dark{color:#fff}
-.ovTable tbody tr{cursor:pointer}
-.ovTable tbody tr:hover{background:#f5f8fb}
-.ovTable tr.warnRow td:last-child b{color:#c92a2a}
-.ovTable td.muted{max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ovSub{margin:4px 0 0;font-size:12.5px;color:#34495e}
-.ovSys{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:5px;font-size:13px}
-.ovSys li{display:grid;grid-template-columns:110px 1fr;gap:8px;padding:6px 10px;border-radius:8px;border-left:4px solid #94a3b8;background:#f8fafc;color:#34495e}
-.ovSys li b{color:#0f2340}
-.ovSys li.ok{border-left-color:#16a34a}.ovSys li.warn{border-left-color:#d97706;background:#fffbeb}.ovSys li.bad{border-left-color:#c92a2a;background:#fff5f4}.ovSys li.off{color:#94a3b8}
-.ovChip.bad{background:#ffe5e3;color:#c92a2a}.ovChip.warn{background:#fef3c7;color:#92400e}
+.dashLegendList{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;font-size:12px;color:#34495e}
+.dashLegendList span{display:inline-flex;align-items:center;gap:5px}
+.dashLegendList i{width:11px;height:11px;border-radius:3px}
+.dashLegendList b{font-variant-numeric:tabular-nums;color:#0f2340}
+.dashStack{display:flex;gap:2px;height:22px;border-radius:6px;overflow:hidden;background:#eef2f6}
+.dashStack i{display:block;min-width:4px}
+.dashGauge{position:relative;display:block;height:12px;border-radius:6px;background:#eef2f6;overflow:hidden}
+.dashGauge i{display:block;height:100%;border-radius:0 6px 6px 0}
+.dashGauge em{position:absolute;top:-2px;bottom:-2px;left:80%;width:0;border-left:1.5px dashed #92400e99}
+.dashSplit{display:flex;gap:2px;height:12px}
+.dashSplit i{display:block;min-width:0;border-radius:0 4px 4px 0}
+.dashSplit i:first-child{border-radius:0}
+.dashChip{display:inline-block;padding:1px 8px;border-radius:99px;font-size:11.5px;font-weight:700;white-space:nowrap}
+.dashChip.over{background:#ffe5e3;color:#c92a2a}.dashChip.near{background:#fef3c7;color:#92400e}.dashChip.ok{background:#e8f1fc;color:#184f95}
+.dashOver{font-style:normal;font-weight:600;color:#c92a2a;font-size:11px}
+.dashAttn{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;font-size:13px}
+.dashAttn li{padding:7px 10px;border-radius:8px;border-left:4px solid #94a3b8;background:#f8fafc;color:#34495e}
+.dashAttn li b{color:#0f2340;margin-right:4px}
+.dashAttn li.bad{border-left-color:#c92a2a;background:#fff5f4}.dashAttn li.warn{border-left-color:#d97706;background:#fffbeb}.dashAttn li.ok{border-left-color:#16a34a;background:#f0fdf4}
+.dashMini{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;font-size:12.5px}
+.dashMini li{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap}
+.dashMini li i{width:9px;height:9px;border-radius:50%;flex:none;align-self:center}
+.dashHeat{display:grid;gap:3px;font-size:12px}
+.dashHeatHead{text-align:center;font-weight:700;color:#34495e;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dashHeatRow{color:#60738a;align-self:center}
+.dashHeatCell{display:flex;align-items:center;justify-content:center;height:30px;border-radius:6px;font-weight:700;color:#0f2340;font-variant-numeric:tabular-nums}
+.dashHeatCell.dark{color:#fff}
+.dashTable tbody tr{cursor:pointer}
+.dashTable tbody tr:hover{background:#f5f8fb}
+.dashTable tr.warnRow td:last-child b{color:#c92a2a}
+.dashTable td.muted{max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dashSub{margin:4px 0 0;font-size:12.5px;color:#34495e}
+.dashSys{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:5px;font-size:13px}
+.dashSys li{display:grid;grid-template-columns:110px 1fr;gap:8px;padding:6px 10px;border-radius:8px;border-left:4px solid #94a3b8;background:#f8fafc;color:#34495e}
+.dashSys li b{color:#0f2340}
+.dashSys li.ok{border-left-color:#16a34a}.dashSys li.warn{border-left-color:#d97706;background:#fffbeb}.dashSys li.bad{border-left-color:#c92a2a;background:#fff5f4}.dashSys li.off{color:#94a3b8}
+.dashChip.bad{background:#ffe5e3;color:#c92a2a}.dashChip.warn{background:#fef3c7;color:#92400e}
 .cmdToDash{align-self:flex-start;font-size:12.5px;margin-top:auto}
 .cmdPage .setGuide{margin:0}

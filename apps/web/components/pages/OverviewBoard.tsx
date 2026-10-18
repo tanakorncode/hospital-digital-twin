@@ -85,12 +85,12 @@ export default function OverviewBoard({patients,base,liveData,minute,assist,even
   const rkDown = rk.filter(k=>!k.online).length;
   const attn = over.length+assist.full.size+open.length+helps.length+problems.length+kioskCalls+porterJobs+rkDown+(msgFailed?1:0)+(sys.online?0:1);
 
-  return <div className="page viz-root ovPage" ref={tt.host}>
+  return <div className="page viz-root dashPage" ref={tt.host}>
     <div className="pageHead"><h2><LayoutDashboard size={20}/> แดชบอร์ดทั้งโรงพยาบาล</h2><span className="pageTime">{timeNote}</span>
-      <small className="muted ovLive"><i/> อัปเดตเองทุกนาที</small></div>
+      <small className="muted dashLive"><i/> อัปเดตเองทุกนาที</small></div>
     <PageGuide id="แดชบอร์ด"/>
 
-    <div className="tileRow ovTiles">
+    <div className="tileRow dashTiles">
       <Tile icon={Users} label="ในโรงพยาบาลตอนนี้" value={d.now.length} unit="คน" sub={`OPD ${d.now.filter(s=>s.p.flow==='opd').length} · ER ${d.now.filter(s=>s.p.flow==='er').length}`}/>
       <Tile icon={Hourglass} label="กำลังรอ" value={d.waiting.length} unit="คน" sub={`กำลังรับบริการ ${d.serving.length} · ปกติช่วงนี้ ~${Math.round(nowTotal?.plan ?? 0)}`}/>
       <Tile icon={Clock} label="รอเฉลี่ย (ขั้นปัจจุบัน)" value={avg(d.waiting.map(s=>s.stepWait))} unit="นาที" sub={`นานสุด ${Math.round(longest[0]?.stepWait ?? 0)} นาที`}/>
@@ -107,16 +107,16 @@ export default function OverviewBoard({patients,base,liveData,minute,assist,even
         sub={[`แจ้งเตือน ${open.length}`,kioskCalls ? `ตู้เรียก ${kioskCalls}` : '',helps.length ? `ผู้ป่วยขอช่วย ${helps.length}` : '',over.length ? `เกินเพดาน ${over.length}` : ''].filter(Boolean).join(' · ')}/>
     </div>
 
-    <div className="ovTop">
+    <div className="dashTop">
       <Panel title="คนรอทั้งโรงพยาบาล · ย้อนหลัง 2 ชม. และคาดการณ์ 3 ชม." icon={Activity}
         right={<span className="cmdLegend"><i className="lgActual"/>จริง<i className="lgFc"/>คาดการณ์<i className="lgBand"/>ช่วงที่น่าจะเป็น<i className="lgPlan"/>ปกติของวันนี้</span>}>
         <FcChart points={fc.total} now={m} height={230}/>
         <p className="note">{liveData && <>ผู้ป่วยจริง: เส้น "ปกติของวันนี้" ยังมาจากแบบจำลอง ปรับตามจำนวนที่มาจริงวันนี้ (×{scale.toFixed(2)}) · </>}
-          <button className="linkBtn dark ovMore" onClick={()=>go('ศูนย์อัจฉริยะ')}>คาดการณ์รายจุดบริการและคำแนะนำ → ศูนย์อัจฉริยะ</button></p>
+          <button className="linkBtn dark dashMore" onClick={()=>go('ศูนย์อัจฉริยะ')}>คาดการณ์รายจุดบริการและคำแนะนำ → ศูนย์อัจฉริยะ</button></p>
       </Panel>
 
       <Panel title="ต้องดูตอนนี้" icon={ListChecks} right={<button className="linkBtn dark" onClick={()=>go('การแจ้งเตือน')}>การแจ้งเตือนทั้งหมด</button>}>
-        <ul className="ovAttn">
+        <ul className="dashAttn">
           {sys.kioskHelp.map(h=><li key={h.id} className="bad"><b>ตู้ต้อนรับเรียกเจ้าหน้าที่{h.reason==='emergency' ? ' (ฉุกเฉิน)' : ''}</b> {h.kioskName}{h.whereTh ? ` · ${h.whereTh}` : ''}</li>)}
           {over.slice(0,3).map(c=><li key={c.st.id} className="bad"><b>เกินเพดาน</b> {c.st.label} · รอ {c.load}/{c.cap}</li>)}
           {[...assist.full].map(g=><li key={g} className="bad"><b>คิวเต็ม</b> ทุกช่องของกลุ่มเกินเพดาน · {assist.caps.find(c=>c.st.group===g)?.st.section}</li>)}
@@ -129,19 +129,19 @@ export default function OverviewBoard({patients,base,liveData,minute,assist,even
           {problems.slice(0,3).map(st=><li key={st.id} className="warn"><b>{healthText[assist.health.get(st.id)!.state]}</b> {st.label} · {assist.health.get(st.id)!.text}</li>)}
           {!over.length && !assist.full.size && !open.length && !helps.length && !problems.length && !kioskCalls && !porterJobs && !msgFailed && sys.online && !rk.some(k=>!k.online) && <li className="ok"><b>ทุกอย่างปกติ</b> ไม่มีเรื่องค้าง</li>}
         </ul>
-        <button className="btn ghost sm ovGo" onClick={()=>go('ติดตามคิว')}>ไปหน้าติดตามคิว</button>
+        <button className="btn ghost sm dashGo" onClick={()=>go('ติดตามคิว')}>ไปหน้าติดตามคิว</button>
       </Panel>
     </div>
 
-    <div className="ovGrid">
+    <div className="dashGrid">
 
       <CapPanel caps={caps} tt={tt}/>
 
       <Panel title="สถานะจุดบริการ" icon={Activity} sub={`${stations.length} จุดที่เปิดใช้`}>
-        <div className="ovStack" role="img" aria-label={health.map(x=>`${hText(x.h,liveData)} ${x.n}`).join(', ')}>
+        <div className="dashStack" role="img" aria-label={health.map(x=>`${hText(x.h,liveData)} ${x.n}`).join(', ')}>
           {health.map(x=><i key={x.h} style={{flexGrow:x.n,background:HEALTH_COLOR[x.h]}} onMouseMove={e=>tt.show(e,<><b>{hText(x.h,liveData)}</b><br/>{x.n} จุด</>)} onMouseLeave={tt.hide}/>)}</div>
-        <div className="ovLegendList">{health.map(x=><span key={x.h}><i style={{background:HEALTH_COLOR[x.h]}}/>{hText(x.h,liveData)}<b>{x.n}</b></span>)}</div>
-        {problems.length>0 && <ul className="ovMini">{problems.slice(0,6).map(st=><li key={st.id}><i style={{background:HEALTH_COLOR[assist.health.get(st.id)!.state]}}/><b>{st.label}</b><span className="muted">{assist.health.get(st.id)!.text}</span></li>)}</ul>}
+        <div className="dashLegendList">{health.map(x=><span key={x.h}><i style={{background:HEALTH_COLOR[x.h]}}/>{hText(x.h,liveData)}<b>{x.n}</b></span>)}</div>
+        {problems.length>0 && <ul className="dashMini">{problems.slice(0,6).map(st=><li key={st.id}><i style={{background:HEALTH_COLOR[assist.health.get(st.id)!.state]}}/><b>{st.label}</b><span className="muted">{assist.health.get(st.id)!.text}</span></li>)}</ul>}
         <p className="note">"แพทย์ไม่อยู่" = ห้องตรวจที่ไม่มีแพทย์เข้าเวรตอนนี้ · {liveData ? '"ยังไม่เปิดช่อง" = ยังไม่มีเจ้าหน้าที่เปิดจุดบนหน้าจอ' : '"ตัวจำลองดูแล" = จุดที่ไม่มีเจ้าหน้าที่เปิดบนหน้าจอ ตัวจำลองเรียกคิวแทน'}</p>
       </Panel>
 
@@ -151,7 +151,7 @@ export default function OverviewBoard({patients,base,liveData,minute,assist,even
         {(()=>{ const max = Math.max(1,...d.steps.map(x=>x.waiting+x.serving));
           return <div className="hbars">{d.steps.map(x=><div key={x.k} className="hbar" onMouseMove={e=>tt.show(e,<><b>{stepText[x.k as StepKind].serve}</b><br/>รอ {x.waiting} · กำลังรับบริการ {x.serving}</>)} onMouseLeave={tt.hide}>
             <span className="hbarLabel">{stepText[x.k as StepKind].serve}</span>
-            <span className="ovSplit"><i style={{width:`${x.waiting/max*100}%`,background:WAIT}}/><i style={{width:`${x.serving/max*100}%`,background:SERVE}}/></span>
+            <span className="dashSplit"><i style={{width:`${x.waiting/max*100}%`,background:WAIT}}/><i style={{width:`${x.serving/max*100}%`,background:SERVE}}/></span>
             <span className="hbarValue">{x.waiting+x.serving}</span></div>)}</div>; })()}
       </Panel>
 
@@ -162,14 +162,14 @@ export default function OverviewBoard({patients,base,liveData,minute,assist,even
           return <div className="hbars">{d.er.byLevel.map(l=><div key={l.level} className="hbar" onMouseMove={e=>tt.show(e,<><b>ระดับ {l.level} · {l.name}</b><br/>{l.count} คน · รอเกินเป้า ({l.target} นาที) {l.over} คน</>)} onMouseLeave={tt.hide}>
             <span className="hbarLabel">ระดับ {l.level} · {l.name}</span>
             <span className="hbarTrack"><i style={{width:`${l.count/max*100}%`,background:triageLevels[l.level-1].color}}/></span>
-            <span className="hbarValue">{l.count}{l.over ? <em className="ovOver"> ({l.over} เกิน)</em> : null}</span></div>)}</div>; })()}
+            <span className="hbarValue">{l.count}{l.over ? <em className="dashOver"> ({l.over} เกิน)</em> : null}</span></div>)}</div>; })()}
       </Panel>
 
       <Panel title="เตียงหอผู้ป่วย · รายชั้น" icon={BedDouble} sub={`ว่าง ${bedFree} จาก ${bedTotal} เตียง`}>
         <div className="hbars">{d.beds.floors.map(f=>{ const pct = Math.round(f.occupancy*100);
           return <div key={`${f.buildingId}:${f.level}`} className="hbar" onMouseMove={e=>tt.show(e,<><b>{buildingShort(f.buildingId)} ชั้น {f.level}</b><br/>ครอง {f.occupied} · ทำความสะอาด {f.cleaning} · ว่าง {f.free} · รอเข้า {f.waitingAdmit}</>)} onMouseLeave={tt.hide}>
             <span className="hbarLabel">{buildingShort(f.buildingId)} ชั้น {f.level}</span>
-            <span className="ovGauge"><i style={{width:`${pct}%`,background:pct>=90?CAP_COLOR.over:pct>=80?CAP_COLOR.near:CAP_COLOR.ok}}/></span>
+            <span className="dashGauge"><i style={{width:`${pct}%`,background:pct>=90?CAP_COLOR.over:pct>=80?CAP_COLOR.near:CAP_COLOR.ok}}/></span>
             <span className="hbarValue">{pct}%</span></div>; })}</div>
       </Panel>
 
@@ -178,7 +178,7 @@ export default function OverviewBoard({patients,base,liveData,minute,assist,even
       <TodayPanel sum={sum} online={sys.online}/>
 
       <Panel title="ระบบและการเชื่อมต่อ" icon={Server}>
-        <ul className="ovSys">
+        <ul className="dashSys">
           <li className={sys.online ? 'ok' : 'bad'}><b>ระบบกลาง</b>{sys.online ? 'เชื่อมต่ออยู่' : 'ไม่ได้เชื่อมต่อ — ตัวเลขบนหน้านี้อาจไม่ใช่ล่าสุด'}</li>
           <li className={sys.feed!=='live' ? (sys.feed==='connecting' ? 'warn' : 'bad') : sys.feedSource==='his-adapter' ? 'ok' : 'off'}><b>ข้อมูลจาก HIS</b>{sys.feed==='connecting' ? 'กำลังเชื่อมต่อ' : sys.feed!=='live' ? 'ไม่ได้รับข้อมูล' : sys.feedSource==='his-adapter' ? 'รับข้อมูลจาก HIS อยู่' : 'ยังไม่ได้เชื่อม HIS — ใช้ข้อมูลจำลอง'}</li>
           <li className={liveData ? 'ok' : 'warn'}><b>ข้อมูลผู้ป่วย</b>{liveData ? 'ผู้ป่วยจริง' : 'ข้อมูลจำลอง (สาธิต)'}</li>
@@ -189,7 +189,7 @@ export default function OverviewBoard({patients,base,liveData,minute,assist,even
       </Panel>
 
       <Panel title="รอนานที่สุดตอนนี้" icon={Hourglass} sub="คลิกเพื่อดูบนแผนที่">
-        {longest.length ? <table className="dataTable compact ovTable"><thead><tr><th>คิว</th><th>รอ</th><th>ที่</th><th className="num">นาที</th></tr></thead>
+        {longest.length ? <table className="dataTable compact dashTable"><thead><tr><th>คิว</th><th>รอ</th><th>ที่</th><th className="num">นาที</th></tr></thead>
           <tbody>{longest.map(s=><tr key={s.p.id} className={s.stepWait>LONG_WAIT?'warnRow':''} tabIndex={0} onClick={()=>onOpenPatient(s.p.id)} onKeyDown={e=>{ if (e.key==='Enter') onOpenPatient(s.p.id); }}>
             <td><b>{s.p.queue}</b></td><td>{stepText[s.step.kind].wait}</td><td className="muted" title={s.step.place.where}>{s.step.place.where.replace(/^พื้นที่รอ\s*/,'')}</td><td className="num"><b>{Math.round(s.stepWait)}</b></td></tr>)}</tbody></table>
           : <p className="cmdEmpty">ไม่มีผู้ป่วยรอ</p>}
@@ -200,10 +200,10 @@ export default function OverviewBoard({patients,base,liveData,minute,assist,even
 }
 
 function Tile({icon:I,label,value,unit,sub,tone}:{icon:typeof Users; label:string; value:number|string; unit:string; sub:string; tone?:'ok'|'warn'|'bad'}) {
-  return <div className={'tile ovTile'+(tone?' '+tone:'')}><small><I size={13}/> {label}</small><b>{value}{unit && <em> {unit}</em>}</b><span className="muted">{sub}</span></div>;
+  return <div className={'tile dashTile'+(tone?' '+tone:'')}><small><I size={13}/> {label}</small><b>{value}{unit && <em> {unit}</em>}</b><span className="muted">{sub}</span></div>;
 }
 function Panel({title,icon:I,sub,right,children}:{title:string; icon:typeof Users; sub?:string; right?:ReactNode; children:ReactNode}) {
-  return <section className="panel ovPanel">
+  return <section className="panel dashPanel">
     <div className="panelHead"><h3><I size={15}/> {title}</h3>{sub && <small className="panelMeta">{sub}</small>}{right}</div>
     {children}
   </section>;
@@ -218,15 +218,15 @@ function CapPanel({caps,tt}:{caps:CapLevel[]; tt:Tt}) {
   const ratio = (c:CapLevel) => Math.round(c.load/c.cap*100);
   return <Panel title="เพดานคิว · ตรงไหนใกล้เต็ม" icon={Gauge} sub={`เกิน ${caps.filter(c=>c.level==='over').length} · ใกล้ ${caps.filter(c=>c.level==='near').length} · จาก ${caps.length} จุด`}
     right={<button className="linkBtn dark" onClick={()=>setTable(t=>!t)}><Table2 size={13}/> {table?'ดูเป็นกราฟ':'ดูเป็นตาราง'}</button>}>
-    <div className="ovLegendList">{(['over','near','ok'] as const).map(k=><span key={k}><i style={{background:CAP_COLOR[k]}}/>{CAP_TEXT[k]}</span>)}<small className="muted">ใกล้ = ตั้งแต่ 80% ของเพดาน</small></div>
+    <div className="dashLegendList">{(['over','near','ok'] as const).map(k=><span key={k}><i style={{background:CAP_COLOR[k]}}/>{CAP_TEXT[k]}</span>)}<small className="muted">ใกล้ = ตั้งแต่ 80% ของเพดาน</small></div>
     {!caps.length ? <p className="cmdEmpty">ไม่มีจุดที่ตั้งเพดานไว้</p>
       : table ? <div className="tableWrap"><table className="dataTable compact"><thead><tr><th>จุดบริการ</th><th>แผนก</th><th className="num">รอ</th><th className="num">เพดาน</th><th className="num">%</th><th>สถานะ</th></tr></thead>
-        <tbody>{shown.map(c=><tr key={c.st.id}><td><b>{c.st.label}</b></td><td className="muted">{c.st.section}</td><td className="num">{c.load}</td><td className="num">{c.cap}</td><td className="num">{ratio(c)}</td><td><span className={'ovChip '+c.level}>{CAP_TEXT[c.level]}</span></td></tr>)}</tbody></table></div>
-      : <div className="hbars ovCaps">{shown.map(c=><div key={c.st.id} className="hbar" onMouseMove={e=>tt.show(e,<><b>{c.st.label}</b><br/>{c.st.section}<br/>รอ {c.load} · เพดาน {c.cap} ({ratio(c)}%) · {CAP_TEXT[c.level]}</>)} onMouseLeave={tt.hide}>
+        <tbody>{shown.map(c=><tr key={c.st.id}><td><b>{c.st.label}</b></td><td className="muted">{c.st.section}</td><td className="num">{c.load}</td><td className="num">{c.cap}</td><td className="num">{ratio(c)}</td><td><span className={'dashChip '+c.level}>{CAP_TEXT[c.level]}</span></td></tr>)}</tbody></table></div>
+      : <div className="hbars dashCaps">{shown.map(c=><div key={c.st.id} className="hbar" onMouseMove={e=>tt.show(e,<><b>{c.st.label}</b><br/>{c.st.section}<br/>รอ {c.load} · เพดาน {c.cap} ({ratio(c)}%) · {CAP_TEXT[c.level]}</>)} onMouseLeave={tt.hide}>
           <span className="hbarLabel">{c.st.label}</span>
-          <span className="ovGauge"><i style={{width:`${Math.min(100,ratio(c))}%`,background:CAP_COLOR[c.level]}}/><em aria-hidden/></span>
+          <span className="dashGauge"><i style={{width:`${Math.min(100,ratio(c))}%`,background:CAP_COLOR[c.level]}}/><em aria-hidden/></span>
           <span className="hbarValue">{c.load}/{c.cap}</span></div>)}</div>}
-    {caps.length>shown.length || all ? <button className="linkBtn dark ovMore" onClick={()=>setAll(a=>!a)}>{all ? 'แสดงเฉพาะที่ใกล้/เกิน' : `ดูทั้งหมด ${caps.length} จุด`}</button> : null}
+    {caps.length>shown.length || all ? <button className="linkBtn dark dashMore" onClick={()=>setAll(a=>!a)}>{all ? 'แสดงเฉพาะที่ใกล้/เกิน' : `ดูทั้งหมด ${caps.length} จุด`}</button> : null}
     <p className="note">เพดานไม่ได้ห้ามรับผู้ป่วย เป็นเกณฑ์ให้ตัวช่วยเกลี่ยคิวไปช่องอื่นในกลุ่มเดียวกัน · ปรับที่ ตั้งค่า → ตัวช่วยกระจายคิว / ปรับรายแผนก</p>
   </Panel>;
 }
@@ -237,17 +237,17 @@ type TK = (typeof kiosks)[number] & {line:number; issuedHour:number; issuedToday
 function KioskPanel({tk,rk,enabled,known,calls,liveData}:{tk:TK[]; rk:RKiosk[]; enabled:boolean; known:boolean; calls:KioskHelp[]; liveData:boolean}) {
   const tone = (s:string) => s==='online' ? 'ok' : s==='offline' ? 'bad' : 'warn';
   return <Panel title="ตู้ Kiosk" icon={MonitorSmartphone} sub={`${tk.length+rk.length} ตู้`}>
-    <h4 className="ovSub">ตู้ออกบัตรคิว / เช็กอิน</h4>
+    <h4 className="dashSub">ตู้ออกบัตรคิว / เช็กอิน</h4>
     {tk.length ? <table className="dataTable compact"><thead><tr><th>ตู้</th><th>สถานะ</th><th className="num">ต่อแถว</th><th className="num">บัตร ชม.นี้</th><th className="num">วันนี้</th></tr></thead>
-      <tbody>{tk.map(k=><tr key={k.id}><td><b>{k.name}</b></td><td><span className={'ovChip '+tone(k.status)}>{kioskStatusLabel[k.status]}</span></td><td className="num">{k.line}</td><td className="num">{k.issuedHour}</td><td className="num">{k.issuedToday}</td></tr>)}</tbody></table>
+      <tbody>{tk.map(k=><tr key={k.id}><td><b>{k.name}</b></td><td><span className={'dashChip '+tone(k.status)}>{kioskStatusLabel[k.status]}</span></td><td className="num">{k.line}</td><td className="num">{k.issuedHour}</td><td className="num">{k.issuedToday}</td></tr>)}</tbody></table>
       : <p className="cmdEmpty">ไม่มีตู้ในผังโรงพยาบาล</p>}
     <p className="note">สถานะกระดาษ/เครือข่ายยังเป็นข้อมูลจำลอง จนกว่าตู้จริงจะส่งสถานะเข้าระบบ{liveData ? ' · จำนวนบัตรนับจากผู้ป่วยที่ผ่านตู้' : ''}</p>
-    <h4 className="ovSub">ตู้ต้อนรับดิจิทัล</h4>
+    <h4 className="dashSub">ตู้ต้อนรับดิจิทัล</h4>
     {!known ? <p className="cmdEmpty">ต้องเชื่อมต่อระบบกลาง</p> : !enabled ? <p className="cmdEmpty">ตู้ต้อนรับปิดอยู่ (ตั้งค่า → ตู้ต้อนรับ)</p> : !rk.length ? <p className="cmdEmpty">ยังไม่ได้ลงทะเบียนตู้</p>
       : <table className="dataTable compact"><thead><tr><th>ตู้</th><th>สถานะ</th><th>ติดต่อล่าสุด</th><th className="num">ใช้วันนี้</th><th className="num">ส่งต่อคน</th></tr></thead>
         <tbody>{rk.map(k=>{ const call = calls.find(c=>c.kioskId===k.id);
           return <tr key={k.id}><td><b>{k.name}</b>{k.place && <small className="muted"> · {k.place}</small>}</td>
-            <td>{call ? <span className="ovChip bad">เรียกเจ้าหน้าที่{call.reason==='emergency' ? ' (ฉุกเฉิน)' : ''}</span> : <span className={'ovChip '+(k.online ? 'ok' : 'bad')}>{k.online ? 'ออนไลน์' : 'ออฟไลน์'}</span>}</td>
+            <td>{call ? <span className="dashChip bad">เรียกเจ้าหน้าที่{call.reason==='emergency' ? ' (ฉุกเฉิน)' : ''}</span> : <span className={'dashChip '+(k.online ? 'ok' : 'bad')}>{k.online ? 'ออนไลน์' : 'ออฟไลน์'}</span>}</td>
             <td className="muted">{ago(k.lastSeenAt)}</td><td className="num">{k.sessionsToday}</td><td className="num">{k.handoffsToday}</td></tr>; })}</tbody></table>}
     <p className="note">ออนไลน์ = ตู้ติดต่อระบบภายใน 12 นาที (ตู้ต่ออายุการเชื่อมต่อทุก 10 นาทีแม้ไม่มีคนใช้) · "ส่งต่อคน" = ครั้งที่ตู้ส่งเรื่องให้เจ้าหน้าที่</p>
   </Panel>;
@@ -256,14 +256,14 @@ function KioskPanel({tk,rk,enabled,known,calls,liveData}:{tk:TK[]; rk:RKiosk[]; 
 // Today's appointments and bookings (the account's clinics): come, still to come, no-shows, cancelled.
 function TodayPanel({sum,online}:{sum:Summary|null; online:boolean}) {
   const bar = (parts:[string,number,string][]) => { const total = parts.reduce((n,p)=>n+p[1],0);
-    return total ? <><div className="ovStack" role="img" aria-label={parts.map(p=>`${p[0]} ${p[1]}`).join(', ')}>{parts.filter(p=>p[1]).map(p=><i key={p[0]} style={{flexGrow:p[1],background:p[2]}}/>)}</div>
-      <div className="ovLegendList">{parts.map(p=><span key={p[0]}><i style={{background:p[2]}}/>{p[0]}<b>{p[1]}</b></span>)}</div></> : <p className="cmdEmpty">ไม่มีรายการวันนี้</p>; };
+    return total ? <><div className="dashStack" role="img" aria-label={parts.map(p=>`${p[0]} ${p[1]}`).join(', ')}>{parts.filter(p=>p[1]).map(p=><i key={p[0]} style={{flexGrow:p[1],background:p[2]}}/>)}</div>
+      <div className="dashLegendList">{parts.map(p=><span key={p[0]}><i style={{background:p[2]}}/>{p[0]}<b>{p[1]}</b></span>)}</div></> : <p className="cmdEmpty">ไม่มีรายการวันนี้</p>; };
   return <Panel title="นัดหมายและการจองวันนี้" icon={CalendarCheck} sub="เฉพาะแผนกที่บัญชีนี้รับผิดชอบ">
     {!sum ? <p className="cmdEmpty">{online ? 'กำลังโหลด…' : 'ต้องเชื่อมต่อระบบกลาง'}</p> : <>
-      <h4 className="ovSub">นัดแพทย์ {sum.appointments.enabled ? `· ${sum.appointments.total} นัด` : ''}</h4>
+      <h4 className="dashSub">นัดแพทย์ {sum.appointments.enabled ? `· ${sum.appointments.total} นัด` : ''}</h4>
       {sum.appointments.enabled ? bar([['มาแล้ว',sum.appointments.checkedIn,'#16a34a'],['ยังไม่มา',sum.appointments.confirmed,'#2a78d6'],['ไม่มาตามนัด',sum.appointments.noShow,'#c92a2a'],['ยกเลิก',sum.appointments.cancelled,'#cbd5e1']]) : <p className="cmdEmpty">ระบบนัดปิดอยู่</p>}
       {sum.appointments.movesPending>0 && <p className="note">คำขอเลื่อนนัดรออนุมัติ {sum.appointments.movesPending} รายการ (ทุกวัน)</p>}
-      <h4 className="ovSub">การจองล่วงหน้า {sum.bookings.enabled ? `· ${sum.bookings.total} รายการ` : ''}</h4>
+      <h4 className="dashSub">การจองล่วงหน้า {sum.bookings.enabled ? `· ${sum.bookings.total} รายการ` : ''}</h4>
       {sum.bookings.enabled ? bar([['มาแล้ว',sum.bookings.checkedIn,'#16a34a'],['ยังไม่มา',sum.bookings.confirmed,'#2a78d6'],['หมดเวลา',sum.bookings.expired,'#d97706'],['ยกเลิก',sum.bookings.cancelled,'#cbd5e1']]) : <p className="cmdEmpty">ระบบจองปิดอยู่</p>}
     </>}
   </Panel>;
@@ -277,7 +277,7 @@ function ServicesPanel({rows,tt}:{rows:SvcRow[]; tt:Tt}) {
     right={<button className="linkBtn dark" onClick={()=>setTable(t=>!t)}><Table2 size={13}/> {table?'ดูเป็นกราฟ':'ดูเป็นตาราง'}</button>}>
     {table ? <div className="tableWrap"><table className="dataTable compact"><thead><tr><th>แผนก / จุดบริการ</th><th className="num">รอ</th><th className="num">กำลังรับบริการ</th><th className="num">รอเฉลี่ย</th><th className="num">นานสุด</th><th className="num">จุดที่ให้บริการ</th></tr></thead>
         <tbody>{rows.map(r=><tr key={r.key}><td><b>{r.name}</b></td><td className="num">{r.waiting}</td><td className="num">{r.serving}</td><td className="num">{r.avgWait}</td><td className="num">{r.longest}</td><td className="num">{r.servers}</td></tr>)}</tbody></table></div>
-      : <div className="hbars">{top.map(r=><div key={r.key} className="hbar ovSvc" onMouseMove={e=>tt.show(e,<><b>{r.name}</b><br/>รอ {r.waiting} · กำลังรับบริการ {r.serving}<br/>รอเฉลี่ย {r.avgWait} นาที · นานสุด {r.longest} นาที · เปิด {r.servers} จุด</>)} onMouseLeave={tt.hide}>
+      : <div className="hbars">{top.map(r=><div key={r.key} className="hbar dashSvc" onMouseMove={e=>tt.show(e,<><b>{r.name}</b><br/>รอ {r.waiting} · กำลังรับบริการ {r.serving}<br/>รอเฉลี่ย {r.avgWait} นาที · นานสุด {r.longest} นาที · เปิด {r.servers} จุด</>)} onMouseLeave={tt.hide}>
           <span className="hbarLabel">{r.name}</span>
           <span className="hbarTrack"><i style={{width:`${r.waiting/max*100}%`,background:WAIT}}/></span>
           <span className="hbarValue">{r.waiting}<small className="muted"> · {r.avgWait}′</small></span></div>)}</div>}
@@ -294,10 +294,10 @@ function FloorsPanel({floors,tt}:{floors:Map<string,number>; tt:Tt}) {
   const color = (n:number) => n<=0 ? RAMP[0] : RAMP[Math.min(RAMP.length-1,1+Math.floor(n/max*(RAMP.length-1)))];
   return <Panel title="จำนวนคนตามอาคารและชั้น" icon={Building2} sub="ผู้ป่วยนอกและ ER ที่อยู่ตอนนี้">
     {!list.length ? <p className="cmdEmpty">ยังไม่มีผู้ป่วย</p> : <>
-      <div className="ovHeat" style={{gridTemplateColumns:`64px repeat(${blds.length},minmax(0,1fr))`}}>
-        <span/>{blds.map(b=><span key={b} className="ovHeatHead">{buildingShort(b)}</span>)}
-        {levels.map(l=>[<span key={`l${l}`} className="ovHeatRow">ชั้น {l}</span>,...blds.map(b=>{ const n = list.find(x=>x.b===b && x.level===l)?.n ?? 0;
-          return <span key={`${b}:${l}`} className={'ovHeatCell'+(n/max>0.55?' dark':'')} style={{background:color(n)}} onMouseMove={e=>tt.show(e,<><b>{buildingShort(b)} ชั้น {l}</b><br/>{n} คน</>)} onMouseLeave={tt.hide}>{n || ''}</span>; })])}
+      <div className="dashHeat" style={{gridTemplateColumns:`64px repeat(${blds.length},minmax(0,1fr))`}}>
+        <span/>{blds.map(b=><span key={b} className="dashHeatHead">{buildingShort(b)}</span>)}
+        {levels.map(l=>[<span key={`l${l}`} className="dashHeatRow">ชั้น {l}</span>,...blds.map(b=>{ const n = list.find(x=>x.b===b && x.level===l)?.n ?? 0;
+          return <span key={`${b}:${l}`} className={'dashHeatCell'+(n/max>0.55?' dark':'')} style={{background:color(n)}} onMouseMove={e=>tt.show(e,<><b>{buildingShort(b)} ชั้น {l}</b><br/>{n} คน</>)} onMouseLeave={tt.hide}>{n || ''}</span>; })])}
       </div>
       <div className="rampLegend"><span>น้อย</span>{RAMP.slice(1).map(c=><i key={c} style={{background:c}}/>)}<span>มาก (สูงสุด {max} คน)</span></div></>}
   </Panel>;

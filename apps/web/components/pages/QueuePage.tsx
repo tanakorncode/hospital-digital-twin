@@ -690,6 +690,7 @@ function OverviewTab({patients,m,onOpen,queue,assist,onOpenSettings,onOpenPlace}
  const keyOf = (k:GroupKey, s:PatientState) => k==='dept' ? cardName(cardKeyOf(s)) : k==='floor' ? placeText(s,m).split(' · ').pop() ?? '' : k==='station' ? stationOfRow(s)
   : k==='doctor' ? (doctorOfRow(s)==='—' ? 'ไม่ได้อยู่ที่ห้องตรวจแพทย์' : doctorOfRow(s)) : k==='status' ? statusText[s.status] : stepText[s.step.kind].serve;
  const [focus,setFocus] = useState<string|null>(null); // board card picked: the table shows just that department / service
+ const [idleOpen,setIdleOpen] = useState(false); // the calm departments with nobody waiting, shown
  const [mapOpen,setMapOpen] = useState(false);
  const [mapFloor,setMapFloor] = useState('opd:2');
  const [mapPatient,setMapPatient] = useState<string|null>(null);
@@ -789,8 +790,15 @@ function OverviewTab({patients,m,onOpen,queue,assist,onOpenSettings,onOpenPlace}
    <span className="ovDots" title={c.stations.map(st=>`${st.label}: ${healthText[assist.health.get(st.id)?.state ?? 'auto']}`).join('\n')}>{c.stations.slice(0,8).map(st=><i key={st.id} className={dotOf(st)}/>)}
     {c.bad.length ? <small className="bad">{c.bad.map(st=>`${st.roomId?st.label.replace('ห้องตรวจ ','ห้อง '):st.label.replace(/^.* (\d+)$/,'ช่อง $1')} ${healthText[assist.health.get(st.id)!.state]}`).slice(0,2).join(' · ')}</small> : <small>{c.stations.length} {c.key.startsWith('clinic:')?'ห้อง/ช่อง':'ช่อง'}</small>}</span>
   </button>)}</div>
-  {board.some(c=>c.severity==='ok' && focus!==c.key) && <div className="ovOk"><span className="sev ok">ปกติ</span>
-   {board.filter(c=>c.severity==='ok' && focus!==c.key).map(c=><button key={c.key} className="ovChip" onClick={()=>setFocus(c.key)} title={`รอ ${c.waiting} คน · นานสุด ${fmtDur(c.max)}`}>{cardBadge(c.key)}{c.name}<b>{c.waiting}</b></button>)}</div>}
+  {/* Departments that are fine: one tidy grid, most waiting first; those with nobody waiting fold into one button. */}
+  {(()=>{ const ok = board.filter(c=>c.severity==='ok' && focus!==c.key).sort((a,b)=>b.waiting-a.waiting || a.name.localeCompare(b.name,'th'));
+   const busy = ok.filter(c=>c.waiting>0), idle = ok.filter(c=>!c.waiting);
+   if (!ok.length) return null;
+   const chip = (c:typeof ok[number]) => <button key={c.key} className={'ovChip'+(c.waiting?'':' idle')} onClick={()=>setFocus(c.key)} title={`${c.name} · รอ ${c.waiting} คน${c.waiting?` · นานสุด ${fmtDur(c.max)}`:''}`}>
+    {cardBadge(c.key)}<span className="ovChipName">{c.name}</span><b className="ovChipN">{c.waiting}<small> รอ</small></b></button>;
+   return <div className="ovOk"><span className="ovOkHead"><span className="sev ok">ปกติ</span><small className="muted">{ok.length} แผนก · คลิกเพื่อดูรายชื่อ</small></span>
+    <div className="ovOkGrid">{busy.map(chip)}{idleOpen && idle.map(chip)}
+     {idle.length>0 && <button className="ovChip more" onClick={()=>setIdleOpen(o=>!o)}>{idleOpen ? 'ซ่อนแผนกที่ไม่มีคนรอ' : `ไม่มีคนรอ ${idle.length} แผนก`}</button>}</div></div>; })()}
   <AssistPanel assist={assist} queue={queue} m={m} patients={patients} onOpenSettings={onOpenSettings}/>
   <div className="ovTools">
    <input className="miniSearch big" value={q} onChange={e=>setQ(e.target.value)} placeholder="ค้นหาคิว / เลขท้าย HN"/>
