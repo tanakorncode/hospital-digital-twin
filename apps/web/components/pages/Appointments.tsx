@@ -145,7 +145,15 @@ export function SessionPlanner({api,clinics,say,fixed,onMade}:{api:Api; clinics:
      <input value={code} maxLength={20} placeholder="เช่น ว.12345 หรือรหัสใน HIS" onChange={e=>setCode(e.target.value)}/></label>}
     <label><span>ห้องตรวจ <em>(ไม่บังคับ)</em></span><Select value={room} onChange={setRoom} options={[{value:'',label:'ห้องที่ว่างของคลินิก'},...rooms.map(roomOption)]}/></label>
    </div></section>
-  <section className="schedStep"><h5><b className="schedNum">2</b>วันและเวลาออกตรวจ <small>ทุกสัปดาห์ · เพิ่มได้หลายช่วง เช่น บางวันเช้า บางวันบ่าย</small></h5>
+  {/* One step, read as one sentence: from … to …, every week on these days at these hours */}
+  <section className="schedStep"><h5><b className="schedNum">2</b>ช่วงวันที่ และวันเวลาออกตรวจ <small>ตั้งแต่ … ถึง … ออกตรวจทุกสัปดาห์ตามวันและเวลาด้านล่าง</small></h5>
+   <span className="schedLead">ใช้ตารางนี้</span>
+   <div className="schedDates">
+    <DatePicker value={from} min={today()} onChange={setFrom} aria-label="ตั้งแต่วันที่"/><span>ถึง</span><DatePicker value={to} min={from} onChange={setTo} clearable placeholder="เลือกวันสิ้นสุด" aria-label="ถึงวันที่"/>
+    <span className="facViews sm schedRange" role="group" aria-label="ระยะเวลา">{ranges.map(([t,n])=>{ const on = !!to && to===addDays(from,n); // a shortcut for the end date: pressed again, it is taken off
+     return <button key={t} type="button" className={on?'on':''} aria-pressed={on} title={on ? 'กดอีกครั้งเพื่อยกเลิก' : `ถึง ${dayOf(addDays(from,n))}`} onClick={()=>setTo(on ? '' : addDays(from,n))}>{t}</button>; })}</span>
+   </div>
+   <span className="schedLead">ออกตรวจทุกสัปดาห์ <small>เพิ่มได้หลายช่วง เช่น บางวันเช้า บางวันบ่าย</small></span>
    <div className="schedBlocks">{plan.map((b,n)=><div key={b.id} className="schedBlock">
     <span className="schedBlockNo">ช่วงที่ {n+1}</span>
     <span className="schedDays" role="group" aria-label={`วันของช่วงที่ ${n+1}`}>{WEEK_ORDER.map(d=><button key={d} type="button" className={b.days.includes(d)?'on':''} aria-pressed={b.days.includes(d)}
@@ -163,12 +171,6 @@ export function SessionPlanner({api,clinics,say,fixed,onMade}:{api:Api; clinics:
      <Select value={minutes} onChange={setMinutes} options={[10,15,20,30,60].map(m=>({value:m,label:`${m} นาที`}))}/></label>
     <label><span>รับนัดช่วงละ <InfoTip title="รับนัดช่วงละกี่คน">จำนวนผู้ป่วยที่นัดในช่วงเวลาเดียวกันได้ เช่น ช่วงละ {capacity} คน →
      เวลา 09:00 รับได้ {capacity} คน · ถ้าแพทย์ตรวจคนละ {minutes} นาทีพอดีให้ตั้ง 1 · ตั้งมากกว่า 1 เมื่อมีผู้ป่วยมาสาย/ไม่มา หรือตรวจเร็วกว่าความยาวช่วง</InfoTip></span><span className="schedUnit"><input type="number" min={1} max={100} value={capacity} onChange={e=>setCapacity(Math.max(1,Math.min(100,Number(e.target.value)||1)))}/>คน</span></label>
-   </div></section>
-  <section className="schedStep"><h5><b className="schedNum">3</b>ใช้ตารางนี้ช่วงวันที่</h5>
-   <div className="schedDates">
-    <DatePicker value={from} min={today()} onChange={setFrom} aria-label="ตั้งแต่วันที่"/><span>ถึง</span><DatePicker value={to} min={from} onChange={setTo} clearable placeholder="เลือกวันสิ้นสุด" aria-label="ถึงวันที่"/>
-    <span className="facViews sm schedRange" role="group" aria-label="ระยะเวลา">{ranges.map(([t,n])=>{ const on = !!to && to===addDays(from,n); // a shortcut for the end date: pressed again, it is taken off
-     return <button key={t} type="button" className={on?'on':''} aria-pressed={on} title={on ? 'กดอีกครั้งเพื่อยกเลิก' : `ถึง ${dayOf(addDays(from,n))}`} onClick={()=>setTo(on ? '' : addDays(from,n))}>{t}</button>; })}</span>
    </div></section>
   <div className={'schedSum'+(missing?' wait':'')}>
    {missing ? <span className="pickHint">{missing}</span> : <div>
