@@ -83,6 +83,14 @@ function roomLook(kind: BuildingKind, level: number, k: number): { kind: RoomKin
   if (level === 2) return { kind: 'scan', title: 'ห้องเอกซเรย์' };
   return k % 2 === 0 ? { kind: 'scan', title: 'ห้องสแกน' } : { kind: 'exam', title: 'ห้องตรวจ' };
 }
+// Rooms of departments that are not clinics, by what they are for (the old layout called every OPD room ห้องตรวจ,
+// every ER room ห้องรักษา and every support room สำนักงาน — registration has no exam rooms).
+const DEPT_ROOMS: Record<string, { kind: RoomKind; title: string }> = {
+  'ลงทะเบียน': { kind: 'office', title: 'ห้องเวชระเบียน' }, 'ห้องยา': { kind: 'office', title: 'ห้องจัดยา' }, 'การเงิน': { kind: 'office', title: 'ห้องการเงิน' },
+  'สังเกตอาการ': { kind: 'treatment', title: 'ห้องสังเกตอาการ' }, 'ICU ฉุกเฉิน': { kind: 'treatment', title: 'ห้อง ICU' },
+  'ห้องผ่าตัด': { kind: 'treatment', title: 'ห้องผ่าตัด' }, 'ห้องพักฟื้น': { kind: 'treatment', title: 'ห้องพักฟื้น' },
+  'คลังพัสดุ': { kind: 'office', title: 'ห้องเก็บพัสดุ' }, 'ซักฟอก': { kind: 'office', title: 'ห้องซักฟอก' }, 'โรงครัว': { kind: 'office', title: 'ห้องครัว' }, 'ศูนย์ IT': { kind: 'office', title: 'ห้อง IT' },
+};
 const groupNameOf = (prefix: string, dept: string) => (dept.startsWith(prefix) ? dept : `${prefix} ${dept}`);
 
 // The sample hospital with a Settings layout folded in (none = as shipped).
@@ -105,7 +113,7 @@ export function sampleFacility(layout: Layout = {}): FacilityData {
       const n = roomsPerFloor(b.width), s = split[`${b.id}-${f.level}`];
       const fits = s && s.length === deptNames.length && s.every((x) => x >= 1) && s.reduce((a, x) => a + x, 0) === n;
       const roomDept = (k: number) => fits ? s!.findIndex((_, i) => k < s!.slice(0, i + 1).reduce((a, x) => a + x, 0)) : Math.min(deptNames.length - 1, Math.floor(((k + 0.5) / n) * deptNames.length));
-      const rooms = Array.from({ length: n }, (_, k) => ({ k, number: f.level * 100 + k + 1, dept: roomDept(k), ...roomLook(b.kind, f.level, k) }));
+      const rooms = Array.from({ length: n }, (_, k) => ({ k, number: f.level * 100 + k + 1, dept: roomDept(k), ...(DEPT_ROOMS[f.depts[roomDept(k)] ?? ''] ?? roomLook(b.kind, f.level, k)) }));
 
       deptNames.forEach((rawName, i) => {
         const id = deptId(b.id, f.level, i), type = deptType(b.kind, f.level, f.depts[i] ?? rawName), mine = rooms.filter((r) => r.dept === i);
@@ -142,7 +150,7 @@ export function sampleFacility(layout: Layout = {}): FacilityData {
           mine.forEach((r, k) => point({ id: `counter:xray:${k + 1}`, groupId: 'counter:xray', number: r.number, roomCode: String(r.number), roomKind: r.kind }));
         } else if (mine.length) {
           const gid = `rooms:${id}`, noun = mine[0].title;
-          group({ id: gid, name: groupNameOf('ห้อง', name), pointKind: 'room', pointNoun: noun, steps: [] });
+          group({ id: gid, name: DEPT_ROOMS[f.depts[i] ?? '']?.title ?? groupNameOf('ห้อง', name), pointKind: 'room', pointNoun: noun, steps: [] });
           for (const r of mine) point({ id: `room:${b.id}-${r.number}`, groupId: gid, number: r.number, roomCode: String(r.number), roomKind: r.kind, ...(r.title !== noun ? { name: `${r.title} ${r.number}` } : {}) });
         }
         if (id === 'er') {
