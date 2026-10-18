@@ -2781,3 +2781,37 @@ input.bare[type=search]::-webkit-search-cancel-button{display:none}
 .impResult{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border-radius:12px;background:#ecfdf5;color:#065f46;font-size:13px}
 .impResult>svg{flex:none;color:#059669}.impResult>div{display:flex;flex-direction:column;gap:3px}
 .schedLead{font-size:12.5px;font-weight:600;color:#4d6074}.schedLead small{margin-left:6px;font-weight:500;color:#94a3b8}
+/* Schedule rows with their own dates */
+.schedBlock{flex-direction:column;align-items:stretch;gap:6px}
+.schedBlock.bad{border-color:#fcd34d;background:#fffdf5}
+.schedBlockLine{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.schedBlockLine .dp{width:190px;min-width:0;flex:none}
+.schedBlockLine .iconBtn{margin-left:auto}
+.schedBlockLine>small{margin-left:4px}
+.schedAdds{display:flex;gap:16px;flex-wrap:wrap}
+.schedAdd small{font-weight:500;color:#64748b;margin-left:2px}
+/* Schedule: sets of hours, and the calendar to pick their dates (components/pages/ScheduleCalendar.tsx) */
+.schedSets{display:flex;flex-direction:column;gap:6px}
+.schedSet{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 10px;border:1.5px solid #e3e9f1;border-radius:12px;background:#fff;cursor:pointer}
+.schedSet.on{border-color:var(--c);box-shadow:0 0 0 3px color-mix(in srgb,var(--c) 18%,transparent)}
+.schedSet.bad{border-color:#fcd34d}
+.schedSetDot{width:14px;height:14px;border-radius:4px;background:var(--c);flex:none}
+.schedSet>b{font-size:13px;color:#0f2340;min-width:72px}
+.schedSet .timeRange{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:#64748b}.schedSet .timeRange input{width:118px}
+.schedSetNow{font-style:normal;font-size:11.5px;font-weight:700;color:var(--c);padding:2px 8px;border-radius:999px;background:color-mix(in srgb,var(--c) 12%,#fff)}
+.schedSet .iconBtn{margin-left:auto}
+.schedCal{display:flex;flex-direction:column;gap:8px;padding:10px;border:1px solid #e3e9f1;border-radius:14px;background:#fff}
+.schedCalNav{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12.5px}
+.schedCalMonths{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px}
+.schedCalHead{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}.schedCalHead b{font-size:14px;color:#0f2340}
+.schedCalHead .linkBtn{font-size:12.5px}
+.schedCalGrid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.schedCalWd{height:28px;border:0;border-radius:8px;background:#f1f5f9;color:#475569;font:inherit;font-size:12px;font-weight:700;cursor:pointer}
+.schedCalWd:hover:not(:disabled){background:#e0ebff;color:#1677ff}
+.schedCalDay{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;height:40px;border:1.5px solid transparent;border-radius:10px;background:#f8fafc;color:#0f2340;font:inherit;font-size:13.5px;cursor:pointer}
+.schedCalDay:hover:not(:disabled){border-color:#93c5fd}
+.schedCalDay.on{color:#fff;font-weight:700}
+.schedCalDay.past{color:#cbd5e1;background:transparent;cursor:default}
+.schedCalDay:disabled:not(.past){cursor:default}
+.schedCalBars{display:flex;gap:2px;height:4px}.schedCalBars em{width:10px;height:4px;border-radius:2px;outline:1px solid #fff}
+.schedCal.idle .schedCalDay:not(.past){opacity:.7}

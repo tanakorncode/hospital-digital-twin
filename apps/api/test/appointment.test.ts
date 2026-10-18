@@ -295,3 +295,30 @@ test('doctors and their weekly hours come in from a spreadsheet: checked first, 
   assert.match(wrongTime.reason!, /Y \(D105\)/);
   assert.equal((api.gateway.apptProviders(staff) as { providers: { code: string }[] }).providers.some((p) => p.code === 'D105'), false, 'rolled back');
 });
+
+test('each row of a schedule can have its own dates: week 1 full days, week 2 afternoons', () => {
+  const { api, admin } = setup();
+  // 9–13 Nov Mon–Wed 08:00–16:00, 16–20 Nov Mon–Wed 12:00–16:00 (hour slots, 1 each).
+  const r = api.gateway.createApptSessions(admin, { clinicCode: EYE, providerCode: 'D201', providerName: 'นพ.สองสัปดาห์', minutes: 60, capacity: 1,
+    blocks: [{ from: '2026-11-09', to: '2026-11-15', weekdays: [1, 2, 3], start: '08:00', end: '16:00' }, { from: '2026-11-16', to: '2026-11-22', weekdays: [1, 2, 3], start: '12:00', end: '16:00' }] }) as R & { slots?: number };
+  assert.equal(r.ok, true, r.reason);
+  assert.deepEqual([r.sessions, r.slots], [6, 3 * 8 + 3 * 4]);
+  const first = (d: string) => new Date(api.appts.slots(EYE, d, 'D201')[0].startsAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bangkok' });
+  assert.deepEqual([first('2026-11-09'), first('2026-11-16')], ['08:00', '12:00']);
+  assert.equal(api.appts.slots(EYE, '2026-11-12', 'D201').length, 0, 'Thursday is not in either row');
+  // A row without dates, and no dates for the whole plan: said, with the row.
+  const bad = api.gateway.createApptSessions(admin, { clinicCode: EYE, providerCode: 'D202', providerName: 'X', minutes: 60, capacity: 1,
+    blocks: [{ from: '2026-11-09', to: '2026-11-15', weekdays: [1], start: '08:00', end: '09:00' }, { weekdays: [2], start: '08:00', end: '09:00' }] }) as R;
+  assert.equal(bad.code, 'VALIDATION_ERROR'); assert.match(bad.reason!, /ช่วงที่ 2/);
+});
+
+test('a schedule from dates picked on a calendar: each set of hours on its own dates', () => {
+  const { api, admin } = setup();
+  const r = api.gateway.createApptSessions(admin, { clinicCode: EYE, providerCode: 'D301', providerName: 'นพ.ปฏิทิน', minutes: 60, capacity: 1,
+    blocks: [{ dates: ['2026-11-09', '2026-11-10', '2026-11-11'], start: '08:00', end: '16:00' }, { dates: ['2026-11-16', '2026-11-18', '2026-11-16'], start: '12:00', end: '16:00' }] }) as R & { slots?: number };
+  assert.equal(r.ok, true, r.reason);
+  assert.deepEqual([r.sessions, r.slots], [5, 3 * 8 + 2 * 4], 'a date picked twice counts once');
+  assert.equal(api.appts.slots(EYE, '2026-11-17', 'D301').length, 0, 'not picked');
+  const bad = api.gateway.createApptSessions(admin, { clinicCode: EYE, providerCode: 'D302', providerName: 'X', minutes: 60, capacity: 1, blocks: [{ dates: [], start: '08:00', end: '09:00' }] }) as R;
+  assert.equal(bad.code, 'VALIDATION_ERROR');
+});

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CalendarPlus, Check, CheckCircle2, Loader2, LogIn, MoveRight, Plus, RefreshCw, Search, X } from 'lucide-react';
 import { useHnCheck } from './HnCheck';
 import { InfoTip } from './FacilityHelp';
+import { ScheduleCalendar, type HourSet } from './ScheduleCalendar';
 import { opdClinics, type Clinic } from '../../lib/patients';
 import { findRoom, isOff, type Room } from '../../lib/scene-data';
 import { buildingShort } from '../../lib/facility';
@@ -72,14 +73,16 @@ export function ApptAdminPane({api,rev,features,setFeature,onDoctors}:{api:Api; 
  </section>;
 }
 
-// Settings → นัดแพทย์: a doctor's schedule — who and where; the weekly hours (rows: these weekdays, from … to — mornings
-// on some days, afternoons on others, both on one day), cut into appointment times of N minutes, M patients each; and
-// the dates it runs. The summary at the bottom (always in view) says what will be made, or what is still missing.
+// A doctor's schedule — who and where, then sets of hours (08:00–16:00, 12:00–16:00 …) each on the dates picked for it on
+// a calendar: week 1 full days, week 2 afternoons; mornings and afternoons on one date — cut into appointment times of
+// N minutes, M patients each. The summary at the bottom (always in view) says what will be made,
+// or what is still missing.
 const WEEKDAY_FULL = ['อาทิตย์','จันทร์','อังคาร','พุธ','พฤหัสบดี','ศุกร์','เสาร์'];
 const WEEK_ORDER = [1,2,3,4,5,6,0]; // Monday first, as clinics plan their week
 const NEW_DOCTOR = '__new';
 export type Provider = {code:string; name:string; clinics:string[]; note?:string; active:boolean; upcoming:number; nextAt?:string};
-type Block = {id:number; days:number[]; start:string; end:string};
+type Block = HourSet & {start:string; end:string};
+const SET_COLORS = ['#1677ff','#10b981','#f59e0b','#a855f7','#ef4444','#0ea5e9','#64748b'];
 const toMin = (t:string) => Number(t.slice(0,2))*60+Number(t.slice(3,5)), hhmm = (m:number) => `${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`;
 let blockSeq = 0;
 // fixed: the doctor's own page (Settings → รายชื่อแพทย์) — the schedule is for this doctor, their clinics first.
@@ -91,11 +94,10 @@ export function SessionPlanner({api,clinics,say,fixed,onMade}:{api:Api; clinics:
  const [code,setCode] = useState('');
  const [name,setName] = useState('');
  const [room,setRoom] = useState('');
- const [blocks,setBlocks] = useState<Block[]>(()=>[{id:++blockSeq,days:[1],start:'09:00',end:'12:00'}]);
+ const [blocks,setBlocks] = useState<Block[]>(()=>[{id:++blockSeq,color:SET_COLORS[0],dates:[],start:'09:00',end:'12:00'}]);
+ const [activeId,setActiveId] = useState(()=>blockSeq);
  const [minutes,setMinutes] = useState(15);
  const [capacity,setCapacity] = useState(2);
- const [from,setFrom] = useState(()=>addDays(today(),1));
- const [to,setTo] = useState(()=>addDays(today(),28)); // = "4 สัปดาห์" from tomorrow
  const [busy,setBusy] = useState(false);
  const [done,setDone] = useState<{text:string; bad?:boolean}|null>(null);
  const rooms = clinics.find(c=>c.key===clinic)?.rooms ?? [];
@@ -108,31 +110,30 @@ export function SessionPlanner({api,clinics,say,fixed,onMade}:{api:Api; clinics:
   .map(x=>({value:x.code,label:x.name,sub:`รหัส ${x.code}${x.clinics.includes(clinic) ? '' : ' · คลินิกอื่น'}`}));
  const pCode = isNew ? code.trim() : known.code, pName = isNew ? name.trim() : known.name;
  const setBlock = (id:number, patch:Partial<Block>) => setBlocks(bs=>bs.map(b=>b.id===id ? {...b,...patch} : b));
- const toggleDay = (id:number, d:number) => setBlocks(bs=>bs.map(b=>b.id!==id ? b : {...b,days:b.days.includes(d) ? b.days.filter(x=>x!==d) : [...b.days,d]}));
+ const active = blocks.find(b=>b.id===activeId) ?? blocks[0];
+ const addSet = () => { const id = ++blockSeq; setBlocks(bs=>[...bs,{id,color:SET_COLORS[bs.length%SET_COLORS.length],dates:[],start:'13:00',end:'16:00'}]); setActiveId(id); };
+ const removeSet = (id:number) => { setBlocks(bs=>bs.filter(x=>x.id!==id)); if (activeId===id) setActiveId(blocks.find(b=>b.id!==id)!.id); };
+ const pickDates = (dates:string[], add:boolean) => setBlocks(bs=>bs.map(b=>b.id!==active.id ? b : {...b,dates:add ? [...new Set([...b.dates,...dates])].sort() : b.dates.filter(d=>!dates.includes(d))}));
  // What it will make
- const dates = useMemo(()=>{ const out:{day:string; wd:number}[] = []; if (!from || !to || to<from) return out;
-  for (let d = new Date(`${from}T12:00:00`); d.toLocaleDateString('sv-SE')<=to && out.length<=200; d.setDate(d.getDate()+1)) out.push({day:d.toLocaleDateString('sv-SE'),wd:d.getDay()});
-  return out; },[from,to]);
- const plan = blocks.map(b=>{ const span = toMin(b.end)-toMin(b.start), slots = span>0 ? Math.floor(span/minutes) : 0;
-  return {...b,slots,sessions:dates.filter(d=>b.days.includes(d.wd)).length}; });
- const workDays = new Set(dates.filter(d=>blocks.some(b=>b.days.includes(d.wd))).map(d=>d.day)).size;
- const perWeek = plan.reduce((n,b)=>n+b.days.length*b.slots*capacity,0), total = plan.reduce((n,b)=>n+b.sessions*b.slots*capacity,0);
- const overlap = (()=>{ for (let x=0; x<plan.length; x++) for (let y=x+1; y<plan.length; y++) { const a = plan[x], b = plan[y], d = a.days.find(v=>b.days.includes(v));
-  if (d!==undefined && toMin(a.start)<toMin(b.end) && toMin(b.start)<toMin(a.end)) return `ช่วงที่ ${x+1} กับช่วงที่ ${y+1} ซ้อนเวลากันในวัน${WEEKDAY_FULL[d]}`; } return ''; })();
- const badBlock = plan.findIndex(b=>!b.days.length || toMin(b.end)<=toMin(b.start) || !b.slots);
+ const plan = blocks.map(b=>{ const len = toMin(b.end)-toMin(b.start), slots = len>0 ? Math.floor(len/minutes) : 0; return {...b,slots,sessions:b.dates.length}; });
+ const used = plan.filter(b=>b.dates.length);
+ const allDays = [...new Set(used.flatMap(b=>b.dates))].sort(), workDays = allDays.length, total = used.reduce((n,b)=>n+b.sessions*b.slots*capacity,0);
+ const overlap = (()=>{ for (let x=0; x<plan.length; x++) for (let y=x+1; y<plan.length; y++) { const a = plan[x], b = plan[y];
+  if (!(toMin(a.start)<toMin(b.end) && toMin(b.start)<toMin(a.end))) continue;
+  const day = a.dates.find(d=>b.dates.includes(d)); if (day) return `ช่วงเวลา ${x+1} กับ ${y+1} ซ้อนกันใน${dayOf(day)}`; } return ''; })();
+ const rowProblem = (b:typeof plan[number]) => toMin(b.end)<=toMin(b.start) ? 'เวลาเลิกต้องหลังเวลาเริ่ม' : !b.slots ? 'สั้นกว่าหนึ่งช่วงนัด' : '';
+ const badBlock = plan.findIndex(b=>rowProblem(b));
  const missing = !pName ? 'กรอกชื่อแพทย์' : !pCode ? 'กรอกรหัสแพทย์' : !/^[A-Za-z0-9ก-๙._-]{1,20}$/.test(pCode) ? 'รหัสแพทย์ใช้ตัวอักษร ตัวเลข . _ - ไม่เกิน 20 ตัว (ไม่มีช่องว่าง)'
-  : badBlock>=0 ? `ช่วงที่ ${badBlock+1}: ${!plan[badBlock].days.length ? 'เลือกวัน' : toMin(plan[badBlock].end)<=toMin(plan[badBlock].start) ? 'เวลาเลิกต้องหลังเวลาเริ่ม' : 'สั้นกว่าหนึ่งช่วงนัด'}`
-  : overlap || (!to ? 'เลือกวันที่สิ้นสุด หรือกดระยะเวลา (4 สัปดาห์ / 3 เดือน / 6 เดือน)' : to<from ? 'วันที่สิ้นสุดต้องไม่ก่อนวันเริ่ม' : dates.length>184 ? 'สร้างได้ครั้งละไม่เกิน 6 เดือน' : !workDays ? 'ช่วงวันที่นี้ไม่มีวันที่ตรงกับวันออกตรวจ' : '');
+  : badBlock>=0 ? `ช่วงเวลา ${badBlock+1}: ${rowProblem(plan[badBlock])}` : !workDays ? 'เลือกวันที่ออกตรวจในปฏิทิน' : overlap;
  const make = async () => {
   setBusy(true); setDone(null);
   const r = await api<{ok:boolean; reason?:string; sessions?:number; slots?:number; skipped?:number; conflicts?:string[]}>('appt:sessions:create',
-   {clinicCode:clinic,providerCode:pCode,providerName:pName,from,to,minutes,capacity,blocks:blocks.map(b=>({weekdays:b.days,start:b.start,end:b.end})),...(room?{roomId:room}:{})});
+   {clinicCode:clinic,providerCode:pCode,providerName:pName,minutes,capacity,blocks:blocks.filter(b=>b.dates.length).map(b=>({dates:b.dates,start:b.start,end:b.end})),...(room?{roomId:room}:{})});
   setBusy(false);
   const text = r.ok ? `สร้างตารางแล้ว ${r.sessions ?? 0} ครั้งออกตรวจ (${r.slots ?? 0} ช่วงนัด)${r.skipped?` · มีอยู่แล้ว ${r.skipped} ครั้ง (ข้าม)`:''}${r.conflicts?.length?` · ข้าม ${r.conflicts.length} วันที่แพทย์มีตารางซ้อนเวลา: ${r.conflicts.map(d=>dayOf(d)).join(', ')}`:''}` : r.reason ?? 'สร้างไม่สำเร็จ';
   setDone({text,bad:!r.ok}); say(r,text);
   if (r.ok) { void loadProviders(); if (isNew) setDoctor(pCode); onMade?.(); }
  };
- const ranges:[string,number][] = [['4 สัปดาห์',27],['3 เดือน',90],['6 เดือน',181]];
  return <div className="schedForm">
   <h4 className="setSub">{fixed ? `สร้างตารางออกตรวจของ ${fixed.name}` : 'สร้างตารางออกตรวจของแพทย์'} <small>สร้างครั้งเดียวได้ทั้งช่วงวันที่ · ระบบแบ่งเวลาออกตรวจเป็นช่วงนัดให้ผู้ป่วยเลือก</small></h4>
   <section className="schedStep"><h5><b className="schedNum">1</b>{fixed ? 'คลินิกและห้อง' : 'แพทย์และคลินิก'}</h5>
@@ -145,25 +146,20 @@ export function SessionPlanner({api,clinics,say,fixed,onMade}:{api:Api; clinics:
      <input value={code} maxLength={20} placeholder="เช่น ว.12345 หรือรหัสใน HIS" onChange={e=>setCode(e.target.value)}/></label>}
     <label><span>ห้องตรวจ <em>(ไม่บังคับ)</em></span><Select value={room} onChange={setRoom} options={[{value:'',label:'ห้องที่ว่างของคลินิก'},...rooms.map(roomOption)]}/></label>
    </div></section>
-  {/* One step, read as one sentence: from … to …, every week on these days at these hours */}
-  <section className="schedStep"><h5><b className="schedNum">2</b>ช่วงวันที่ และวันเวลาออกตรวจ <small>ตั้งแต่ … ถึง … ออกตรวจทุกสัปดาห์ตามวันและเวลาด้านล่าง</small></h5>
-   <span className="schedLead">ใช้ตารางนี้</span>
-   <div className="schedDates">
-    <DatePicker value={from} min={today()} onChange={setFrom} aria-label="ตั้งแต่วันที่"/><span>ถึง</span><DatePicker value={to} min={from} onChange={setTo} clearable placeholder="เลือกวันสิ้นสุด" aria-label="ถึงวันที่"/>
-    <span className="facViews sm schedRange" role="group" aria-label="ระยะเวลา">{ranges.map(([t,n])=>{ const on = !!to && to===addDays(from,n); // a shortcut for the end date: pressed again, it is taken off
-     return <button key={t} type="button" className={on?'on':''} aria-pressed={on} title={on ? 'กดอีกครั้งเพื่อยกเลิก' : `ถึง ${dayOf(addDays(from,n))}`} onClick={()=>setTo(on ? '' : addDays(from,n))}>{t}</button>; })}</span>
-   </div>
-   <span className="schedLead">ออกตรวจทุกสัปดาห์ <small>เพิ่มได้หลายช่วง เช่น บางวันเช้า บางวันบ่าย</small></span>
-   <div className="schedBlocks">{plan.map((b,n)=><div key={b.id} className="schedBlock">
-    <span className="schedBlockNo">ช่วงที่ {n+1}</span>
-    <span className="schedDays" role="group" aria-label={`วันของช่วงที่ ${n+1}`}>{WEEK_ORDER.map(d=><button key={d} type="button" className={b.days.includes(d)?'on':''} aria-pressed={b.days.includes(d)}
-     title={WEEKDAY_FULL[d]} onClick={()=>toggleDay(b.id,d)}>{weekdayNames[d]}</button>)}</span>
-    <span className="timeRange"><input type="time" value={b.start} aria-label={`เวลาเริ่มช่วงที่ ${n+1}`} onChange={e=>setBlock(b.id,{start:e.target.value})}/>ถึง
-     <input type="time" value={b.end} aria-label={`เวลาเลิกช่วงที่ ${n+1}`} onChange={e=>setBlock(b.id,{end:e.target.value})}/></span>
-    <small className="muted">{b.slots ? `${b.slots} ช่วงนัด` : ''}</small>
-    {blocks.length>1 && <button type="button" className="iconBtn" aria-label={`ลบช่วงที่ ${n+1}`} title="ลบช่วงนี้" onClick={()=>setBlocks(bs=>bs.filter(x=>x.id!==b.id))}><X size={15}/></button>}
-   </div>)}
-    {blocks.length<14 && <button type="button" className="linkBtn dark schedAdd" onClick={()=>setBlocks(bs=>[...bs,{id:++blockSeq,days:[],start:'13:00',end:'16:00'}])}><Plus size={14}/> เพิ่มช่วงเวลาออกตรวจ</button>}</div>
+  {/* Sets of hours, each on the dates picked for it on the calendar */}
+  <section className="schedStep"><h5><b className="schedNum">2</b>วันและเวลาออกตรวจ <small>เลือกช่วงเวลา แล้วคลิกวันที่ในปฏิทิน (เลือกได้หลายวัน) · วันเดียวกันมีได้หลายช่วงเวลา</small></h5>
+   <div className="schedSets" role="radiogroup" aria-label="ช่วงเวลาที่กำลังเลือกวัน">{plan.map((b,n)=>{ const on = b.id===active.id, bad = rowProblem(b);
+    return <div key={b.id} className={'schedSet'+(on?' on':'')+(bad?' bad':'')} style={{'--c':b.color} as React.CSSProperties} role="radio" aria-checked={on} tabIndex={0}
+     onClick={()=>setActiveId(b.id)} onKeyDown={e=>{ if (e.key===' ' || e.key==='Enter') { e.preventDefault(); setActiveId(b.id); } }}>
+     <span className="schedSetDot"/><b>ช่วงเวลา {n+1}</b>
+     <span className="timeRange" onClick={e=>e.stopPropagation()}><input type="time" value={b.start} aria-label={`เวลาเริ่ม ช่วงเวลา ${n+1}`} onFocus={()=>setActiveId(b.id)} onChange={e=>setBlock(b.id,{start:e.target.value})}/>ถึง
+      <input type="time" value={b.end} aria-label={`เวลาเลิก ช่วงเวลา ${n+1}`} onFocus={()=>setActiveId(b.id)} onChange={e=>setBlock(b.id,{end:e.target.value})}/></span>
+     <small className={bad?'facErr':'muted'}>{bad || (b.dates.length ? `${b.dates.length} วัน · วันละ ${b.slots} ช่วงนัด` : on ? 'คลิกวันที่ในปฏิทิน' : 'ยังไม่ได้เลือกวันที่')}</small>
+     {on && <em className="schedSetNow">กำลังเลือกวัน</em>}
+     {blocks.length>1 && <button type="button" className="iconBtn" aria-label={`ลบช่วงเวลา ${n+1}`} title="ลบช่วงเวลานี้" onClick={e=>{ e.stopPropagation(); removeSet(b.id); }}><X size={15}/></button>}
+    </div>; })}
+    {blocks.length<10 && <button type="button" className="linkBtn dark schedAdd" onClick={addSet}><Plus size={14}/> เพิ่มช่วงเวลา <small>(เช่น อีกสัปดาห์ออกเฉพาะบ่าย)</small></button>}</div>
+   <ScheduleCalendar sets={blocks} active={active} onToggle={pickDates} min={today()}/>
    <div className="schedRow slim">
     <label><span>แบ่งเป็นช่วงนัด ช่วงละ <InfoTip title="ช่วงนัด คืออะไร">เวลาออกตรวจจะถูกแบ่งเป็นช่วงสั้นๆ ให้ผู้ป่วยเลือกเวลานัด
      เช่น 09:00–12:00 ช่วงละ {minutes} นาที → ผู้ป่วยเลือกได้ {Array.from({length:Math.min(3,Math.floor(180/minutes))},(_,k)=>hhmm(540+k*minutes)).join(', ')} … ({Math.floor(180/minutes)} ช่วง) ·
@@ -174,8 +170,8 @@ export function SessionPlanner({api,clinics,say,fixed,onMade}:{api:Api; clinics:
    </div></section>
   <div className={'schedSum'+(missing?' wait':'')}>
    {missing ? <span className="pickHint">{missing}</span> : <div>
-    <b>{pName} · {clinicName(clinics.find(c=>c.key===clinic)!)} · {plan.map(b=>`${WEEK_ORDER.filter(d=>b.days.includes(d)).map(d=>weekdayNames[d]).join(' ')} ${b.start}–${b.end}`).join(' / ')}</b>
-    <span>{workDays} วันออกตรวจ ({dayOf(from)} – {dayOf(to)}) · รับนัดได้ {perWeek} คน/สัปดาห์ · รวมทั้งหมด <b>{total} คน</b></span></div>}
+    <b>{pName} · {clinicName(clinics.find(c=>c.key===clinic)!)} · {used.map(b=>`${b.start}–${b.end} (${b.dates.length} วัน)`).join(' / ')}</b>
+    <span>{workDays} วันออกตรวจ ({dayOf(allDays[0])} – {dayOf(allDays[allDays.length-1])}) · {used.reduce((n,b)=>n+b.sessions,0)} ครั้งออกตรวจ · รับนัดได้รวม <b>{total} คน</b></span></div>}
    <button className="btn" disabled={busy || !!missing} onClick={()=>void make()}>{busy ? <Loader2 size={15} className="spin"/> : <CalendarPlus size={15}/>} {busy?'กำลังสร้าง…':'สร้างตาราง'}</button>
   </div>
   {done && <p className={'setToast'+(done.bad?' bad':'')} role="status">{done.text}</p>}
