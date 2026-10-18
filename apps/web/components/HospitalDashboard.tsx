@@ -461,15 +461,15 @@ export default function HospitalDashboard() {
    <div className="brand"><div className="brandIcon"><Plus size={26} strokeWidth={3.4}/></div><div><strong>Hospital Digital Twin</strong><small>โรงพยาบาลตัวอย่าง</small></div></div>
    <div className="metrics">
     {realStats ? <>
-     <div className="metric"><span className="metricIcon blue"><Users size={24}/></span><div><span>ผู้ป่วยจริงวันนี้</span><strong>{realStats.total} <em>คน</em></strong></div></div>
-     <div className="metric"><span className="metricIcon amber"><Clock size={24}/></span><div><span>รอคิวเฉลี่ยตอนนี้</span><strong>{realStats.wait===undefined?'–':realStats.wait} <em>นาที</em></strong></div></div>
-     <div className="metric"><span className="metricIcon blue"><UsersRound size={24}/></span><div><span>กำลังรับบริการ</span><strong>{realStats.serving} <em>คน</em></strong></div></div>
-     <div className="metric"><span className="metricIcon blue"><Stethoscope size={24}/></span><div><span>ห้องตรวจที่เปิด</span><strong>{realStats.rooms} / {realStats.allRooms}</strong></div></div>
+     <div className="metric"><span className="metricIcon blue"><Users size={24}/></span><div className="metricText"><span>ผู้ป่วยจริงวันนี้</span><div className="metricRow"><strong>{realStats.total} <em>คน</em></strong></div></div></div>
+     <div className="metric"><span className="metricIcon amber"><Clock size={24}/></span><div className="metricText"><span>รอคิวเฉลี่ยตอนนี้</span><div className="metricRow"><strong>{realStats.wait===undefined?'–':realStats.wait} <em>นาที</em></strong></div></div></div>
+     <div className="metric"><span className="metricIcon blue"><UsersRound size={24}/></span><div className="metricText"><span>กำลังรับบริการ</span><div className="metricRow"><strong>{realStats.serving} <em>คน</em></strong></div></div></div>
+     <div className="metric"><span className="metricIcon blue"><Stethoscope size={24}/></span><div className="metricText"><span>ห้องตรวจที่เปิด</span><div className="metricRow"><strong>{realStats.rooms} / {realStats.allRooms}</strong></div></div></div>
     </> : <>
-    <div className="metric"><span className="metricIcon blue"><Users size={24}/></span><div><span>ผู้ป่วยทั้งหมดวันนี้</span><strong>{todayTotal.toLocaleString()} <em>คน</em></strong></div><b className="positive">+12%</b></div>
-    <div className="metric"><span className="metricIcon amber"><Clock size={24}/></span><div><span>รอคิวเฉลี่ย</span><strong>{Math.round(28*(0.4+0.6*opdK))} <em>นาที</em></strong></div><b className="positive">−5%</b></div>
-    <div className="metric"><span className="metricIcon blue"><UsersRound size={24}/></span><div><span>กำลังรับบริการ</span><strong>{Math.round(327*campusRatio)} <em>คน</em></strong></div></div>
-    <div className="metric"><span className="metricIcon blue"><Stethoscope size={24}/></span><div><span>ห้องตรวจที่ใช้งาน</span><strong>{roomsUsed} / 56</strong></div><b className="positive">{Math.round(roomsUsed/56*100)}%</b></div>
+    <div className="metric"><span className="metricIcon blue"><Users size={24}/></span><div className="metricText"><span>ผู้ป่วยทั้งหมดวันนี้</span><div className="metricRow"><strong>{todayTotal.toLocaleString()} <em>คน</em></strong><b className="positive">+12%</b></div></div></div>
+    <div className="metric"><span className="metricIcon amber"><Clock size={24}/></span><div className="metricText"><span>รอคิวเฉลี่ย</span><div className="metricRow"><strong>{Math.round(28*(0.4+0.6*opdK))} <em>นาที</em></strong><b className="positive">−5%</b></div></div></div>
+    <div className="metric"><span className="metricIcon blue"><UsersRound size={24}/></span><div className="metricText"><span>กำลังรับบริการ</span><div className="metricRow"><strong>{Math.round(327*campusRatio)} <em>คน</em></strong></div></div></div>
+    <div className="metric"><span className="metricIcon blue"><Stethoscope size={24}/></span><div className="metricText"><span>ห้องตรวจที่ใช้งาน</span><div className="metricRow"><strong>{roomsUsed} / 56</strong><b className="positive">{Math.round(roomsUsed/56*100)}%</b></div></div></div>
     </>}
    </div>
    <div className={'clock'+(clockOffset?' testing':'')}><strong>{clock.time}</strong><small>{clock.date}</small>{clockOffset!==0 && <button className="testBadge" title="กำลังใช้เวลาทดสอบ · ปรับที่ ตั้งค่า → โหมดทดสอบ" onClick={()=>setActiveNav('ตั้งค่า')}>ทดสอบ</button>}</div>
