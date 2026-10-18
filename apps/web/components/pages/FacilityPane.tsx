@@ -10,6 +10,7 @@ import { ConfirmDialog, type Confirm } from './ConfirmDialog';
 import { FloorPreview, Help } from './FacilityHelp';
 import { SitePlan } from './FacilitySite';
 import { FloorEditor } from './FacilityFloorEditor';
+import { Switch } from '../Switch';
 import { planFloor, seatCapacity } from '../../lib/floor-layout';
 import { ModalPortal } from '../ModalPortal';
 
@@ -56,9 +57,6 @@ const nextLetter = (d:Data) => { const used = new Set(d.departments.map(x=>x.que
 function Mark({text,q}:{text:string; q:string}) {
   const i = q ? text.toLowerCase().indexOf(q) : -1;
   return i<0 ? <>{text}</> : <>{text.slice(0,i)}<mark>{text.slice(i,i+q.length)}</mark>{text.slice(i+q.length)}</>;
-}
-function Switch({value,onChange,disabled,label}:{value:boolean; onChange:(v:boolean)=>void; disabled?:boolean; label:string}) {
-  return <label className="switch small" title={label}><input type="checkbox" checked={value} disabled={disabled} onChange={e=>onChange(e.target.checked)} aria-label={label}/><span/><small>{value?'เปิด':'ปิด'}</small></label>;
 }
 
 export function FacilityPane({api,online,canEdit,head}:{api?:Api; online:boolean; canEdit:boolean; head:ReactNode}) {

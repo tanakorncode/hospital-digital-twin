@@ -549,4 +549,27 @@ export const MIGRATIONS: Migration[] = [
         uploaded_by TEXT NOT NULL);
     `,
   },
+  {
+    version: 16,
+    name: 'doctors',
+    sql: `
+      -- The doctors who see patients by appointment (Settings → รายชื่อแพทย์). code: the hospital's own (licence no. or the
+      -- HIS code) — what keeps one doctor from two sessions at once. clinics_json: the clinics they usually work in.
+      CREATE TABLE providers (
+        code TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        clinics_json TEXT NOT NULL DEFAULT '[]',
+        note TEXT,
+        active INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL);
+      -- Doctors who already have schedules: the newest name each, with the clinics of their schedules.
+      INSERT INTO providers (code, name, clinics_json, active, created_at, updated_at)
+        SELECT s.provider_code,
+          (SELECT provider_name FROM provider_schedules x WHERE x.provider_code = s.provider_code ORDER BY x.updated_at DESC LIMIT 1),
+          (SELECT json_group_array(DISTINCT clinic_code) FROM provider_schedules y WHERE y.provider_code = s.provider_code),
+          1, MIN(s.created_at), MAX(s.updated_at)
+        FROM provider_schedules s GROUP BY s.provider_code;
+    `,
+  },
 ];

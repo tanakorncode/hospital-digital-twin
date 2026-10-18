@@ -17,6 +17,7 @@ export type ApptPolicy = { clinicCode: string; displayName: string; enabled: boo
 export type Session = { id: string; providerCode: string; providerName: string; clinicCode: string; startsAt: string; endsAt: string; status: 'OPEN' | 'CLOSED' | 'CANCELLED'; capacity: number; reserved: number; roomId?: string };
 export type ApptSlot = { id: string; scheduleId: string; providerCode: string; providerName: string; clinicCode: string; startsAt: string; endsAt: string; capacity: number; reserved: number; remaining: number; status: 'OPEN' | 'CLOSED' | 'CANCELLED' };
 export type ApptStatus = 'CONFIRMED' | 'CANCELLED' | 'CHECKED_IN' | 'COMPLETED' | 'NO_SHOW' | 'EXPIRED';
+export type Provider = { code: string; name: string; clinics: string[]; note?: string; active: boolean; upcoming: number; nextAt?: string };
 export type Appointment = { id: string; code: string; clinicCode: string; clinicName: string; providerCode: string; providerName: string; startsAt: string; endsAt: string;
   status: ApptStatus; channel: 'STAFF' | 'LINE'; hn: string; createdAt: string; roomId?: string; cancellationReason?: string; noShowReason?: string; visitId?: string;
   pendingRequest?: { id: string; startsAt: string; endsAt: string; providerName: string; reason?: string } };
@@ -100,12 +101,37 @@ export class AppointmentService implements OnModuleInit, OnModuleDestroy {
   // doctor already has an overlapping session (in any clinic) is skipped and reported, never double-booked.
   // Doctors who have had a schedule here (newest name first), and the clinics they work in — the schedule form offers
   // them, so the same doctor keeps the same code (that is what stops one doctor being booked in two places at once).
-  providers(): { code: string; name: string; clinics: string[] }[] {
-    const rows = this.store.db.prepare(`SELECT provider_code AS code, provider_name AS name, clinic_code AS clinic, MAX(updated_at) AS at FROM provider_schedules
-      GROUP BY provider_code, provider_name, clinic_code ORDER BY at DESC`).all() as { code: string; name: string; clinic: string }[];
-    const out = new Map<string, { code: string; name: string; clinics: string[] }>();
-    for (const r of rows) { const p = out.get(r.code) ?? { code: r.code, name: r.name, clinics: [] }; if (!p.clinics.includes(r.clinic)) p.clinics.push(r.clinic); out.set(r.code, p); }
-    return [...out.values()].sort((a, b) => a.name.localeCompare(b.name, 'th'));
+  // The doctors (Settings → รายชื่อแพทย์), by name: their clinics (as set, plus any they have sessions in), and what is
+  // coming — the number of open sessions from now and the next one.
+  providers(): Provider[] {
+    const now = this.now().toISOString();
+    const rows = this.store.db.prepare(`SELECT p.*,
+        (SELECT json_group_array(DISTINCT clinic_code) FROM provider_schedules s WHERE s.provider_code = p.code) AS worked,
+        (SELECT COUNT(*) FROM provider_schedules s WHERE s.provider_code = p.code AND s.status = 'OPEN' AND s.ends_at > ?) AS upcoming,
+        (SELECT MIN(starts_at) FROM provider_schedules s WHERE s.provider_code = p.code AND s.status = 'OPEN' AND s.ends_at > ?) AS next_at
+      FROM providers p`).all(now, now) as { code: string; name: string; clinics_json: string; note: string | null; active: number; worked: string | null; upcoming: number; next_at: string | null }[];
+    return rows.map((r) => {
+      const set = JSON.parse(r.clinics_json) as string[], worked = (JSON.parse(r.worked ?? '[]') as (string | null)[]).filter((x): x is string => !!x);
+      return { code: r.code, name: r.name, clinics: [...new Set([...set, ...worked])], note: r.note ?? undefined, active: !!r.active, upcoming: r.upcoming, nextAt: r.next_at ?? undefined };
+    }).sort((a, b) => Number(b.active) - Number(a.active) || a.name.localeCompare(b.name, 'th'));
+  }
+  // Add a doctor or change one (the code stays: it is who they are). A new name also goes on their sessions still to
+  // come, so booking screens show it. Switching a doctor off keeps their sessions; it only stops new ones being made.
+  saveProvider(input: Record<string, unknown>): Provider {
+    const { code, name, clinics, note, active } = input;
+    if (typeof code !== 'string' || !PROVIDER_RE.test(code.trim())) throw bad('รหัสแพทย์ใช้ตัวอักษร ตัวเลข . _ - ไม่เกิน 20 ตัว (เช่น เลข ว. หรือรหัสใน HIS)');
+    if (typeof name !== 'string' || !name.trim() || name.trim().length > 60) throw bad('ระบุชื่อแพทย์ (ไม่เกิน 60 ตัวอักษร)');
+    if (clinics !== undefined && !(Array.isArray(clinics) && clinics.length <= 40 && clinics.every((c) => typeof c === 'string' && this.facility.knowsDepartment(c)))) throw bad('คลินิกไม่ถูกต้อง');
+    if (note !== undefined && note !== null && !(typeof note === 'string' && note.length <= 200)) throw bad('หมายเหตุยาวเกินไป');
+    const c = code.trim(), at = this.now().toISOString(), cur = this.store.db.prepare('SELECT * FROM providers WHERE code = ?').get(c) as { clinics_json: string; active: number; note: string | null } | undefined;
+    this.store.tx(() => {
+      this.store.db.prepare(`INSERT INTO providers (code, name, clinics_json, note, active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(code) DO UPDATE SET name = excluded.name, clinics_json = excluded.clinics_json, note = excluded.note, active = excluded.active, updated_at = excluded.updated_at`)
+        .run(c, name.trim(), JSON.stringify(clinics ?? (cur ? JSON.parse(cur.clinics_json) : [])), typeof note === 'string' ? note.trim() || null : note === null ? null : cur?.note ?? null,
+          active === undefined ? (cur ? cur.active : 1) : active ? 1 : 0, at, at);
+      this.store.db.prepare(`UPDATE provider_schedules SET provider_name = ?, updated_at = ? WHERE provider_code = ? AND ends_at > ? AND provider_name <> ?`).run(name.trim(), at, c, at, name.trim());
+    });
+    return this.providers().find((p) => p.code === c)!;
   }
   // A doctor's sessions over a range of days. `blocks`: the weekly pattern — on these weekdays, from … to (a doctor can
   // work mornings on some days, afternoons on others, or both on one day); the older single weekdays / start / end
@@ -118,6 +144,8 @@ export class AppointmentService implements OnModuleInit, OnModuleDestroy {
     if (typeof providerCode !== 'string' || !PROVIDER_RE.test(providerCode)) throw bad('ระบุรหัสแพทย์ (เช่น รหัสใน HIS หรือเลข ว.)');
     if (typeof providerName !== 'string' || !providerName.trim() || providerName.length > 60) throw bad('ระบุชื่อแพทย์');
     if (typeof from !== 'string' || !DATE_RE.test(from) || typeof to !== 'string' || !DATE_RE.test(to) || to < from) throw bad('ช่วงวันที่ไม่ถูกต้อง');
+    const doc = this.store.db.prepare('SELECT active FROM providers WHERE code = ?').get(providerCode) as { active: number } | undefined;
+    if (doc && !doc.active) throw new AppError('POLICY_REJECTED', 'แพทย์ท่านนี้ปิดการใช้งานอยู่ — เปิดใช้งานที่ ตั้งค่า → รายชื่อแพทย์ ก่อนสร้างตาราง');
     if (!Number.isInteger(minutes) || (minutes as number) < 5 || (minutes as number) > 240) throw bad('ความยาวช่วงต้องอยู่ระหว่าง 5–240 นาที');
     if (!Number.isInteger(capacity) || (capacity as number) < 1 || (capacity as number) > 100) throw bad('จำนวนนัดต่อช่วงต้องอยู่ระหว่าง 1–100');
     const raw = Array.isArray(plan.blocks) ? plan.blocks : [{ weekdays: plan.weekdays, start: plan.start, end: plan.end }];
@@ -157,6 +185,12 @@ export class AppointmentService implements OnModuleInit, OnModuleDestroy {
           slots++;
         }
       }
+      // The doctor goes into the list, and gains this clinic once a session in it was made — the list and the
+      // schedules never disagree.
+      const known = this.store.db.prepare('SELECT clinics_json FROM providers WHERE code = ?').get(providerCode) as { clinics_json: string } | undefined;
+      if (!known) this.store.db.prepare(`INSERT INTO providers (code, name, clinics_json, active, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?)`).run(providerCode, providerName.trim(), JSON.stringify(sessions ? [clinicCode] : []), at, at);
+      else if (sessions && !(JSON.parse(known.clinics_json) as string[]).includes(clinicCode))
+        this.store.db.prepare('UPDATE providers SET clinics_json = ?, updated_at = ? WHERE code = ?').run(JSON.stringify([...JSON.parse(known.clinics_json), clinicCode]), at, providerCode);
       return { sessions, slots, skipped, conflicts };
     });
   }
@@ -167,6 +201,15 @@ export class AppointmentService implements OnModuleInit, OnModuleDestroy {
     return (this.store.db.prepare(`SELECT p.*, COALESCE(SUM(s.capacity), 0) AS cap, COALESCE(SUM(s.reserved_count), 0) AS res FROM provider_schedules p
       LEFT JOIN appointment_slots s ON s.schedule_id = p.id WHERE p.clinic_code = ? AND p.starts_at >= ? AND p.starts_at < ? GROUP BY p.id ORDER BY p.starts_at, p.provider_name`)
       .all(clinic, a, b) as (Record<string, string> & { cap: number; res: number })[]).map((r) => ({ id: r.id, providerCode: r.provider_code, providerName: r.provider_name,
+      clinicCode: r.clinic_code, startsAt: r.starts_at, endsAt: r.ends_at, status: r.status as Session['status'], capacity: r.cap, reserved: r.res, ...(r.room_id ? { roomId: r.room_id } : {}) }));
+  }
+
+  // One doctor's sessions still to come, every clinic (the doctor's page in Settings → รายชื่อแพทย์).
+  providerSessions(code: unknown, limit = 120): Session[] {
+    if (typeof code !== 'string' || !PROVIDER_RE.test(code)) throw bad('รหัสแพทย์ไม่ถูกต้อง');
+    return (this.store.db.prepare(`SELECT p.*, COALESCE(SUM(s.capacity), 0) AS cap, COALESCE(SUM(s.reserved_count), 0) AS res FROM provider_schedules p
+      LEFT JOIN appointment_slots s ON s.schedule_id = p.id WHERE p.provider_code = ? AND p.ends_at > ? GROUP BY p.id ORDER BY p.starts_at LIMIT ?`)
+      .all(code, this.now().toISOString(), Math.min(400, Math.max(1, limit))) as (Record<string, string> & { cap: number; res: number })[]).map((r) => ({ id: r.id, providerCode: r.provider_code, providerName: r.provider_name,
       clinicCode: r.clinic_code, startsAt: r.starts_at, endsAt: r.ends_at, status: r.status as Session['status'], capacity: r.cap, reserved: r.res, ...(r.room_id ? { roomId: r.room_id } : {}) }));
   }
 

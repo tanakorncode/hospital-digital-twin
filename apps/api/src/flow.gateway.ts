@@ -761,6 +761,23 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
     if (!userOf(client)) return SIGN_IN;
     return { ok: true, providers: this.appts.providers() };
   }
+  @SubscribeMessage('appt:provider:sessions')
+  apptProviderSessions(@ConnectedSocket() client: Socket, @MessageBody() body: { code?: unknown }) {
+    if (!userOf(client)) return SIGN_IN;
+    return attempt(() => ({ ok: true, sessions: this.appts.providerSessions(body?.code) }));
+  }
+  @SubscribeMessage('appt:provider:set')
+  setApptProvider(@ConnectedSocket() client: Socket, @MessageBody() body: Record<string, unknown>) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (!may(me, 'admin')) return DENIED;
+    return attempt(() => {
+      const p = this.appts.saveProvider(body ?? {});
+      this.audit.record({ ...actor(me), action: 'appointment.provider', targetType: 'provider', targetId: p.code, meta: { active: p.active, clinics: p.clinics.length } });
+      this.apptChanged();
+      return { ok: true, provider: p, providers: this.appts.providers() };
+    });
+  }
   @SubscribeMessage('appt:sessions')
   apptSessions(@ConnectedSocket() client: Socket, @MessageBody() body: { clinicCode?: unknown; date?: unknown }) {
     if (!userOf(client)) return SIGN_IN;

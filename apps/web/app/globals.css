@@ -1477,6 +1477,7 @@ kbd{margin-left:6px;padding:1px 6px;border-radius:5px;background:#ffffff33;borde
 .setIco.i-test{background:linear-gradient(135deg,#fcd34d,#ea580c);--sh:#ea580c40}
 .setIco.i-booking{background:linear-gradient(135deg,#f9a8d4,#be185d);--sh:#be185d40}
 .setIco.i-appts{background:linear-gradient(135deg,#93c5fd,#1d4ed8);--sh:#1d4ed840}
+.setIco.i-doctors{background:linear-gradient(135deg,#5eead4,#0f766e);--sh:#0f766e40}
 .setIco.i-notify{background:linear-gradient(135deg,#86efac,#15803d);--sh:#15803d40}
 .setIco.i-wayfinding{background:linear-gradient(135deg,#7dd3fc,#0369a1);--sh:#0369a140}
 .setIco.i-audit{background:linear-gradient(135deg,#d4d4d8,#52525b);--sh:#52525b40}
@@ -2710,3 +2711,34 @@ a.liffChoice{text-decoration:none;padding:10px 16px}
 .schedSum>div>b{font-size:13.5px;color:#0f2340}
 .schedSum .pickHint{flex:1}
 .schedSum .btn{height:40px;margin-left:auto}
+/* Settings → รายชื่อแพทย์ */
+.docPane{display:flex;flex-direction:column;gap:12px}
+.docHead{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.docHead h3{display:flex;align-items:center;gap:8px;margin:0;font-size:17px;color:#0f2340}
+.docBack{align-self:flex-start;display:inline-flex;align-items:center;gap:4px;font-weight:600}
+.docSearch{display:flex;align-items:center;gap:8px;max-width:420px;height:40px;padding:0 12px;border:1px solid #d5e0ec;border-radius:10px;background:#fff;color:#64748b}
+.docSearch input{flex:1;min-width:0;height:auto;padding:0;border:0;outline:0;box-shadow:none;font:inherit;font-size:14px;background:transparent}
+.docSearch:focus-within{border-color:#1677ff;box-shadow:0 0 0 3px #1677ff1f}
+.docMore{align-self:flex-start;font-weight:600}
+.docTable tbody tr{cursor:pointer}.docTable tbody tr:hover{background:#f4f8ff}
+.docOn{color:#059669;font-weight:600}.docNone{color:#b45309}
+.docEmpty{display:flex;flex-direction:column;align-items:center;gap:6px;padding:28px;border:1px dashed #cbd5e1;border-radius:14px;color:#64748b;text-align:center}
+.docEmpty b{color:#0f2340}
+.docForm{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}
+.docForm label{display:flex;flex-direction:column;gap:4px;font-size:12.5px;font-weight:600;color:#4d6074}
+.docForm label em{font-style:normal;font-weight:500;color:#94a3b8}
+.docForm input{height:40px;padding:0 10px;border:1px solid #d5e0ec;border-radius:10px;background:#fff;font:inherit;font-size:14px;color:#0f2340}
+.docForm input:disabled{background:#f1f5f9;color:#64748b}
+.docForm .wide{grid-column:1/-1}
+.docLabel{display:block;margin-bottom:6px;font-size:12.5px;font-weight:600;color:#4d6074}
+.docClinics{display:flex;flex-wrap:wrap;gap:6px}
+.docClinics button{display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 12px;border:1.5px solid #d5e0ec;border-radius:999px;background:#fff;color:#334155;font:inherit;font-size:13px;cursor:pointer}
+.docClinics button b{display:grid;place-items:center;width:20px;height:20px;border-radius:6px;background:#eef2f7;font-size:11px}
+.docClinics button.on{border-color:#1677ff;background:#eef5ff;color:#1677ff;font-weight:700}.docClinics button.on b{background:#1677ff;color:#fff}
+.docSave{display:flex;align-items:center;justify-content:flex-end;gap:12px;flex-wrap:wrap}
+.docSave .btn{height:40px}
+.docDays{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:8px}
+.docDay{display:flex;flex-direction:column;gap:2px;padding:8px 10px;border:1px solid #e3e9f1;border-radius:10px;background:#fff;font-size:12.5px;color:#334155}
+.docDay b{color:#0f2340;font-size:13px}.docDay .off{color:#94a3b8;text-decoration:line-through}
+.docPointer{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 14px;border-radius:14px;background:#eef5ff;border:1px solid #cfe0fb}
+.docPointer>div{display:flex;flex-direction:column;gap:2px}.docPointer b{color:#0f2340}.docPointer small{color:#475569}

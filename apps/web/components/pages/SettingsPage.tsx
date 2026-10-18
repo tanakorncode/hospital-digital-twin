@@ -1,11 +1,12 @@
 'use client';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Archive, BellRing, Smile, Building2, CalendarClock, Clock, Database, MessageCircle, Navigation, ScrollText, Stethoscope, FlaskConical, History, KeyRound, Layers, Minus, Plus, RotateCcw, Search, Sparkles, UserCog, type LucideIcon } from 'lucide-react';
+import { Archive, BellRing, Building2, CalendarClock, Clock, Database, FlaskConical, History, KeyRound, Layers, MessageCircle, Minus, Navigation, Plus, RotateCcw, ScrollText, Search, Smile, Sparkles, Stethoscope, UserCog, UserRound, type LucideIcon } from 'lucide-react';
 import { fmtMin, opdClinics } from '../../lib/patients';
 import { DEFAULT_HOURS } from '../../lib/scene-data';
 import { buildingShort, erDepartment, fDepartment, fGroup } from '../../lib/facility';
 import { BookingAdminPane } from './Booking';
 import { ApptAdminPane } from './Appointments';
+import { DoctorsPane } from './Doctors';
 import { NotificationsPane } from './Notifications';
 import { WayfindingAdminPane } from './WayfindingAdmin';
 import { AuditPane } from './AuditPane';
@@ -32,7 +33,7 @@ const modes:{id:AssistMode; hint:string}[] = [{id:'off',hint:'แสดงสถ
 const valText = (k:keyof QueueRules, v:unknown) => k==='mode' ? modeText[v as AssistMode] : k==='cap' && v===0 ? 'ไม่จำกัด' : String(v);
 const ruleName:Record<keyof QueueRules,string> = {mode:'ระดับตัวช่วย',stallMin:'เกณฑ์ไม่ตอบรับ',slowFactor:'เกณฑ์ช้ากว่าปกติ',cap:'เพดานคิว',imbalance:'เกณฑ์เกลี่ยคิว'};
 const loadPref = (k:string, d:string) => { try { return localStorage.getItem(k) ?? d; } catch { return d; } };
-type Pane = 'hours'|'facility'|'assist'|'groups'|'history'|'test'|'data'|'booking'|'appts'|'notify'|'wayfinding'|'lineoa'|'reception'|'audit'|'retention'|'users';
+type Pane = 'hours'|'facility'|'assist'|'groups'|'history'|'test'|'data'|'booking'|'appts'|'doctors'|'notify'|'wayfinding'|'lineoa'|'reception'|'audit'|'retention'|'users';
 const panes:{id:Pane; icon:LucideIcon; title:string; sub:string}[] = [
  {id:'hours',icon:Clock,title:'เวลาให้บริการ',sub:'เวลาเปิด–ปิด OPD'},
  {id:'facility',icon:Building2,title:'ผังโรงพยาบาล',sub:'อาคาร · ชั้น · แผนก · ห้อง/ช่อง'},
@@ -42,7 +43,8 @@ const panes:{id:Pane; icon:LucideIcon; title:string; sub:string}[] = [
  {id:'test',icon:FlaskConical,title:'โหมดทดสอบ',sub:'เวลาจำลองสำหรับทดสอบ/สาธิต'},
  {id:'data',icon:Database,title:'ข้อมูลผู้ป่วย',sub:'สาธิต หรือ ผู้ป่วยจริง'},
  {id:'booking',icon:CalendarClock,title:'การจองล่วงหน้า',sub:'กติกาและช่วงเวลาให้จอง'},
- {id:'appts',icon:Stethoscope,title:'นัดแพทย์',sub:'กติกาและตารางออกตรวจ'},
+ {id:'appts',icon:Stethoscope,title:'นัดแพทย์',sub:'เปิดคลินิก · กติกา · ตารางรายวัน'},
+ {id:'doctors',icon:UserRound,title:'รายชื่อแพทย์',sub:'แพทย์และตารางออกตรวจ'},
  {id:'notify',icon:BellRing,title:'การแจ้งเตือน',sub:'ข้อความถึงผู้ป่วยทาง LINE'},
  {id:'wayfinding',icon:Navigation,title:'QR นำทาง',sub:'จุดหมายและป้าย QR'},
  {id:'lineoa',icon:MessageCircle,title:'LINE OA',sub:'แชตบอทและเมนู LINE'},
@@ -53,7 +55,7 @@ const panes:{id:Pane; icon:LucideIcon; title:string; sub:string}[] = [
 ];
 // What each role may open (the API enforces the same). Offline / not connected: everything except accounts and real data.
 const panesFor = (u:AuthUser|null):Pane[] => !u ? ['hours','facility','assist','groups','history','test']
- : u.role==='admin' ? ['hours','facility','assist','groups','history','test','data','booking','appts','notify','wayfinding','lineoa','reception','audit','retention','users'] : ['groups','history'];
+ : u.role==='admin' ? ['hours','facility','assist','groups','history','test','data','booking','appts','doctors','notify','wayfinding','lineoa','reception','audit','retention','users'] : ['groups','history'];
 
 export default function SettingsPage({settings,save,events,minute,timeNote,focusGroup,user=null,listUsers,saveUser,sync}:{settings:QueueSettings;save:Save;events:QueueEvent[];minute:number;timeNote:string;focusGroup?:string|null;
  user?:AuthUser|null;listUsers?:QueueSync['listUsers'];saveUser?:QueueSync['saveUser'];sync?:Pick<QueueSync,'api'|'bookingRev'|'apptRev'|'features'|'online'>}) {
@@ -99,7 +101,8 @@ export default function SettingsPage({settings,save,events,minute,timeNote,focus
      setFeature={async on=>{ const r = await sync.api('features:set',{patch:{wayfinding:on}}); setMsg(r.ok ? {text:on?'เปิด QR นำทางแล้ว':'ปิด QR นำทางแล้ว'} : {text:r.reason ?? 'บันทึกไม่สำเร็จ',bad:true}); }}/>}
     {pane==='notify' && sync && <NotificationsPane api={sync.api} features={sync.features}
      setFeature={async on=>{ const r = await sync.api('features:set',{patch:{notifications:on}}); setMsg(r.ok ? {text:on?'เปิดการแจ้งเตือนแล้ว':'ปิดการแจ้งเตือนแล้ว'} : {text:r.reason ?? 'บันทึกไม่สำเร็จ',bad:true}); }}/>}
-    {pane==='appts' && sync && <ApptAdminPane api={sync.api} rev={sync.apptRev} features={sync.features}
+    {pane==='doctors' && sync && <DoctorsPane api={sync.api} rev={sync.apptRev}/>}
+    {pane==='appts' && sync && <ApptAdminPane api={sync.api} rev={sync.apptRev} features={sync.features} onDoctors={()=>setPane('doctors')}
      setFeature={async on=>{ const r = await sync.api('features:set',{patch:{appointments:on}}); setMsg(r.ok ? {text:on?'เปิดระบบนัดแพทย์แล้ว':'ปิดระบบนัดแพทย์แล้ว'} : {text:r.reason ?? 'บันทึกไม่สำเร็จ',bad:true}); }}/>}
     {pane==='booking' && sync && <BookingAdminPane api={sync.api} rev={sync.bookingRev} features={sync.features}
      setFeature={async on=>{ const r = await sync.api('features:set',{patch:{generalBooking:on}}); setMsg(r.ok ? {text:on?'เปิดระบบจองแล้ว':'ปิดระบบจองแล้ว'} : {text:r.reason ?? 'บันทึกไม่สำเร็จ',bad:true}); }}/>}

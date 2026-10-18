@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CalendarPlus, Check, CheckCircle2, Loader2, LogIn, MoveRight, Plus, RefreshCw, Search, X } from 'lucide-react';
 import { useHnCheck } from './HnCheck';
+import { InfoTip } from './FacilityHelp';
 import { opdClinics, type Clinic } from '../../lib/patients';
 import { findRoom, isOff, type Room } from '../../lib/scene-data';
 import { buildingShort } from '../../lib/facility';
@@ -34,7 +35,7 @@ const statusText:Record<Appt['status'],string> = {CONFIRMED:'นัดแล้�
 const clinicName = (c:Clinic) => `${c.letter} · ${c.dept}`;
 type Say = (r:{ok:boolean; reason?:string}, ok:string) => void;
 
-function usePolicies(api:Api, rev:number) {
+export function usePolicies(api:Api, rev:number) {
  const [policies,setPolicies] = useState<Policy[]>([]);
  const load = useCallback(async ()=>{ const r = await api<{ok:boolean; policies?:Policy[]}>('appt:policies',{}); if (r.ok) setPolicies(r.policies ?? []); },[api]);
  useEffect(()=>{ void load(); },[load,rev]);
@@ -42,7 +43,7 @@ function usePolicies(api:Api, rev:number) {
 }
 
 // ---- Settings → นัดแพทย์ (administrators) ----------------------------------------------------------------------
-export function ApptAdminPane({api,rev,features,setFeature}:{api:Api; rev:number; features:QueueSync['features']; setFeature:(on:boolean)=>Promise<void>}) {
+export function ApptAdminPane({api,rev,features,setFeature,onDoctors}:{api:Api; rev:number; features:QueueSync['features']; setFeature:(on:boolean)=>Promise<void>; onDoctors?:()=>void}) {
  const clinics = useMemo(()=>opdClinics(),[]);
  const {policies,reload} = usePolicies(api,rev);
  const [msg,setMsg] = useState<{text:string; bad?:boolean}|null>(null);
@@ -64,7 +65,9 @@ export function ApptAdminPane({api,rev,features,setFeature}:{api:Api; rev:number
      <td><NumPick value={(p?.cancelCutoffMinutes ?? 1440)/60} options={[0,2,24,48,72]} unit="ชม." onPick={v=>void save(c,{cancelCutoffMinutes:v*60})}/></td>
      <td><button className={'chip'+((p?.rescheduleNeedsApproval ?? true)?' on':'')} onClick={()=>void save(c,{rescheduleNeedsApproval:!(p?.rescheduleNeedsApproval ?? true)})}>
       {(p?.rescheduleNeedsApproval ?? true)?'ต้องอนุมัติ':'ผู้ป่วยเลื่อนเองได้'}</button></td></tr>; })}</tbody></table></div>
-  {ready.length ? <><SessionPlanner api={api} clinics={ready} say={say}/><SessionList api={api} rev={rev} clinics={ready} say={say}/></>
+  {ready.length ? <><div className="docPointer"><div><b>ตารางออกตรวจของแพทย์</b><small>เพิ่มแพทย์และสร้างตารางออกตรวจได้ที่หน้า รายชื่อแพทย์ — เลือกแพทย์ แล้วสร้างตารางของคนนั้น</small></div>
+    {onDoctors && <button className="btn" onClick={onDoctors}>ไปที่รายชื่อแพทย์</button>}</div>
+   <SessionList api={api} rev={rev} clinics={ready} say={say}/></>
    : <p className="cmdNote">ตั้งกติกาของคลินิกอย่างน้อย 1 แห่งก่อน แล้วจึงสร้างตารางออกตรวจของแพทย์</p>}
  </section>;
 }
@@ -75,14 +78,16 @@ export function ApptAdminPane({api,rev,features,setFeature}:{api:Api; rev:number
 const WEEKDAY_FULL = ['อาทิตย์','จันทร์','อังคาร','พุธ','พฤหัสบดี','ศุกร์','เสาร์'];
 const WEEK_ORDER = [1,2,3,4,5,6,0]; // Monday first, as clinics plan their week
 const NEW_DOCTOR = '__new';
-type Provider = {code:string; name:string; clinics:string[]};
+export type Provider = {code:string; name:string; clinics:string[]; note?:string; active:boolean; upcoming:number; nextAt?:string};
 type Block = {id:number; days:number[]; start:string; end:string};
 const toMin = (t:string) => Number(t.slice(0,2))*60+Number(t.slice(3,5)), hhmm = (m:number) => `${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`;
 let blockSeq = 0;
-function SessionPlanner({api,clinics,say}:{api:Api; clinics:Clinic[]; say:Say}) {
- const [clinic,setClinic] = useState(clinics[0].key);
+// fixed: the doctor's own page (Settings → รายชื่อแพทย์) — the schedule is for this doctor, their clinics first.
+export function SessionPlanner({api,clinics,say,fixed,onMade}:{api:Api; clinics:Clinic[]; say:Say; fixed?:Provider; onMade?:()=>void}) {
+ const [clinic,setClinic] = useState(()=>(fixed && clinics.find(c=>fixed.clinics.includes(c.key)))?.key ?? clinics[0].key);
  const [providers,setProviders] = useState<Provider[]>([]);
- const [doctor,setDoctor] = useState(NEW_DOCTOR);
+ const [doctor,setDoctor] = useState(fixed?.code ?? NEW_DOCTOR);
+ useEffect(()=>{ if (fixed) setDoctor(fixed.code); },[fixed]);
  const [code,setCode] = useState('');
  const [name,setName] = useState('');
  const [room,setRoom] = useState('');
@@ -98,8 +103,8 @@ function SessionPlanner({api,clinics,say}:{api:Api; clinics:Clinic[]; say:Say}) 
  const loadProviders = useCallback(async ()=>{ const r = await api<{ok:boolean; providers?:Provider[]}>('appt:providers',{}); if (r.ok) setProviders(r.providers ?? []); },[api]);
  useEffect(()=>{ void loadProviders(); },[loadProviders]);
  // Doctors seen before (this clinic's first); a new one is typed in.
- const known = providers.find(x=>x.code===doctor), isNew = !known;
- const doctorOptions = [...providers].sort((a,b)=>Number(b.clinics.includes(clinic))-Number(a.clinics.includes(clinic)))
+ const known = fixed ?? providers.find(x=>x.code===doctor), isNew = !known;
+ const doctorOptions = providers.filter(x=>x.active).sort((a,b)=>Number(b.clinics.includes(clinic))-Number(a.clinics.includes(clinic)))
   .map(x=>({value:x.code,label:x.name,sub:`รหัส ${x.code}${x.clinics.includes(clinic) ? '' : ' · คลินิกอื่น'}`}));
  const pCode = isNew ? code.trim() : known.code, pName = isNew ? name.trim() : known.name;
  const setBlock = (id:number, patch:Partial<Block>) => setBlocks(bs=>bs.map(b=>b.id===id ? {...b,...patch} : b));
@@ -125,15 +130,16 @@ function SessionPlanner({api,clinics,say}:{api:Api; clinics:Clinic[]; say:Say}) 
   setBusy(false);
   const text = r.ok ? `สร้างตารางแล้ว ${r.sessions ?? 0} ครั้งออกตรวจ (${r.slots ?? 0} ช่วงนัด)${r.skipped?` · มีอยู่แล้ว ${r.skipped} ครั้ง (ข้าม)`:''}${r.conflicts?.length?` · ข้าม ${r.conflicts.length} วันที่แพทย์มีตารางซ้อนเวลา: ${r.conflicts.map(d=>dayOf(d)).join(', ')}`:''}` : r.reason ?? 'สร้างไม่สำเร็จ';
   setDone({text,bad:!r.ok}); say(r,text);
-  if (r.ok) { void loadProviders(); if (isNew) setDoctor(pCode); }
+  if (r.ok) { void loadProviders(); if (isNew) setDoctor(pCode); onMade?.(); }
  };
  const ranges:[string,number][] = [['4 สัปดาห์',27],['3 เดือน',90],['6 เดือน',181]];
  return <div className="schedForm">
-  <h4 className="setSub">สร้างตารางออกตรวจของแพทย์ <small>สร้างครั้งเดียวได้ทั้งช่วงวันที่ · ระบบแบ่งเวลาออกตรวจเป็นช่วงนัดให้ผู้ป่วยเลือก</small></h4>
-  <section className="schedStep"><h5><b className="schedNum">1</b>แพทย์และคลินิก</h5>
+  <h4 className="setSub">{fixed ? `สร้างตารางออกตรวจของ ${fixed.name}` : 'สร้างตารางออกตรวจของแพทย์'} <small>สร้างครั้งเดียวได้ทั้งช่วงวันที่ · ระบบแบ่งเวลาออกตรวจเป็นช่วงนัดให้ผู้ป่วยเลือก</small></h4>
+  <section className="schedStep"><h5><b className="schedNum">1</b>{fixed ? 'คลินิกและห้อง' : 'แพทย์และคลินิก'}</h5>
    <div className="schedRow">
-    <label>คลินิก<Select value={clinic} onChange={setClinic} options={clinics.map(c=>({value:c.key,label:clinicName(c),sub:`ชั้น ${c.level}`}))}/></label>
-    {providers.length>0 && <label>แพทย์<Select value={doctor} onChange={setDoctor} options={[...doctorOptions,{value:NEW_DOCTOR,label:'+ แพทย์ใหม่'}]}/></label>}
+    <label>คลินิก<Select value={clinic} onChange={setClinic} options={[...clinics].sort((a,b)=>Number(!!fixed?.clinics.includes(b.key))-Number(!!fixed?.clinics.includes(a.key)))
+     .map(c=>({value:c.key,label:clinicName(c),sub:`ชั้น ${c.level}${fixed && !fixed.clinics.includes(c.key) ? ' · ยังไม่เคยออกตรวจที่นี่' : ''}`}))}/></label>
+    {!fixed && providers.length>0 && <label>แพทย์<Select value={doctor} onChange={setDoctor} options={[...doctorOptions,{value:NEW_DOCTOR,label:'+ แพทย์ใหม่'}]}/></label>}
     {isNew && <label>ชื่อแพทย์<input value={name} maxLength={60} placeholder="เช่น นพ.สมชาย ใจดี" onChange={e=>setName(e.target.value)}/></label>}
     {isNew && <label title="ใช้รหัสเดิมทุกครั้งสำหรับแพทย์คนเดิม — ระบบใช้รหัสนี้กันไม่ให้แพทย์คนเดียวมีตารางซ้อนเวลา"><span>รหัสแพทย์ <em>(ใช้รหัสเดิมทุกครั้ง)</em></span>
      <input value={code} maxLength={20} placeholder="เช่น ว.12345 หรือรหัสใน HIS" onChange={e=>setCode(e.target.value)}/></label>}
@@ -151,8 +157,12 @@ function SessionPlanner({api,clinics,say}:{api:Api; clinics:Clinic[]; say:Say}) 
    </div>)}
     {blocks.length<14 && <button type="button" className="linkBtn schedAdd" onClick={()=>setBlocks(bs=>[...bs,{id:++blockSeq,days:[],start:'13:00',end:'16:00'}])}><Plus size={14}/> เพิ่มช่วงเวลาออกตรวจ</button>}</div>
    <div className="schedRow slim">
-    <label>แบ่งเป็นช่วงนัด ช่วงละ<Select value={minutes} onChange={setMinutes} options={[10,15,20,30,60].map(m=>({value:m,label:`${m} นาที`}))}/></label>
-    <label>รับนัดช่วงละ<span className="schedUnit"><input type="number" min={1} max={100} value={capacity} onChange={e=>setCapacity(Math.max(1,Math.min(100,Number(e.target.value)||1)))}/>คน</span></label>
+    <label><span>แบ่งเป็นช่วงนัด ช่วงละ <InfoTip title="ช่วงนัด คืออะไร">เวลาออกตรวจจะถูกแบ่งเป็นช่วงสั้นๆ ให้ผู้ป่วยเลือกเวลานัด
+     เช่น 09:00–12:00 ช่วงละ {minutes} นาที → ผู้ป่วยเลือกได้ {Array.from({length:Math.min(3,Math.floor(180/minutes))},(_,k)=>hhmm(540+k*minutes)).join(', ')} … ({Math.floor(180/minutes)} ช่วง) ·
+     ช่วงสั้นลง = มีเวลาให้เลือกมากขึ้นและผู้ป่วยรอน้อยลง แต่ต้องตรวจให้ทันในช่วงนั้น · ตั้งให้ใกล้เวลาตรวจผู้ป่วยหนึ่งคนโดยเฉลี่ย</InfoTip></span>
+     <Select value={minutes} onChange={setMinutes} options={[10,15,20,30,60].map(m=>({value:m,label:`${m} นาที`}))}/></label>
+    <label><span>รับนัดช่วงละ <InfoTip title="รับนัดช่วงละกี่คน">จำนวนผู้ป่วยที่นัดในช่วงเวลาเดียวกันได้ เช่น ช่วงละ {capacity} คน →
+     เวลา 09:00 รับได้ {capacity} คน · ถ้าแพทย์ตรวจคนละ {minutes} นาทีพอดีให้ตั้ง 1 · ตั้งมากกว่า 1 เมื่อมีผู้ป่วยมาสาย/ไม่มา หรือตรวจเร็วกว่าความยาวช่วง</InfoTip></span><span className="schedUnit"><input type="number" min={1} max={100} value={capacity} onChange={e=>setCapacity(Math.max(1,Math.min(100,Number(e.target.value)||1)))}/>คน</span></label>
    </div></section>
   <section className="schedStep"><h5><b className="schedNum">3</b>ใช้ตารางนี้ช่วงวันที่</h5>
    <div className="schedDates">

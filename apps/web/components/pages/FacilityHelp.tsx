@@ -37,6 +37,15 @@ export function Help({topic}:{topic:HelpTopic}) {
   </span>;
 }
 
+// The same (i) popover with any text — for fields outside the facility settings.
+export function InfoTip({title,children,label}:{title:string; children:ReactNode; label?:string}) {
+  const id = useId();
+  return <span className="facHelp">
+    <button type="button" className="facHelpBtn" aria-label={label ?? `คำอธิบาย: ${title}`} aria-describedby={id}><Info size={14}/></button>
+    <span className="facHelpPop" role="tooltip" id={id}><b>{title}</b><span>{children}</span></span>
+  </span>;
+}
+
 // Small pictures for the popovers (a floor seen from above: rooms at the back, waiting area at the front).
 const C = {wall:'#94a3b8',room:'#e2e8f0',band:'#f1f5f9',hi:'#1677ff',hiFill:'#dbeafe',text:'#334155',seat:'#cbd5e1',ok:'#22c58b',off:'#cbd5e1'};
 function Plan({children,h=110}:{children:ReactNode; h?:number}) {

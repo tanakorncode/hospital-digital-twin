@@ -230,3 +230,36 @@ test('a schedule can mix hours by day: mornings on some days, afternoons on othe
   assert.equal(bad.code, 'VALIDATION_ERROR'); assert.match(bad.reason!, /ช่วงที่ 2/);
   assert.equal(api.appts.slots(EYE, '2026-11-09', 'D005').length, 0, 'nothing made when one block is wrong');
 });
+
+test('the list of doctors: add, rename (sessions to come follow), switch off (no new sessions), and schedules keep it complete', () => {
+  const { api, admin, staff } = setup();
+  type P = { code: string; name: string; clinics: string[]; active: boolean; upcoming: number; nextAt?: string };
+  const list = () => (api.gateway.apptProviders(staff) as { providers: P[] }).providers;
+  // Doctors who got a schedule are in the list, with what is coming.
+  const a = list().find((p) => p.code === 'D001')!;
+  assert.deepEqual([a.name, a.clinics, a.active, a.upcoming], ['นพ.สมชาย ใจดี', [MED], true, 3]);
+  assert.ok(a.nextAt);
+  // Add a doctor with no schedule yet.
+  assert.equal((api.gateway.setApptProvider(staff, { code: 'D009', name: 'X' }) as R).code, 'FORBIDDEN');
+  const added = api.gateway.setApptProvider(admin, { code: 'D009', name: 'พญ.ใหม่ ยังไม่มีตาราง', clinics: [EYE] }) as R & { provider?: P };
+  assert.equal(added.ok, true, added.reason);
+  assert.deepEqual([added.provider!.clinics, added.provider!.upcoming], [[EYE], 0]);
+  assert.equal((api.gateway.setApptProvider(admin, { code: 'bad code', name: 'X' }) as R).code, 'VALIDATION_ERROR');
+  assert.equal((api.gateway.setApptProvider(admin, { code: 'D010', name: 'X', clinics: ['nope'] }) as R).code, 'VALIDATION_ERROR');
+  // Renamed: the sessions still to come carry the new name.
+  api.gateway.setApptProvider(admin, { code: 'D001', name: 'นพ.สมชาย ใจดีมาก' });
+  assert.ok(api.appts.slots(MED, '2026-11-03', 'D001').length);
+  assert.equal((api.gateway.apptSessions(staff, { clinicCode: MED, date: '2026-11-03' }) as { sessions: { providerName: string; providerCode: string }[] }).sessions.find((s) => s.providerCode === 'D001')!.providerName, 'นพ.สมชาย ใจดีมาก');
+  // Switched off: kept, no new sessions.
+  api.gateway.setApptProvider(admin, { code: 'D009', name: 'พญ.ใหม่ ยังไม่มีตาราง', active: false });
+  assert.equal(list().find((p) => p.code === 'D009')!.active, false);
+  const off = api.gateway.createApptSessions(admin, { clinicCode: EYE, providerCode: 'D009', providerName: 'พญ.ใหม่ ยังไม่มีตาราง', from: '2026-11-09', to: '2026-11-09', weekdays: [1], start: '09:00', end: '10:00', minutes: 30, capacity: 1 }) as R;
+  assert.equal(off.code, 'POLICY_REJECTED');
+  // A schedule in another clinic adds that clinic to the doctor.
+  api.gateway.createApptSessions(admin, { clinicCode: EYE, providerCode: 'D002', providerName: 'พญ.สมศรี รักษา', from: '2026-11-09', to: '2026-11-09', weekdays: [1], start: '09:00', end: '10:00', minutes: 30, capacity: 1 });
+  assert.deepEqual(list().find((p) => p.code === 'D002')!.clinics, [MED, EYE]);
+  // A doctor's sessions to come, every clinic, in time order.
+  const ss = (api.gateway.apptProviderSessions(staff, { code: 'D002' }) as { sessions: { clinicCode: string; startsAt: string; capacity: number }[] }).sessions;
+  assert.deepEqual(ss.map((x) => x.clinicCode), [MED, EYE]);
+  assert.ok(ss[0].startsAt < ss[1].startsAt && ss[0].capacity === 8);
+});
