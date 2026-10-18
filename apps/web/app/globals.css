@@ -2586,3 +2586,6 @@ a.liffChoice{text-decoration:none;padding:10px 16px}
 .facLegend.off{background:repeating-linear-gradient(45deg,#f1f5f9 0 3px,#cbd5e1 3px 5px)}
 .facPreviewNone{margin:0;font-size:12.5px}
 .facDialogBody .facNoteField{flex:none;min-width:0}
+/* Add rows: the button is as tall as the fields beside it (40px). */
+.facAddPoints .btn{box-sizing:border-box;min-height:40px;padding:0 14px;border-radius:10px;font-size:13.5px}
+.facPointEdit .rowActs .btn{box-sizing:border-box;min-height:40px;padding:0 14px;border-radius:10px}
