@@ -14,6 +14,7 @@ import { LineOaPane } from './LineOaPane';
 import { RetentionPane } from './RetentionPane';
 import { ReceptionAdminPane } from './ReceptionAdmin';
 import { FacilityPane } from './FacilityPane';
+import { SettingsGuide } from './SettingsGuide';
 import { DEFAULT_RULES, canDo, isLive, roleText, type AuthUser, type QueueSync, type Role, type UserInput, modeText, queueGroups, coversGroup, rulesFor, scopeName, type AssistMode, type QueueEvent, type QueueGroup, type QueueRules, type QueueSettings, type SettingsPatch } from '../../lib/queue';
 import { Select } from '../Select';
 
@@ -60,6 +61,7 @@ const panesFor = (u:AuthUser|null):Pane[] => !u ? ['hours','facility','assist','
 export default function SettingsPage({settings,save,events,minute,timeNote,focusGroup,user=null,listUsers,saveUser,sync}:{settings:QueueSettings;save:Save;events:QueueEvent[];minute:number;timeNote:string;focusGroup?:string|null;
  user?:AuthUser|null;listUsers?:QueueSync['listUsers'];saveUser?:QueueSync['saveUser'];sync?:Pick<QueueSync,'api'|'bookingRev'|'apptRev'|'features'|'online'>}) {
  const allowed = panesFor(user);
+ const titles = Object.fromEntries(panes.filter(p=>allowed.includes(p.id)).map(p=>[p.id,p.title])); // for the guide's links
  const [pane,setPane] = useState<Pane>(focusGroup || !allowed.includes('hours') ? 'groups' : 'hours');
  const [msg,setMsg] = useState<{text:string;bad?:boolean}|null>(null);
  const [by,setBy] = useState('');
@@ -82,6 +84,7 @@ export default function SettingsPage({settings,save,events,minute,timeNote,focus
     return <button key={p.id} className={(pane===p.id?'on':'')} onClick={()=>setPane(p.id)} aria-current={pane===p.id}>
      <span className={'setIco i-'+p.id}><I size={18}/></span><span className="setNavText"><b>{p.title}</b><small>{p.sub}</small></span>{badge[p.id] && <em className={p.id==='test'?'warn':''}>{badge[p.id]}</em>}</button>; })}</nav>
    <div className="setPane">
+    <SettingsGuide id={pane} titles={titles} onGo={id=>setPane(id as Pane)}/>
     {msg && <p className={'setToast'+(msg.bad?' bad':'')} role="status">{msg.text}</p>}
     {pane==='hours' && <HoursPane settings={settings} commit={commit}/>}
     {pane==='facility' && <FacilityPane api={sync?.api} online={!!sync?.online} canEdit={user?.role==='admin'}

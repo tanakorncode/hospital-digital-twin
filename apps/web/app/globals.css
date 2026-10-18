@@ -1488,6 +1488,24 @@ kbd{margin-left:6px;padding:1px 6px;border-radius:5px;background:#ffffff33;borde
 .setPane{position:relative;display:flex;flex-direction:column;gap:12px;min-width:0}
 .setToast{margin:0;padding:10px 14px;border-radius:12px;background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46;font-size:13.5px;font-weight:600}
 .setToast.bad{background:#fff1f2;border-color:#fecdd3;color:#be123c}
+.setGuide{border:1px solid #c7d2fe;background:#f5f7ff;border-radius:12px;color:#1e293b;font-size:13.5px}
+.setGuideHead{all:unset;box-sizing:border-box;display:flex;align-items:flex-start;gap:8px;width:100%;padding:10px 14px;cursor:pointer;line-height:1.5}
+.setGuideHead:disabled{cursor:default}
+.setGuideHead:focus-visible{outline:2px solid #6366f1;outline-offset:-2px;border-radius:12px}
+.setGuideHead svg{flex:none;margin-top:3px;color:#4f46e5}
+.setGuideHead>span{flex:1;min-width:0}.setGuideHead b{color:#3730a3;margin-right:4px}
+.setGuideHead em{flex:none;display:inline-flex;align-items:center;gap:2px;font-style:normal;font-size:12.5px;font-weight:600;color:#4f46e5;white-space:nowrap}
+.setGuideBody{padding:0 14px 12px 38px;display:grid;gap:10px}
+.setGuideBody dl{margin:0;display:grid;gap:6px}
+.setGuideBody dl>div{display:grid;grid-template-columns:minmax(120px,190px) 1fr;gap:10px}
+.setGuideBody dt{font-weight:700;color:#334155}.setGuideBody dd{margin:0;color:#475569}
+.setGuideSteps ol{margin:4px 0 0;padding-left:20px;color:#475569}.setGuideSteps li{margin:2px 0}
+.setGuideNote{margin:0;padding:8px 10px;border-radius:8px;background:#fffbeb;border:1px solid #fde68a;color:#92400e}
+.setGuideRel{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.setGuideRel button{all:unset;cursor:pointer;display:inline-flex;flex-direction:column;padding:6px 10px;border-radius:8px;background:#fff;border:1px solid #c7d2fe}
+.setGuideRel button:hover{border-color:#6366f1}.setGuideRel button:focus-visible{outline:2px solid #6366f1}
+.setGuideRel button span{font-weight:700;color:#3730a3}.setGuideRel button small{color:#64748b;font-size:11.5px}
+@media (max-width:640px){.setGuideBody{padding-left:14px}.setGuideBody dl>div{grid-template-columns:1fr;gap:2px}}
 .setCard{display:flex;flex-direction:column;gap:12px;padding:18px 20px 20px;border-radius:20px;background:#fff;border:1px solid #e8edf4;box-shadow:0 8px 24px #0b1d330d}
 .paneHead{display:flex;align-items:flex-start;gap:14px}
 .paneHead>div{flex:1;min-width:0}
