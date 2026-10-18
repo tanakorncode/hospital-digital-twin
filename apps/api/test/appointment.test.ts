@@ -208,3 +208,25 @@ test('before booking, staff check the HN: new here or seen before, what is still
   assert.ok(api.audit.list().some((e) => e.action === 'patient.search.hn'));
   assert.equal((api.gateway.patientByHn({ handshake: { auth: {}, headers: {} }, data: {} } as never, { hn: '65-777777' }) as R).code, 'AUTH_REQUIRED');
 });
+
+test('a schedule can mix hours by day: mornings on some days, afternoons on others, both on one', () => {
+  const { api, admin } = setup();
+  // Dr C, 9–20 Nov 2026: Mon + Tue 09:00–12:00, Wed 13:00–16:00, Mon also 13:00–15:00.
+  const r = api.gateway.createApptSessions(admin, { clinicCode: EYE, providerCode: 'D003', providerName: 'นพ.ชัย ตาดี', from: '2026-11-09', to: '2026-11-20', minutes: 30, capacity: 1,
+    blocks: [{ weekdays: [1, 2], start: '09:00', end: '12:00' }, { weekdays: [3], start: '13:00', end: '16:00' }, { weekdays: [1], start: '13:00', end: '15:00' }] }) as R & { slots?: number };
+  assert.equal(r.ok, true, r.reason);
+  // Mondays 2 sessions, Tuesdays 1, Wednesdays 1, over two weeks → 8 sessions; 6 + 6 + 6 + 4 slots a week → 44.
+  assert.deepEqual([r.sessions, r.slots, r.conflicts], [8, 44, []]);
+  const mon = api.appts.slots(EYE, '2026-11-09', 'D003').map((s) => new Date(s.startsAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bangkok' }));
+  assert.deepEqual(mon, ['09:00', '09:30', '10:00', '10:30', '11:00', '11:30', '13:00', '13:30', '14:00', '14:30'], 'morning and afternoon on Monday');
+  assert.equal(api.appts.slots(EYE, '2026-11-11', 'D003').length, 6, 'Wednesday afternoon only');
+  // Two blocks overlapping on the same day: the second is left out for that day, and said.
+  const clash = api.gateway.createApptSessions(admin, { clinicCode: EYE, providerCode: 'D004', providerName: 'พญ.ซ้อน เวลา', from: '2026-11-09', to: '2026-11-09', minutes: 30, capacity: 1,
+    blocks: [{ weekdays: [1], start: '09:00', end: '12:00' }, { weekdays: [1], start: '11:00', end: '13:00' }] }) as R;
+  assert.deepEqual([clash.sessions, clash.conflicts], [1, ['2026-11-09']]);
+  // A bad block says which one.
+  const bad = api.gateway.createApptSessions(admin, { clinicCode: EYE, providerCode: 'D005', providerName: 'X', from: '2026-11-09', to: '2026-11-10', minutes: 30, capacity: 1,
+    blocks: [{ weekdays: [1], start: '09:00', end: '12:00' }, { weekdays: [2], start: '14:00', end: '13:00' }] }) as R;
+  assert.equal(bad.code, 'VALIDATION_ERROR'); assert.match(bad.reason!, /ช่วงที่ 2/);
+  assert.equal(api.appts.slots(EYE, '2026-11-09', 'D005').length, 0, 'nothing made when one block is wrong');
+});

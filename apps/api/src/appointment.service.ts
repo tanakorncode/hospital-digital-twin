@@ -107,34 +107,46 @@ export class AppointmentService implements OnModuleInit, OnModuleDestroy {
     for (const r of rows) { const p = out.get(r.code) ?? { code: r.code, name: r.name, clinics: [] }; if (!p.clinics.includes(r.clinic)) p.clinics.push(r.clinic); out.set(r.code, p); }
     return [...out.values()].sort((a, b) => a.name.localeCompare(b.name, 'th'));
   }
+  // A doctor's sessions over a range of days. `blocks`: the weekly pattern — on these weekdays, from … to (a doctor can
+  // work mornings on some days, afternoons on others, or both on one day); the older single weekdays / start / end
+  // still works. Each session is cut into slots of `minutes`, `capacity` patients each. All or nothing: one transaction.
+  // A session overlapping one of the doctor's own (any clinic) is left out and reported; the same session again is skipped.
   createSessions(plan: Record<string, unknown>): { sessions: number; slots: number; skipped: number; conflicts: string[] } {
-    const { clinicCode, providerCode, providerName, from, to, weekdays, start, end, minutes, capacity, roomId } = plan;
+    const { clinicCode, providerCode, providerName, from, to, minutes, capacity, roomId } = plan;
     if (typeof clinicCode !== 'string' || !this.policy(clinicCode)) throw bad('ตั้งกติกาการนัดของคลินิกนี้ก่อน');
     if (roomId !== undefined && roomId !== null && roomId !== '' && !this.facility.roomOf(clinicCode, roomId)) throw bad('ห้องตรวจไม่ถูกต้อง (ต้องเป็นห้องตรวจที่เปิดอยู่ของคลินิกนี้)');
     if (typeof providerCode !== 'string' || !PROVIDER_RE.test(providerCode)) throw bad('ระบุรหัสแพทย์ (เช่น รหัสใน HIS หรือเลข ว.)');
     if (typeof providerName !== 'string' || !providerName.trim() || providerName.length > 60) throw bad('ระบุชื่อแพทย์');
     if (typeof from !== 'string' || !DATE_RE.test(from) || typeof to !== 'string' || !DATE_RE.test(to) || to < from) throw bad('ช่วงวันที่ไม่ถูกต้อง');
-    if (typeof start !== 'string' || !TIME_RE.test(start) || typeof end !== 'string' || !TIME_RE.test(end) || end <= start) throw bad('ช่วงเวลาไม่ถูกต้อง');
     if (!Number.isInteger(minutes) || (minutes as number) < 5 || (minutes as number) > 240) throw bad('ความยาวช่วงต้องอยู่ระหว่าง 5–240 นาที');
     if (!Number.isInteger(capacity) || (capacity as number) < 1 || (capacity as number) > 100) throw bad('จำนวนนัดต่อช่วงต้องอยู่ระหว่าง 1–100');
-    if (!Array.isArray(weekdays) || !weekdays.length || weekdays.some((d) => !Number.isInteger(d) || d < 0 || d > 6)) throw bad('เลือกวันในสัปดาห์');
+    const raw = Array.isArray(plan.blocks) ? plan.blocks : [{ weekdays: plan.weekdays, start: plan.start, end: plan.end }];
+    if (!raw.length || raw.length > 14) throw bad('ระบุช่วงออกตรวจ 1–14 ช่วง');
+    const toMin = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3)), hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+    const blocks = raw.map((b, n) => {
+      const { weekdays, start, end } = (b ?? {}) as Record<string, unknown>, at = raw.length > 1 ? ` (ช่วงที่ ${n + 1})` : '';
+      if (!Array.isArray(weekdays) || !weekdays.length || weekdays.some((d) => !Number.isInteger(d) || d < 0 || d > 6)) throw bad(`เลือกวันในสัปดาห์${at}`);
+      if (typeof start !== 'string' || !TIME_RE.test(start) || typeof end !== 'string' || !TIME_RE.test(end) || end <= start) throw bad(`ช่วงเวลาไม่ถูกต้อง${at}`);
+      const times: [string, string][] = [];
+      for (let m = toMin(start); m + (minutes as number) <= toMin(end); m += minutes as number) times.push([hhmm(m), hhmm(m + (minutes as number))]);
+      if (!times.length) throw bad(`ช่วงเวลาสั้นกว่าความยาวหนึ่งช่วง${at}`);
+      return { weekdays: weekdays as number[], start, end, times };
+    });
     const days: string[] = [];
     for (let d = localInstant(from, '12:00'); localDate(d) <= to; d.setDate(d.getDate() + 1)) {
       if (days.length > 184) throw bad('สร้างได้ครั้งละไม่เกิน 6 เดือน');
-      if ((weekdays as number[]).includes(d.getDay())) days.push(localDate(d));
+      days.push(localDate(d));
     }
-    const toMin = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3)), hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
-    const times: [string, string][] = [];
-    for (let m = toMin(start); m + (minutes as number) <= toMin(end); m += minutes as number) times.push([hhmm(m), hhmm(m + (minutes as number))]);
-    if (!times.length) throw bad('ช่วงเวลาสั้นกว่าความยาวหนึ่งช่วง');
+    const weekday = (day: string) => localInstant(day, '12:00').getDay();
     return this.store.tx(() => {
       const at = this.now().toISOString();
       let sessions = 0, slots = 0, skipped = 0;
       const conflicts: string[] = [];
-      for (const day of days) {
+      for (const day of days) for (const { weekdays, start, end, times } of blocks) {
+        if (!weekdays.includes(weekday(day))) continue;
         const s = localInstant(day, start).toISOString(), e = localInstant(day, end).toISOString();
         const clash = this.store.db.prepare(`SELECT starts_at FROM provider_schedules WHERE provider_code = ? AND status <> 'CANCELLED' AND starts_at < ? AND ends_at > ?`).get(providerCode, e, s) as { starts_at: string } | undefined;
-        if (clash) { if (clash.starts_at === s) skipped++; else conflicts.push(day); continue; }
+        if (clash) { if (clash.starts_at === s) skipped++; else if (!conflicts.includes(day)) conflicts.push(day); continue; }
         const sid = newId('ps');
         this.store.db.prepare(`INSERT INTO provider_schedules (id, provider_code, provider_name, clinic_code, starts_at, ends_at, status, created_at, updated_at, room_id) VALUES (?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?)`)
           .run(sid, providerCode, providerName.trim(), clinicCode, s, e, at, at, typeof roomId === 'string' && roomId ? roomId : null);
