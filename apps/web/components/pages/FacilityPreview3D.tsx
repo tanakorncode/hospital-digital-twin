@@ -44,6 +44,8 @@ export default function FacilityPreview3D({L}:{L:FloorLayout}) {
         <mesh position={[0,0.16,-0.3]}><boxGeometry args={[c.booth?0.42:0.26,0.32,0.22]}/><meshStandardMaterial color={col(c.on,c.hi,'#64748b')}/></mesh>
         <mesh position={[0,0.22,-0.6]}><sphereGeometry args={[0.09,12,10]}/><meshStandardMaterial color={col(c.on,c.hi,'#94a3b8')}/></mesh>
       </group>)}
+      {/* Waiting chairs facing the counters */}
+      {L.seats.map((c,i)=><mesh key={i} position={[c.x,0.08,c.z]}><boxGeometry args={[0.3,0.16,0.3]}/><meshStandardMaterial color={c.focus?'#93c5fd':'#c3ccd7'}/></mesh>)}
       {/* Beds */}
       {L.beds.map(b=><mesh key={b.id} position={[b.x,0.1,b.z]}><boxGeometry args={[0.36,0.18,0.72]}/><meshStandardMaterial color={col(b.on,b.hi,'#ffffff')}/></mesh>)}
       {L.tag && L.tagAt && <Html position={L.focusKind==='room' ? [L.tagAt.x,0.15,L.tagAt.z+0.75] : [L.tagAt.x,0.9,L.tagAt.z]} className="fac3dTag" zIndexRange={[6,0]} portal={labels}>{L.tag}</Html>}

@@ -2603,3 +2603,4 @@ a.liffChoice{text-decoration:none;padding:10px 16px}
 .fac3dTag{transform:translate(-8px,-100%);padding:3px 10px;border-radius:999px;background:#1677ff;color:#fff;font-size:11.5px;font-weight:700;white-space:nowrap;pointer-events:none;box-shadow:0 4px 12px #1677ff55}
 .facPreview3d{position:relative}
 .fac3dLabels{position:absolute;inset:0;pointer-events:none;z-index:1;overflow:hidden}
+.facLegend.seat{background:#d5dde7;width:8px;height:7px}

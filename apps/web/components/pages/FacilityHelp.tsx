@@ -87,7 +87,7 @@ type Item = {id:string; x:number; z:number; on:boolean; hi:boolean; number:numbe
 export type FloorLayout = {title:string; W:number; D:number; roomFront:number; front0:number;
   bands:{id:string; name:string; x0:number; w:number; on:boolean; focus:boolean}[];
   rooms:{id:string; x0:number; w:number; name:string; short:string; on:boolean; hi:boolean}[];
-  counters:(Item & {booth:boolean})[]; beds:Item[]; tag:string; tagAt?:{x:number; z:number}; focusKind?:string};
+  counters:(Item & {booth:boolean})[]; beds:Item[]; seats:{x:number; z:number; focus:boolean}[]; tag:string; tagAt?:{x:number; z:number}; focusKind?:string};
 export function layoutFloor(data:Data, floorId:string, focus?:string):FloorLayout|null {
   const floor = data.floors.find(f=>f.id===floorId), b = floor && data.buildings.find(x=>x.id===floor.buildingId);
   if (!floor || !b) return null;
@@ -116,13 +116,23 @@ export function layoutFloor(data:Data, floorId:string, focus?:string):FloorLayou
   open.filter(p=>!ward.includes(p)).forEach(p=>{ const mates = open.filter(o=>o.groupId===p.groupId), k = mates.indexOf(p), m = mates.length, x0 = -hw+bandOf(groupOf.get(p.groupId)!.departmentId)*bandW;
     beds.push(item(p,x0+bandW*(m<=1?0.5:0.3+0.42*k/(m-1)),hd-0.8)); });
   const fg = focus ? groupOf.get(focus) : undefined;
+  // Waiting chairs in rows facing the counters, as the 3D map seats them: not in wards (nurse station + open beds), not
+  // in support buildings (desks), not where beds stand out in the band (resuscitation bays); behind a row of booths.
+  const seats:FloorLayout['seats'] = [];
+  if (b.kind!=='inpatient' && b.kind!=='support') bandIds.forEach((id,i)=>{
+    const x0 = -hw+i*bandW, x1 = x0+bandW, focusHere = !!fg && fg.departmentId===id;
+    const groupsHere = data.groups.filter(g=>!g.retiredAt && g.departmentId===id);
+    if (beds.some(c=>{ const p = pts.find(x=>x.id===c.id)!; return groupsHere.some(g=>g.id===p.groupId) && !p.inRoomId; })) return;
+    const booths = groupsHere.some(g=>g.pointKind==='counter' && g.options?.arrange==='booths' && g.floorId===floorId);
+    for (let z=front0+(booths?2:1.2); z<hd-0.3; z+=0.68) for (let x=x0+0.45; x<x1-0.3; x+=0.46) seats.push({x,z,focus:focusHere});
+  });
   const rooms = roomPts.map((p,k)=>({id:p.id,x0:-hw+k*rw,w:rw,name:label(groupOf.get(p.groupId),p),short:p.roomCode ?? String(p.number),on:on(p),hi:hi(p)}));
   // The group being edited, called out with its name and its numbers, by the first of its rooms / counters / beds.
   const mine = [...rooms.filter(r=>r.hi).map(r=>({x:r.x0+r.w/2,z:roomFront})),...counters.filter(c=>c.hi),...beds.filter(c=>c.hi)];
   const nums = fg ? pts.filter(p=>p.groupId===fg.id && onFloor(p)).map(p=>p.number).sort((a,c)=>a-c) : [];
   const tag = fg && mine.length ? `${fg.pointNoun} ${nums.length>1 ? `${nums[0]}–${nums[nums.length-1]}` : nums[0] ?? ''}`.trim() : '';
   return {title:`${b.shortName || b.name} ${floor.name}`,W,D,roomFront,front0,rooms,counters,beds,tag,tagAt:mine[0] ? {x:Math.min(...mine.map(m=>m.x)),z:Math.max(...mine.map(m=>m.z))} : undefined,focusKind:fg?.pointKind,
-    bands:bandIds.map((id,i)=>{ const d = data.departments.find(x=>x.id===id); return {id,name:d?.name ?? '',x0:-hw+i*bandW,w:bandW,on:live(d),focus:!!fg && fg.departmentId===id}; })};
+    seats,bands:bandIds.map((id,i)=>{ const d = data.departments.find(x=>x.id===id); return {id,name:d?.name ?? '',x0:-hw+i*bandW,w:bandW,on:live(d),focus:!!fg && fg.departmentId===id}; })};
 }
 
 // 2D or 3D, remembered while the page is open (3D loads only when asked for).
@@ -137,7 +147,7 @@ export function FloorPreview({data,floorId,focus}:{data:Data; floorId:string; fo
     <div className="facPreviewHead"><b>ผังชั้นตัวอย่าง · {L.title}</b><span className="muted">จากร่าง — เห็นก่อนเผยแพร่</span>
       <span className="facViews sm" role="tablist">{(['2d','3d'] as const).map(m=><button key={m} role="tab" aria-selected={mode===m} className={mode===m?'on':''} onClick={()=>setMode(m)}>{m.toUpperCase()}</button>)}</span></div>
     {mode==='2d' ? <Plan2D L={L}/> : <Preview3D L={L}/>}
-    <figcaption><i className="facLegend room"/>ห้อง <i className="facLegend desk"/>ช่อง/โต๊ะ <i className="facLegend bed"/>เตียง <i className="facLegend off"/>ปิด{mode==='3d' ? ' · ลากเพื่อหมุน เลื่อนล้อเพื่อซูม' : ''}</figcaption>
+    <figcaption><i className="facLegend room"/>ห้อง <i className="facLegend desk"/>ช่อง/โต๊ะ (จุดกลม = ผู้ป่วยที่ถูกเรียก) <i className="facLegend seat"/>เก้าอี้พื้นที่รอ <i className="facLegend bed"/>เตียง <i className="facLegend off"/>ปิด{mode==='3d' ? ' · ลากเพื่อหมุน เลื่อนล้อเพื่อซูม' : ''}</figcaption>
   </figure>;
 }
 function Plan2D({L}:{L:FloorLayout}) {
@@ -152,6 +162,7 @@ function Plan2D({L}:{L:FloorLayout}) {
     <rect x="10" y="10" width={W*S} height={D*S} rx="6" fill="#fbfcfe" stroke={C.wall} strokeWidth="1.5"/>
     {L.bands.map(bd=><g key={bd.id}><rect x={sx(bd.x0)} y={sz(front0)} width={bd.w*S} height={(hd-front0)*S} fill={bd.focus?'#eef5ff':bd.on?C.band:'url(#facOff)'} stroke="#e2e8f0"/>
       <text x={sx(bd.x0+bd.w/2)} y={sz(hd)-8} fontSize="11" textAnchor="middle" fill={bd.focus?C.hi:'#64748b'} fontWeight="700">{bd.name}{bd.on?'':' (ปิด)'}</text></g>)}
+    {L.seats.map((c,i)=><rect key={i} x={sx(c.x)-3.5} y={sz(c.z)-3} width="7" height="6" rx="1.5" fill={c.focus?'#bfdbfe':'#d5dde7'}/>)}
     <rect x="10" y={sz(roomFront)} width={W*S} height={1.2*S} fill="#f8fafc"/>
     <text x={sx(0)} y={sz(roomFront+0.6)+4} fontSize="9" textAnchor="middle" fill="#94a3b8">ทางเดิน</text>
     {L.rooms.map(r=><g key={r.id}><rect x={sx(r.x0)+1} y={sz(-hd)+1} width={r.w*S-2} height={(roomFront+hd)*S-2} rx="3" fill={!r.on?'url(#facOff)':r.hi?C.hiFill:C.room} stroke={r.hi?C.hi:C.wall} strokeWidth={r.hi?2:1}/>
