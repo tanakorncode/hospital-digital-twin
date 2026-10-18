@@ -4,6 +4,7 @@ import { Ban, CheckCircle2, Forward, UserPlus, X } from 'lucide-react';
 import { PriorityTag } from '../PriorityIcon';
 import { clinicOpen, opdClinics, stepText, triageLevels, type Patient, type PatientState, type StepKind } from '../../lib/patients';
 import { actionKey, covers, priorityKeys, priorityText, type AuthUser, type QueueSync, type VisitInput } from '../../lib/queue';
+import { erDepartment } from '../../lib/facility';
 
 // Real patients (live data mode): taking a patient into the queue, sending them on after a step, and cancelling a
 // visit made by mistake. The queue number comes from the server; nothing personal is entered here — no name, no HN.
@@ -30,7 +31,7 @@ export function EnterVisitButton({visits,user,minute,disabled,QrButton,patients}
 function EnterVisitDialog({visits,user,minute,patients,QrButton,onClose}:{visits:VisitControl;user?:AuthUser|null;minute:number;patients:Patient[];QrButton:(props:{p:Patient;label?:string})=>React.ReactNode;onClose:()=>void}) {
  // Only the clinics this account works for (the server checks the same).
  const clinics = useMemo(()=>opdClinics().filter(c=>clinicOpen(c) && covers(user,c.key)),[user]);
- const erOk = covers(user,'er'), opdOk = clinics.length>0;
+ const er = erDepartment(), erOk = !!er && covers(user,er.id), opdOk = clinics.length>0;
  const [flow,setFlow] = useState<'opd'|'er'>(opdOk || !erOk ? 'opd' : 'er');
  const [clinicKey,setClinicKey] = useState(clinics[0]?.key ?? '');
  const [priority,setPriority] = useState<VisitInput['priority']>();
@@ -68,7 +69,7 @@ function EnterVisitDialog({visits,user,minute,patients,QrButton,onClose}:{visits
    </div> : <>
     <div className="visitRow"><span>ประเภท</span><div className="segBtns">
      {opdOk && <button className={flow==='opd'?'on':''} aria-pressed={flow==='opd'} onClick={()=>setFlow('opd')}>ผู้ป่วยนอก (OPD)</button>}
-     {erOk && <button className={flow==='er'?'on':''} aria-pressed={flow==='er'} onClick={()=>setFlow('er')}>ห้องฉุกเฉิน</button>}</div></div>
+     {erOk && <button className={flow==='er'?'on':''} aria-pressed={flow==='er'} onClick={()=>setFlow('er')}>{er?.name ?? 'ห้องฉุกเฉิน'}</button>}</div></div>
     {flow==='opd' ? <div className="visitRow"><span>คลินิก</span>
      <div className="visitClinics">{clinics.map(x=><button key={x.key} className={x.key===clinicKey?'on':''} aria-pressed={x.key===clinicKey} onClick={()=>setClinicKey(x.key)}>
       <b>{x.letter}</b><span>{x.dept}</span><small>ชั้น {x.level}</small></button>)}</div></div>

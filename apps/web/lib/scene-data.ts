@@ -43,6 +43,8 @@ function rebuildPlan() {
   }
   roads.splice(0,roads.length,...f.site.roads.map(r=>[...r] as Rect));
   parkingLots.splice(0,parkingLots.length,...f.site.parking.map(r=>[...r] as Rect));
+  plazas.splice(0,plazas.length,...buildings.map(b=>[b.x-b.width/2-1.1,b.z-b.depth/2-1.1,b.x+b.width/2+1.1,b.z+b.depth/2+1.1] as Rect),...(f.site.plazas ?? []).map(r=>[...r] as Rect));
+  demoFlows.splice(0,demoFlows.length,...(f.site.flows ?? []).map(x=>({...x,kind:x.kind==='other' ? 'support' as BuildingKind : x.kind,points:x.points.map(p=>[p[0],p[1]] as [number,number])})));
   fillerBuildings.splice(0,fillerBuildings.length,...f.site.fillers.map(x=>({id:x.id,name:'',kind:'diagnostics' as BuildingKind,x:x.x,z:x.z,width:x.width,depth:x.depth,floors:x.floors,color:x.color})));
   rebuildRooms(); rebuildKiosks();
 }
@@ -72,30 +74,32 @@ export function floorDepartments(buildingId:string, level:number, hour:number=RE
     return {name,queue,status:densityLevel(queue),color:deptColors[i%deptColors.length]};
   });
 }
-export type ServicePoint = { id:string; name:string; x:number; z:number; queue:number; waitMinutes:number; status:'normal'|'busy'|'critical' };
+// The service bar: one figure per kind of service (demo numbers for the busiest hour; the HIS feed and the tracked
+// patients replace them). Ids are the ones the live feed uses.
+export type ServicePoint = { id:string; name:string; queue:number; waitMinutes:number; status:'normal'|'busy'|'critical' };
 export const servicePoints: ServicePoint[] = [
- {id:'registration',name:'ลงทะเบียน',x:-9,z:7,queue:42,waitMinutes:12,status:'normal'},
- {id:'screening',name:'คัดกรอง',x:-5,z:7,queue:18,waitMinutes:8,status:'normal'},
- {id:'clinic',name:'ห้องตรวจ',x:-4,z:1,queue:276,waitMinutes:52,status:'critical'},
- {id:'lab',name:'ห้องเจาะเลือด',x:9,z:0,queue:35,waitMinutes:18,status:'busy'},
- {id:'pharmacy',name:'ห้องยา',x:0,z:5,queue:96,waitMinutes:28,status:'busy'},
- {id:'finance',name:'การเงิน',x:-1,z:4,queue:28,waitMinutes:9,status:'normal'},
- {id:'radiology',name:'รังสีวิทยา',x:12,z:-1,queue:14,waitMinutes:20,status:'normal'},
+ {id:'registration',name:'ลงทะเบียน',queue:42,waitMinutes:12,status:'normal'},
+ {id:'screening',name:'คัดกรอง',queue:18,waitMinutes:8,status:'normal'},
+ {id:'clinic',name:'ห้องตรวจ',queue:276,waitMinutes:52,status:'critical'},
+ {id:'lab',name:'ห้องเจาะเลือด',queue:35,waitMinutes:18,status:'busy'},
+ {id:'pharmacy',name:'ห้องยา',queue:96,waitMinutes:28,status:'busy'},
+ {id:'finance',name:'การเงิน',queue:28,waitMinutes:9,status:'normal'},
+ {id:'radiology',name:'รังสีวิทยา',queue:14,waitMinutes:20,status:'normal'},
 ];
-// Simulated workflow routes (x,z waypoints), drawn as coloured paths with people walking along them.
-// Colours avoid the green/amber/red used for queue status so a route is never read as a status.
-export const demoFlows = [
- {id:'flow-entry',name:'มาถึง → ทางเข้า OPD',color:'#2563eb',points:[[-17,9.4],[-12.5,9.4],[-9.5,7.2]]},
- {id:'flow-er',name:'ไปห้องฉุกเฉิน (ER)',color:'#e0368c',points:[[-11,13],[-11,8.6],[-1,8.6],[2.8,8.6],[2.8,-5],[2.8,-8.5],[5,-8.5]]},
- {id:'flow-ipd',name:'OPD → รับเป็นผู้ป่วยใน',color:'#8b4fe6',points:[[-3,-1.6],[-3,-5.6],[-1,-5.6],[-1,-7.2]]},
- {id:'flow-dx',name:'OPD → ส่งตรวจแล็บ / เอกซเรย์',color:'#0aa5c2',points:[[1,0.5],[2.2,0.5],[3.6,-0.4],[7.6,-0.4]]},
- {id:'flow-support',name:'ศูนย์การแพทย์ → อาคารสนับสนุน',color:'#475569',points:[[14.2,-0.8],[14.2,2.4]]},
-] as const;
+// Walking routes drawn on the map with people walking along them (facility site). Colours avoid the green/amber/red
+// used for queue status so a route is never read as a status. kind: whose hours the walkers follow.
+export type DemoFlow = {id:string; name:string; color:string; kind:BuildingKind; points:[number,number][]};
+export const demoFlows:DemoFlow[] = [];
 // Ground layout shared by the 3D scene and the mini map: [x0,z0,x1,z1] rectangles in world units.
 export type Rect = [x0:number,z0:number,x1:number,z1:number];
 // Ground around the buildings (facility site): roads, car parks, unlabelled neighbouring blocks that frame the campus.
 export const roads:Rect[] = [];
 export const parkingLots:Rect[] = [];
+// Paved plazas: around every building, plus the site's own (the entrance forecourt).
+export const plazas:Rect[] = [];
+// The main entrance: in front of the building with registration (the first building without one).
+export const entranceSpot = () => { const reg = facility().groups.find(g=>!g.retiredAt && g.steps.includes('registration')), fl = reg?.floorId ? facility().floors.find(x=>x.id===reg.floorId) : undefined;
+  const b = buildings.find(x=>x.id===fl?.buildingId) ?? buildings[0]; return b ? {x:b.x-b.width/4,z:b.z+b.depth/2+0.9} : {x:0,z:0}; };
 export const fillerBuildings:BuildingSpec[] = [];
 // Who the little figures on the map are; their clothing colour encodes the type.
 // Nurses wear white with a banded cap (accent = band colour); doctors wear green scrubs and a scrub cap.

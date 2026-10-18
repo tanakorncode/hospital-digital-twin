@@ -18,7 +18,7 @@ export default function TvPage() {
   const { events, settings, visits } = useQueueEvents(); // staff calls appear here the moment they are made
   const [mode,setMode] = useState<Mode|null>(null);
   useEffect(()=>{ const q = new URLSearchParams(window.location.search), f = Number(q.get('floor'));
-    setMode(q.get('station') ? {kind:'station',id:q.get('station')!} : q.get('dept') ? {kind:'dept',name:q.get('dept')!} : f>=1 && f<=4 ? {kind:'floor',level:f} : {kind:'index'}); },[]);
+    setMode(q.get('station') ? {kind:'station',id:q.get('station')!} : q.get('dept') ? {kind:'dept',name:q.get('dept')!} : tvFloors().some(x=>x.level===f) ? {kind:'floor',level:f} : {kind:'index'}); },[]);
   // Door and department screens tick every 2 s so a call shows straight away; the floor board every 10 s.
   const minute = useDemoClock(mode?.kind==='station' || mode?.kind==='dept' ? 2000 : 10000,settings.demoOffset ?? 0);
   const level = mode?.kind==='floor' ? mode.level : 2;
@@ -41,9 +41,9 @@ export default function TvPage() {
       <div className="tvGrid">{zones.map(z=>{ const d = screenData(z.level,z.zone,now1,m,z.buildingId); return d ? <DeptPanel key={z.zone} d={d}/> : null; })}</div></main>; }
   const now = patients.map(p=>patientAt(p,m)).filter((s):s is PatientState=>!!s && s.p.flow==='opd');
   const isExam = (s:PatientState) => s.step.kind==='exam' || s.step.kind==='followup';
-  const missed = now.filter(s=>s.status==='missed' && s.p.deptWhere.endsWith(`OPD ชั้น ${level}`));
+  const missed = now.filter(s=>s.status==='missed' && s.p.deptWhere.endsWith(`${buildingShort(clinics[0]?.buildingId)} ชั้น ${level}`));
   return <main className="tv">
-    <header className="tvHead"><div><h1>OPD ชั้น {level}</h1><p>กรุณารอเรียกตามหมายเลขคิว · ไม่แสดงชื่อเพื่อความเป็นส่วนตัว</p></div><strong className="tvClock">{fmtMin(m)}</strong></header>
+    <header className="tvHead"><div><h1>{buildingShort(clinics[0]?.buildingId)} ชั้น {level}</h1><p>กรุณารอเรียกตามหมายเลขคิว · ไม่แสดงชื่อเพื่อความเป็นส่วนตัว</p></div><strong className="tvClock">{fmtMin(m)}</strong></header>
     <div className="tvGrid">{clinics.map(c=>{
       const waiting = now.filter(s=>isExam(s) && m<s.step.called && s.status!=='calling' && s.status!=='held' && s.status!=='missed' && s.p.deptWhere.startsWith(c.dept)).sort((a,b)=>a.step.start-b.step.start);
       if (!clinicOpen(c)) return <section key={c.key} className="tvClinic closed"><h2><span className="tvLetter">{c.letter}</span>{c.dept}</h2><p>งดให้บริการวันนี้</p></section>;
@@ -98,13 +98,20 @@ function StationTv({d,m}:{d:StationScreen;m:number}) {
 function TvMissing({text}:{text:string}) {
   return <main className="tv"><header className="tvHead"><div><h1>ไม่พบจอนี้</h1><p>{text}</p></div></header><a className="tvBack" href="/tv">ดูรายการจอทั้งหมด</a></main>;
 }
+// Floor screens: the shared counters' floor and every floor with clinics (in the clinics' building), in floor order.
+function tvFloors() {
+  const zones = counterZones(), clinics = opdClinics(), b = clinics[0]?.buildingId ?? zones[0]?.buildingId;
+  const levels = [...new Set([...zones.filter(z=>z.buildingId===b).map(z=>z.level),...clinics.filter(c=>c.buildingId===b).map(c=>c.level)])].sort((x,y)=>x-y);
+  return levels.map(level=>{ const z = zones.filter(x=>x.buildingId===b && x.level===level);
+    return {level,title:`${buildingShort(b)} ชั้น ${level}`,sub:z.length && !clinics.some(c=>c.buildingId===b && c.level===level) ? z.map(x=>x.title).join(' · ') : 'ทุกแผนกบนชั้น'}; });
+}
 // Index: every screen URL, to set up a display (open the link on the TV's browser).
 function TvIndex() {
   const depts = screenDepts(), stations = allStations();
   const groups = [...new Set(stations.map(s=>s.section))];
   return <main className="tv tvIndex">
     <header className="tvHead"><div><h1>จอแสดงคิว</h1><p>เปิดลิงก์บนเบราว์เซอร์ของจอทีวีแต่ละจุด</p></div></header>
-    <section><h2>จอรวมรายชั้น</h2><div className="tvLinkGrid">{[1,2,3,4].map(f=><a key={f} href={`/tv?floor=${f}`}><b>OPD ชั้น {f}</b><small>{f===1?'ลงทะเบียน · ห้องยา · การเงิน':'ทุกแผนกบนชั้น'}</small></a>)}</div></section>
+    <section><h2>จอรวมรายชั้น</h2><div className="tvLinkGrid">{tvFloors().map(f=><a key={f.level} href={`/tv?floor=${f.level}`}><b>{f.title}</b><small>{f.sub}</small></a>)}</div></section>
     <section><h2>จอพื้นที่รอรายแผนก</h2><div className="tvLinkGrid">{depts.map(d=><a key={d.name} href={`/tv?dept=${encodeURIComponent(d.name)}`}><b>{d.letter && <span className="tvLetter sm">{d.letter}</span>}{d.name}</b><small>{d.where}</small></a>)}</div></section>
     <section><h2>จอหน้าห้อง / หน้าช่อง</h2>{groups.map(g=><div key={g} className="tvIdxGroup"><h3>{g}</h3><div className="tvLinkGrid sm">{stations.filter(s=>s.section===g).map(s=><a key={s.id} href={`/tv?station=${encodeURIComponent(s.id)}`}><b>{s.label}</b></a>)}</div></div>)}</section>
   </main>;

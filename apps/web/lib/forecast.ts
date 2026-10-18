@@ -2,7 +2,7 @@
 // data — so it can be handed to an AI service or a data warehouse without exposing any patient.
 import { fmtDur, fmtMin, opdClinics, patientAt, servicePlace, stepText, type Patient, type PatientState, type StepKind } from './patients';
 import { erDepartment, fGroup } from './facility';
-import { allStations, openReports, stationDoctor, type AssistView, type QueueEvent } from './queue';
+import { allStations, groupOf, openReports, stationDoctor, type AssistView, type QueueEvent } from './queue';
 import { roomOpenIntervals, roomShifts } from './scene-data';
 
 // One "service" = a clinic (screening → exam → follow-up) or a shared service point (registration, lab, pharmacy…).
@@ -61,10 +61,8 @@ export type Forecast = ReturnType<typeof forecast>;
 // tell waiting patients early, and — for management — flag peaks that keep coming back.
 export type AdviceKind = 'reassign'|'break'|'notify'|'plan';
 export type Advice = {id:string; kind:AdviceKind; title:string; why:string; how:string; tags:string[]; confidence:'สูง'|'ปานกลาง'|'ต่ำ'; from:number; to:number; key:string};
-const groupKeyOf = (s:PatientState) => { const k = s.step.kind;
- if ((k==='exam'||k==='followup') && s.p.clinicKey) return `exam:${s.p.clinicKey}`;
- if (k==='screening' && s.p.clinicKey) return `screening:${s.p.clinicKey}`;
- return ['registration','pharmacy','finance','lab','xray'].includes(k) ? `counter:${k}` : undefined; };
+// The queue group a waiting patient counts towards (the ER's triage is planned with the ER, not here).
+const groupKeyOf = (s:PatientState) => s.step.kind==='triage' ? undefined : groupOf(s.p,s.step.kind);
 // A queue group's name: the facility's ("ห้องตรวจศัลยกรรม"); a shared service by its department.
 const groupName = (g:string) => { const grp = fGroup(g); if (!grp) return g; return opdClinics().some(c=>c.key===grp.departmentId) ? grp.name : svcName(grp.steps[0]) ?? grp.name; };
 const groupServers = (g:string, m:number) => allStations().filter(st=>st.group===g && (!st.roomId || stationDoctor(st,m)?.status==='active')).length;
@@ -95,7 +93,7 @@ export function adviseStaffing(base:Patient[], live:Patient[], minute:number, fc
     why:`${n.name}คาดว่ามีคนรอสูงสุด ~${Math.round(n.peak)} คน ต่อ ${n.servers} ช่อง · ${d.name}คาดว่ารอไม่เกิน ~${Math.round(d.peak)} คน ต่อ ${d.servers} ช่อง`,how:pool.task}); });
  });
  // 2. Breaks that fall in a clinic's peak: move them later, or stagger rooms that break at the same hour.
- gfc.filter(s=>s.key.startsWith('exam:') && per(s.peak,Math.max(1,s.servers))>4).forEach(s=>{
+ gfc.filter(s=>!!fGroup(s.key)?.steps.includes('exam') && per(s.peak,Math.max(1,s.servers))>4).forEach(s=>{
   const w = busyWindow(s,m,4); if (!w) return;
   const rooms = allStations().filter(st=>st.group===s.key && st.roomId), clash = new Map<number,string[]>();
   rooms.forEach(st=>breakHours(st.roomId!).filter(h=>h*60<w[1] && (h+1)*60>w[0] && h*60>=m-30).forEach(h=>clash.set(h,[...(clash.get(h) ?? []),st.label.replace('ห้องตรวจ ','')])));

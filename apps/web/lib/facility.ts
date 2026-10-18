@@ -19,7 +19,8 @@ export type FGroup = {id:string; departmentId:string; name:string; floorId:strin
 export type FPoint = {id:string; groupId:string; number:number; name?:string; roomCode?:string; floorId?:string; roomKind?:FRoomKind; inRoomId?:string; map?:{x:number; z:number};
   active:boolean; retiredAt?:string};
 export type Rect = [x0:number,z0:number,x1:number,z1:number];
-export type Site = {roads:Rect[]; parking:Rect[]; fillers:{id:string; x:number; z:number; width:number; depth:number; floors:number; color:string}[]};
+export type Flow = {id:string; name:string; color:string; kind:BuildingKind; points:[number,number][]};
+export type Site = {roads:Rect[]; parking:Rect[]; plazas?:Rect[]; fillers:{id:string; x:number; z:number; width:number; depth:number; floors:number; color:string}[]; flows?:Flow[]};
 export type Facility = {version:number; publishedAt:string; buildings:FBuilding[]; floors:FFloor[]; departments:FDepartment[]; groups:FGroup[]; points:FPoint[]; site:Site};
 
 // ---- The current facility -------------------------------------------------------------------------------------

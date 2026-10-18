@@ -4,6 +4,7 @@ import QRCode from 'qrcode';
 import { CalendarCheck, CalendarClock, CheckCircle2, ChevronLeft, IdCard, ListOrdered, Map as MapIcon, ShieldCheck, Unlink } from 'lucide-react';
 import { Appointments, BookQueue, HospitalMap, MyQueue } from '../../components/LiffViews';
 import { loadSession, patientApi, saveSession } from '../../lib/patient-api';
+import { useFacility } from '../../lib/use-facility';
 
 // The patient's page inside LINE (LIFF), opened from the hospital's rich menu.
 // 1. Sign in: the LIFF SDK gives an ID token, the API checks it with LINE and opens an app session.
@@ -30,6 +31,7 @@ function loadSdk():Promise<Liff> {
 }
 
 export default function LiffPage() {
+ useFacility(true); // the hospital's departments and places for the map and directions
  const [stage,setStage] = useState<Stage>({kind:'loading'});
  const [linking,setLinking] = useState(false); // the hospital has switched account linking on
  const refresh = useCallback(async ()=>{

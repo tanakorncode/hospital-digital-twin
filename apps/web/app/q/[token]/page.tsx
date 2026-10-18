@@ -8,6 +8,7 @@ import { peopleAhead, waitRange } from '../../../lib/queue-status';
 import { PORTER_TOPIC, applyQueueEvents, basePatients, helpRequests, helpTopics, isLive, moveNote, scopeName, stationById, stepGroup, useQueueEvents, worldKey } from '../../../lib/queue';
 import type { Step } from '../../../lib/patients';
 import FloorPlanSvg, { liftSpot } from '../../../components/FloorPlanSvg';
+import { fBuilding } from '../../../lib/facility';
 
 // Patient-facing status page opened from the QR on the queue slip. Shows only the queue number, clinic and journey —
 // never the HN or a name — and refreshes by itself. The token is checked by the API (random, expires at the end of the
@@ -203,7 +204,8 @@ function wayOf(st:NonNullable<ReturnType<typeof patientAt>>, steps:Step[], waitT
     return {title:`ขั้นต่อไป: ${next.place.where}`,note:'ไปเมื่อเสร็จจากจุดนี้',from:serveLoc(st.step,'จุดที่อยู่ตอนนี้'),to}; }
   return undefined;
 }
-const bName = (b:string) => b==='opd'?'อาคารผู้ป่วยนอก':b==='er'?'อาคารฉุกเฉิน':b==='diagnostics'?'ศูนย์การแพทย์':'อาคาร';
+// A building by the name on its signs (the facility's), without the short form in brackets.
+const bName = (b:string) => { const x = fBuilding(b); return x ? x.name.replace(/\s*\(.+\)$/,'') : 'อาคาร'; };
 // "You are here → there": same floor draws the walk; another floor (or building) starts at the lift with the steps written out.
 function WayFinder({way}:{way:Way}) {
   const {from,to} = way, sameFloor = !!from && from.b===to.b && from.level===to.level;

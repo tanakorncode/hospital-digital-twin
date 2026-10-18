@@ -4,6 +4,7 @@ import { useSearchParams } from 'next/navigation';
 import { ChevronLeft, MapPin, Navigation, Search } from 'lucide-react';
 import FloorPlanSvg from '../../components/FloorPlanSvg';
 import { buildingName, directions, fetchDestination, fetchDestinations, whereText, type Destination } from '../../lib/wayfinding';
+import { useFacility } from '../../lib/use-facility';
 
 // What a QR sign in the hospital opens (no sign-in, nothing personal):
 //   /wayfinding?at=CODE  "you are here" + where would you like to go
@@ -12,6 +13,7 @@ import { buildingName, directions, fetchDestination, fetchDestinations, whereTex
 export default function WayfindingPage() { return <Suspense fallback={<main className="liff"><p className="liffWait">กำลังโหลด…</p></main>}><Wayfinding/></Suspense>; }
 
 function Wayfinding() {
+ useFacility(true); // the hospital's buildings and floors for the plan
  const params = useSearchParams();
  const [list,setList] = useState<Destination[]|null>(null);
  const [error,setError] = useState('');

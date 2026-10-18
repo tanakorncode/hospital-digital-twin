@@ -13,7 +13,8 @@ import { Select } from '../Select';
 // so signs already on the wall keep leading somewhere useful.
 type Api = QueueSync['api'];
 type Draft = {code:string; nameTh:string; buildingId:string; level:number; zoneIndex?:number; landmarkTh:string; descriptionTh:string; isPublic:boolean};
-const empty:Draft = {code:'',nameTh:'',buildingId:'opd',level:1,landmarkTh:'',descriptionTh:'',isPublic:true};
+// A new place starts in the first building, floor 1.
+const empty = ():Draft => ({code:'',nameTh:'',buildingId:buildings[0]?.id ?? '',level:1,landmarkTh:'',descriptionTh:'',isPublic:true});
 
 export function WayfindingAdminPane({api,features,setFeature}:{api:Api; features:QueueSync['features']; setFeature:(on:boolean)=>Promise<void>}) {
  const [list,setList] = useState<Destination[]>([]);
@@ -48,7 +49,7 @@ export function WayfindingAdminPane({api,features,setFeature}:{api:Api; features
    <button className={on?'btn ghost':'btn'} onClick={()=>void setFeature(!on)}>{on?'ปิด':'เปิด'}</button></div>
   {msg && <p className={'setToast'+(msg.bad?' bad':'')} role="status">{msg.text}</p>}
   <div className="bookBar"><button className="btn ghost" onClick={()=>void importAll()}><Download size={15}/> นำเข้าจากผังแผนก</button>
-   <button className="btn ghost" onClick={()=>{ setEdit({...empty}); setIsNew(true); }}><Plus size={15}/> เพิ่มจุดหมาย</button>
+   <button className="btn ghost" onClick={()=>{ setEdit(empty()); setIsNew(true); }}><Plus size={15}/> เพิ่มจุดหมาย</button>
    <button className="btn" disabled={!picked.size} onClick={()=>setPrinting(true)}><Printer size={15}/> พิมพ์ป้าย QR ({picked.size})</button>
    {shownActive.length>0 && <button className="btn ghost" onClick={()=>setPicked(p=>{ const n = new Set(p); shownActive.forEach(d=>allPicked ? n.delete(d.code) : n.add(d.code)); return n; })}>{allPicked?'ไม่เลือกที่แสดง':'เลือกที่แสดงทั้งหมด'}</button>}
    {list.length>0 && <label className="tblSearch"><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="ค้นหา ชื่อ รหัส อาคาร ชั้น จุดสังเกต" aria-label="ค้นหาจุดหมาย"/>

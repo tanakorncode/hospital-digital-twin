@@ -14,7 +14,7 @@ const FloorScene = dynamic(()=>import('../HospitalScene').then(m=>m.FloorScene),
 type FindKind = 'ward'|'er'|'room'|'station';
 const findKinds:[FindKind,string][] = [['ward','เตียงหอผู้ป่วย'],['er','เตียง ER'],['room','ห้องตรวจ'],['station','จุดตรวจ / เอกซเรย์']];
 const kindNoun:Record<FindKind,string> = {ward:'เตียง',er:'เตียง ER',room:'ห้องตรวจ',station:'จุด'};
-const isKind = (k:FindKind, f:CapFloor, u:Unit) => k==='ward' ? u.kind==='bed' && f.buildingId==='inpatient' : k==='er' ? u.kind==='bed' && f.buildingId==='er' : u.kind===k;
+const isKind = (k:FindKind, f:CapFloor, u:Unit) => k==='ward' ? u.kind==='bed' && f.area==='ward' : k==='er' ? u.kind==='bed' && f.area==='er' : u.kind===k;
 type Fill = 'full-waiting'|'full'|'near'|'ok';
 const fillOf = (f:CapFloor):Fill => f.free===0 ? (f.waiting>0?'full-waiting':'full') : f.free===1 && f.total>=4 ? 'near' : 'ok';
 function FillBadge({f}:{f:CapFloor}) {
@@ -64,9 +64,9 @@ export default function CapacityPage({patients,minute,timeNote,onOpenPatient}:{p
  return <div className="page">
   <div className="pageHead"><h2>ผังโรงพยาบาล · เตียงและห้องว่าง</h2><span className="pageTime">{timeNote}</span></div>
   <div className="tileRow">
-   <div className="tile"><small>เตียงหอผู้ป่วยว่าง</small><b>{sum(u=>u.state==='free',f=>f.buildingId==='inpatient')}<em> เตียง</em></b><span className="muted">ทำความสะอาดอยู่ {sum(u=>u.state==='cleaning')} · ใช้เวลา {CLEANING_MIN} นาที</span></div>
-   <div className="tile"><small>เตียง ER ว่าง</small><b>{sum(u=>u.state==='free',f=>f.buildingId==='er')}<em> เตียง</em></b><span className={sum(u=>u.state==='boarding')?'warnText':'muted'}>ค้างรอเตียงหอผู้ป่วย {sum(u=>u.state==='boarding')} คน</span></div>
-   <div className="tile"><small>ห้องตรวจ OPD พร้อมตรวจ</small><b>{sum(u=>u.state==='free',f=>f.buildingId==='opd')}<em> ห้อง</em></b><span className="muted">กำลังตรวจ {sum(u=>u.state==='busy',f=>f.buildingId==='opd')} · แพทย์พัก {sum(u=>u.state==='break')}</span></div>
+   <div className="tile"><small>เตียงหอผู้ป่วยว่าง</small><b>{sum(u=>u.state==='free',f=>f.area==='ward')}<em> เตียง</em></b><span className="muted">ทำความสะอาดอยู่ {sum(u=>u.state==='cleaning')} · ใช้เวลา {CLEANING_MIN} นาที</span></div>
+   <div className="tile"><small>เตียง ER ว่าง</small><b>{sum(u=>u.state==='free',f=>f.area==='er')}<em> เตียง</em></b><span className={sum(u=>u.state==='boarding')?'warnText':'muted'}>ค้างรอเตียงหอผู้ป่วย {sum(u=>u.state==='boarding')} คน</span></div>
+   <div className="tile"><small>ห้องตรวจ OPD พร้อมตรวจ</small><b>{sum(u=>u.state==='free',f=>f.area==='clinic')}<em> ห้อง</em></b><span className="muted">กำลังตรวจ {sum(u=>u.state==='busy',f=>f.area==='clinic')} · แพทย์พัก {sum(u=>u.state==='break')}</span></div>
    <div className="tile"><small>ชั้นที่เต็ม</small><b>{floors.filter(f=>fillOf(f).startsWith('full')).length}<em> ชั้น</em></b><span className="muted">{floors.filter(f=>fillOf(f).startsWith('full')).map(f=>`${shortBuilding(f.buildingName)} ${f.level}`).join(', ') || 'ไม่มี'}</span></div>
   </div>
 
@@ -112,7 +112,7 @@ export default function CapacityPage({patients,minute,timeNote,onOpenPatient}:{p
      <h3>{shortBuilding(floor.buildingName)} ชั้น {floor.level}</h3>
      <p className="muted">คลิก{floor.unitName}หรือผู้ป่วยในผังเพื่อดูรายละเอียด</p>
      <dl><dt>{floor.unitName}ว่าง</dt><dd>{floor.units.filter(u=>u.state==='free').map(u=>u.name.replace(/^เตียง /,'')).join(', ') || '—'}</dd>
-      {floor.unitName==='เตียง' && floor.buildingId==='inpatient' && <><dt>กลับบ้านวันนี้</dt><dd>{floor.units.filter(u=>u.state==='leaving').map(u=>`${u.name.replace(/^เตียง /,'')} (${fmtMin(u.until!)})`).join(', ') || '—'}</dd></>}
+      {floor.unitName==='เตียง' && floor.area==='ward' && <><dt>กลับบ้านวันนี้</dt><dd>{floor.units.filter(u=>u.state==='leaving').map(u=>`${u.name.replace(/^เตียง /,'')} (${fmtMin(u.until!)})`).join(', ') || '—'}</dd></>}
       <dt>{floor.waitingText}</dt><dd>{floor.waiting} คน</dd></dl>
     </>}
     <p className="contact"><Phone size={13}/> เบอร์ภายใน {extOf(floor)} <small className="muted">(จำลอง)</small></p>

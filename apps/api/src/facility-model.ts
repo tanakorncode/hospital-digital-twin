@@ -37,9 +37,11 @@ export type ServiceGroup = { id: string; departmentId: string; name: string; flo
 // group. inRoomId: a bed inside a room. map: a fixed spot (kiosks; drag-to-place later) — none = laid out automatically.
 export type ServicePoint = { id: string; groupId: string; number: number; name?: string; roomCode?: string; floorId?: string; roomKind?: RoomKind;
   inRoomId?: string; map?: { x: number; z: number }; active: boolean; retiredAt?: string };
-// Scenery around the buildings (roads, car parks, unlabelled neighbouring blocks).
+// Scenery around the buildings: roads, car parks, paved plazas (besides the one around each building), unlabelled
+// neighbouring blocks, and the walking routes the map draws (kind = the building type whose hours the route follows).
 export type Rect = [number, number, number, number];
-export type Site = { roads: Rect[]; parking: Rect[]; fillers: { id: string; x: number; z: number; width: number; depth: number; floors: number; color: string }[] };
+export type Flow = { id: string; name: string; color: string; kind: BuildingKind; points: [number, number][] };
+export type Site = { roads: Rect[]; parking: Rect[]; plazas?: Rect[]; fillers: { id: string; x: number; z: number; width: number; depth: number; floors: number; color: string }[]; flows?: Flow[] };
 
 export type FacilityData = { buildings: Building[]; floors: Floor[]; departments: Department[]; groups: ServiceGroup[]; points: ServicePoint[]; site: Site };
 export type Facility = FacilityData & { version: number; publishedAt: string };
@@ -207,7 +209,10 @@ export function validateFacility(input: unknown): { data?: FacilityData; issues:
   const site = (d.site ?? { roads: [], parking: [], fillers: [] }) as Partial<Site>;
   if (!Array.isArray(site.roads) || site.roads.length > LIMITS.roads || !site.roads.every(isRect) || !Array.isArray(site.parking) || site.parking.length > LIMITS.roads || !site.parking.every(isRect)
     || !Array.isArray(site.fillers) || site.fillers.length > LIMITS.fillers
-    || !site.fillers.every((f) => f && ID_RE.test(f.id) && isNum(f.x, -500, 500) && isNum(f.z, -500, 500) && isNum(f.width, 1, 200) && isNum(f.depth, 1, 200) && Number.isInteger(f.floors) && f.floors >= 1 && f.floors <= 60 && isColor(f.color)))
+    || !site.fillers.every((f) => f && ID_RE.test(f.id) && isNum(f.x, -500, 500) && isNum(f.z, -500, 500) && isNum(f.width, 1, 200) && isNum(f.depth, 1, 200) && Number.isInteger(f.floors) && f.floors >= 1 && f.floors <= 60 && isColor(f.color))
+    || (site.plazas !== undefined && !(Array.isArray(site.plazas) && site.plazas.length <= LIMITS.roads && site.plazas.every(isRect)))
+    || (site.flows !== undefined && !(Array.isArray(site.flows) && site.flows.length <= 20 && site.flows.every((f) => f && ID_RE.test(f.id) && isStr(f.name, LIMITS.name) && isColor(f.color)
+      && BUILDING_KINDS.includes(f.kind) && Array.isArray(f.points) && f.points.length >= 2 && f.points.length <= 40 && f.points.every((p) => Array.isArray(p) && p.length === 2 && p.every((n) => isNum(n, -500, 500)))))))
     err('ผังพื้นที่รอบอาคาร (ถนน ลานจอดรถ อาคารประกอบ) ไม่ถูกต้อง');
   if (issues.length) return { issues };
 

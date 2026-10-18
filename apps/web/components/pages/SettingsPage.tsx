@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Archive, BellRing, Pencil, Smile, Building2, CalendarClock, Clock, Database, MessageCircle, Navigation, ScrollText, Stethoscope, FlaskConical, History, KeyRound, Layers, Minus, Plus, RotateCcw, Search, Sparkles, Trash2, UserCog, X, type LucideIcon } from 'lucide-react';
 import { fmtMin, opdClinics, screeningCounters, screeningStationId, type Clinic } from '../../lib/patients';
 import { CLINIC_FLOORS, DEFAULT_HOURS, buildingStats, builtInDeptCount, builtInDeptName, buildings, roomsPerFloor, type CustomDept } from '../../lib/scene-data';
+import { buildingShort, erDepartment, fDepartment, fGroup, sampleFacility } from '../../lib/facility';
 import { BookingAdminPane } from './Booking';
 import { ApptAdminPane } from './Appointments';
 import { NotificationsPane } from './Notifications';
@@ -225,7 +226,7 @@ function GroupsPane({settings,commit,focus}:{settings:QueueSettings;commit:Commi
      {!shown.length && <p className="muted">ไม่พบ</p>}</div>
    </aside>
    <div className="grpEdit">
-    <div className="grpEditHead"><div><b>{g.name}</b><small>{g.stations.length} {g.id.startsWith('exam:')?'ห้องตรวจ':'ช่อง'} · {g.section}</small></div>
+    <div className="grpEditHead"><div><b>{g.name}</b><small>{g.stations.length} {fGroup(g.id)?.pointNoun ?? 'ช่อง'} · {g.section}</small></div>
      {isCustom(g) && <button className="linkBtn dark" onClick={()=>{ setD({}); setCaps(Object.fromEntries(g.stations.map(st=>[st.id,undefined]))); }}><RotateCcw size={13}/> ล้างค่าเฉพาะแผนกนี้</button>}</div>
     <h4 className="setSub">ระดับการช่วย</h4>
     <ModePick value={d.mode} inherited={settings.system.mode} onChange={m=>setD(x=>{ const n = {...x}; if (m) n.mode = m; else delete n.mode; return n; })}/>
@@ -312,14 +313,15 @@ function DataPane({settings,commit,linking}:{settings:QueueSettings;commit:Commi
 type Unit = {id:string; label:string};
 type UnitGroup = {key:string; title:string; units:Unit[]; min:string}; // min: why the last one cannot be switched off
 const deptId = (name:string) => `dept:${name}`;
-const ROOMS_PER_FLOOR = roomsPerFloor(buildings.find(b=>b.id==='opd')!);
+// The old layout page shares out the sample hospital's rooms per OPD floor (the facility settings page replaces it).
+const ROOMS_PER_FLOOR = (()=>{ const b = sampleFacility().buildings.find(x=>x.kind==='opd'); return b ? roomsPerFloor({...b,...b.map,kind:'opd',floors:0}) : 6; })();
 // Same sharing as floorRooms: room k belongs to the department whose band its centre falls in.
 const roomShare = (n:number, m:number) => Array.from({length:m},(_,i)=>Array.from({length:n},(_,k)=>k).filter(k=>Math.min(m-1,Math.floor((k+0.5)/n*m))===i).length);
 const clinicUnits = (c:Clinic):UnitGroup[] => [
  {key:`rooms:${c.key}`,title:'ห้องตรวจ',units:c.rooms.map(r=>({id:`room:${r.id}`,label:`ห้อง ${r.number}`})),min:'ต้องเปิดอย่างน้อย 1 ห้อง · ถ้าไม่ใช้ทั้งแผนก ให้ปิดแผนก'},
  {key:`screen:${c.key}`,title:'ซักประวัติ',units:Array.from({length:screeningCounters(c)},(_,i)=>({id:screeningStationId(c.key,i),label:`ช่อง ${i+1}`})),min:'ต้องเปิดอย่างน้อย 1 ช่อง · ถ้าไม่ใช้ทั้งแผนก ให้ปิดแผนก'}];
-const sharedUnits = ():(UnitGroup & {where:string})[] => counterServices.map(({kind,section})=>{ const list = everyStation().filter(st=>st.group===`counter:${kind}`);
- return {key:kind,title:section,where:`${list[0]?.buildingId==='opd'?'OPD':list[0]?.buildingId==='er'?'ER':'ศูนย์การแพทย์'} ชั้น ${list[0]?.level ?? 1}`,units:list.map(st=>({id:st.id,label:st.label})),min:'บริการนี้ต้องเปิดอย่างน้อย 1 จุด'}; });
+const sharedUnits = ():(UnitGroup & {where:string})[] => counterServices.map(({group,section,name})=>{ const list = everyStation().filter(st=>st.group===group);
+ return {key:group,title:section===name ? section : `${section} · ${name}`,where:`${buildingShort(list[0]?.buildingId)} ชั้น ${list[0]?.level ?? 1}`,units:list.map(st=>({id:st.id,label:st.label})),min:'บริการนี้ต้องเปิดอย่างน้อย 1 จุด'}; });
 type Filter = 'all'|'opd'|'shared'|'off';
 
 function UnitsPane({settings,commit}:{settings:QueueSettings;commit:Commit}) {
@@ -499,10 +501,10 @@ const roleHint:Record<Role,string> = {admin:'ทุกอย่าง รวม�
 const ROLE_LIST:Role[] = ['staff','supervisor','admin'];
 // Which clinics an account works for: bookings, appointments, check-in and walk-ins are limited to these (checked on
 // the server). None ticked = every clinic — for registration, the kiosk account and anyone covering the whole hospital.
-const clinicLabel = (k:string) => k==='er' ? 'ห้องฉุกเฉิน' : opdClinics().find(c=>c.key===k)?.dept ?? k;
+const clinicLabel = (k:string) => fDepartment(k)?.name ?? k;
 const scopeText = (u:AuthUser) => u.role==='admin' || !u.clinics?.length ? 'ทุกแผนก' : u.clinics.length<=2 ? u.clinics.map(clinicLabel).join(', ') : `${u.clinics.length} แผนก`;
 function ClinicScope({value,onChange}:{value:string[];onChange:(v:string[])=>void}) {
- const options = useMemo(()=>[...opdClinics().map(c=>({key:c.key,label:c.dept,sub:`ชั้น ${c.level}`})),{key:'er',label:'ห้องฉุกเฉิน',sub:'ER'}],[]);
+ const options = useMemo(()=>{ const er = erDepartment(); return [...opdClinics().map(c=>({key:c.key,label:c.dept,sub:`${buildingShort(c.buildingId)} ชั้น ${c.level}`})),...(er ? [{key:er.id,label:er.name,sub:'ER'}] : [])]; },[]);
  const flip = (k:string) => onChange(value.includes(k) ? value.filter(x=>x!==k) : [...value,k]);
  return <div className="addField"><span>แผนกที่รับผิดชอบ <small className="muted">{value.length ? `${value.length} แผนก — จอง นัด เช็กอิน และรับผู้ป่วยได้เฉพาะแผนกเหล่านี้` : 'ไม่เลือก = ทุกแผนก (เช่น เวชระเบียน เคาน์เตอร์กลาง บัญชีตู้เช็กอิน)'}</small></span>
   <div className="scopePick">{options.map(o=><label key={o.key} className={value.includes(o.key)?'on':''}><input type="checkbox" checked={value.includes(o.key)} onChange={()=>flip(o.key)}/><b>{o.label}</b><small>{o.sub}</small></label>)}

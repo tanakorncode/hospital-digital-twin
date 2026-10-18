@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ReceptionShell } from '../../components/reception/ReceptionShell';
 import { KioskClient, saveCredential, savedCredential, type Capabilities } from '../../lib/reception/client';
+import { useFacility } from '../../lib/use-facility';
 
 // Digital Reception kiosk (/reception) — a public touch screen, separate from the check-in kiosk (/kiosk). The device
 // signs in with its own credential (Settings → ตู้ต้อนรับ), never with a staff account. Setup: open this page on the
@@ -9,6 +10,7 @@ import { KioskClient, saveCredential, savedCredential, type Capabilities } from 
 type State = {kind:'loading'} | {kind:'setup'; error?:string} | {kind:'closed'; reason:string} | {kind:'ready'; client:KioskClient; caps:Capabilities};
 
 export default function ReceptionPage() {
+ useFacility(true); // the hospital's places for directions
  const [state,setState] = useState<State>({kind:'loading'});
  const hold = useRef<ReturnType<typeof setTimeout>|undefined>(undefined);
  const connect = async (credential:string) => {

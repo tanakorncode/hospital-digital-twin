@@ -3,7 +3,7 @@
 // cashier), so no extra data entry for doctors or nurses. No names: an opaque id, queue number and HN.
 import { bandIndex, buildings, builtInDeptCount, counterSpot, floorBands, floorRooms, floorY, isDoctorRoom, findRoom, isOff, kiosks, layoutRevision, parkingLots, roomOpenIntervals, roomSpot, waitingSpot,
   type Room, type Spot, getServiceHours, opdOpenMin } from './scene-data';
-import { buildingShort, erDepartment, fBuildings, fDepartment, fDepartments, fFloor, fFloors, fGroup, fPoints, groupsForStep, groupsOf, pointFloor, pointLabel, pointsOf,
+import { buildingShort, erDepartment, facility, fBuildings, fDepartment, fDepartments, fFloor, fFloors, fGroup, fPoints, groupsForStep, groupsOf, pointFloor, pointLabel, pointsOf,
   onFacility, type FGroup, type FPoint } from './facility';
 
 export type StepKind = 'kiosk'|'registration'|'screening'|'exam'|'lab'|'labResult'|'xray'|'followup'|'pharmacy'|'finance'|'triage'|'treatment'|'admit'|'ward'|'leave';
@@ -178,6 +178,15 @@ function bedSpots():BedSpot[] {
   bedCache = {rev:layoutRevision(),list};
   return list;
 }
+// What stands in one department's band of a floor (for the floor plan): its booths (blood draw) and its beds that are
+// not in a room or the open ward (resuscitation bays).
+export function bandBooths(buildingId:string, level:number, deptId:string) {
+  const fl = facility().floors.find(x=>x.buildingId===buildingId && x.level===level && !x.retiredAt);
+  return groupsOf(deptId).filter(g=>g.floorId===fl?.id && g.options?.arrange==='booths').flatMap(g=>{ const pts = pointsOf(g.id); return pts.map((p,i)=>({name:pointLabel(p),spot:boothSpot(g,i,pts.length)})); });
+}
+export function bandBeds(buildingId:string, level:number, deptId:string) {
+  return bedSpots().filter(x=>!x.room && !x.g.steps.includes('ward') && x.g.departmentId===deptId && x.buildingId===buildingId && x.level===level).map(x=>({name:x.g.name,spot:x.spot}));
+}
 // Where a queue station's patient stands: across the desk in a room, at the counter, at a booth, beside a bed.
 export function stationSpot(p:FPoint):Spot|undefined {
   const g = fGroup(p.groupId), fl = pointFloor(p); if (!g || !fl) return undefined;
@@ -274,12 +283,10 @@ export function generatePatients(dayKey:string, opts:GenerateOptions={}):Patient
   const pools = new Map<string,Server[]>();
   const pool = (key:string, n:number, open:[number,number][], extra:(i:number)=>Partial<Server> = ()=>({})) =>
     pools.set(key,Array.from({length:n},(_,i)=>({free:0,open,idx:i,count:n,...extra(i)})));
-  // Counters switched off in Settings take no patients; idx stays the physical counter (its spot and station id).
-  // A whole service is never switched off — if every counter is off the service keeps them all.
-  const counterPool = (key:string, kind:string, n:number, open:[number,number][], on?:number[]) => {
-    const live = on ?? Array.from({length:n},(_,i)=>i).filter(i=>!isOff(`counter:${kind}:${i+1}`));
-    pools.set(key,(live.length ? live : Array.from({length:n},(_,i)=>i)).map(i=>({free:0,open,idx:i,count:n})));
-  };
+  // A clinic's screening counters: the ones switched on take patients; idx stays the physical counter (its spot and
+  // station id). A clinic whose counters are all off keeps them all.
+  const counterPool = (key:string, n:number, open:[number,number][], on:number[]) =>
+    pools.set(key,(on.length ? on : Array.from({length:n},(_,i)=>i)).map(i=>({free:0,open,idx:i,count:n})));
   // A shared step's servers: its points in the facility (`n` of them; a what-if count above that adds counters to the
   // first group), each with its station and spot. Points switched off take no patients, unless every one is off.
   const stepPool = (kind:StepKind, n:number, open:[number,number][]) => {
@@ -300,7 +307,7 @@ export function generatePatients(dayKey:string, opts:GenerateOptions={}):Patient
   stepPool('triage',cap.triage,allDay); pool('resus',resusSpots.length,allDay,i=>({room:erRooms[0],spot:resusSpots[i].spot}));
   pool('erBed',erSpots.length ? cap.erBeds : 0,allDay,i=>({room:erSpots[i%erSpots.length].room,spot:erSpots[i%erSpots.length].spot}));
   clinics.forEach(c=>{
-    counterPool(`screening:${c.key}`,'',screeningCounters(c,cap.screening),counters,clinicScreensOn(c,cap.screening));
+    counterPool(`screening:${c.key}`,screeningCounters(c,cap.screening),counters,clinicScreensOn(c,cap.screening));
     const extra = cap.extraRooms[c.key] ?? 0, rooms = clinicRoomsOn(c).length ? clinicRoomsOn(c) : c.rooms;
     pools.set(`exam:${c.key}`,[...rooms.map((room,i)=>({free:0,open:roomOpenIntervals(room),idx:i,count:rooms.length,room})),
       ...Array.from({length:extra},(_,i)=>({free:0,open:[[8*60,16*60]] as [number,number][],idx:c.rooms.length+i,count:c.rooms.length+extra,room:c.rooms[0]}))]);

@@ -73,7 +73,9 @@ export const unitStateText:Record<UnitKind,Partial<Record<UnitState,string>>> = 
 };
 export type Unit = {id:string; name:string; kind:UnitKind; dept:string; state:UnitState; at:Spot; mat:{x:number;z:number;w:number;d:number};
   patient?:PatientState; doctor?:string; until?:number; note:string};
-export type CapFloor = {key:string; buildingId:string; buildingName:string; level:number; unitName:string; units:Unit[]; depts:string[];
+// area: what the floor's units are — clinic exam rooms, ER beds, ward beds, blood-draw stations, x-ray rooms.
+export type CapArea = 'clinic'|'er'|'ward'|'lab'|'xray';
+export type CapFloor = {key:string; area:CapArea; buildingId:string; buildingName:string; level:number; unitName:string; units:Unit[]; depts:string[];
   free:number; inUse:number; total:number; waiting:number; waitingText:string};
 const posKey = (p:Spot) => `${p.x.toFixed(2)},${p.y.toFixed(2)},${p.z.toFixed(2)}`;
 const bedMat = (sp:Spot) => ({x:sp.x,z:sp.z,w:0.82,d:1.32});
@@ -85,8 +87,8 @@ export function capacityBoard(patients:Patient[], minute:number):CapFloor[] {
   const deptsOf = (id:string, level:number) => buildingStats[id]?.floors.find(f=>f.level===level)?.depts ?? [];
   const nameOf = (id:string) => buildings.find(b=>b.id===id)?.name ?? id;
   const waitingWhere = (pred:(s:PatientState)=>boolean) => now.filter(s=>minute<s.step.called && pred(s)).length;
-  const floor = (buildingId:string, level:number, unitName:string, units:Unit[], waiting:number, waitingText:string):CapFloor => ({
-    key:`${buildingId}-${level}`,buildingId,buildingName:nameOf(buildingId),level,unitName,units,depts:[...new Set(units.map(u=>u.dept))],
+  const floor = (area:CapArea, buildingId:string, level:number, unitName:string, units:Unit[], waiting:number, waitingText:string):CapFloor => ({
+    key:`${buildingId}-${level}-${area}`,area,buildingId,buildingName:nameOf(buildingId),level,unitName,units,depts:[...new Set(units.map(u=>u.dept))],
     free:units.filter(u=>u.state==='free').length,inUse:units.filter(u=>u.state==='busy'||u.state==='leaving'||u.state==='boarding').length,
     total:units.filter(u=>u.state!=='closed').length,waiting,waitingText});
   const out:CapFloor[] = [];
@@ -106,7 +108,7 @@ export function capacityBoard(patients:Patient[], minute:number):CapFloor[] {
         doctor:duty?.current && duty.status!=='vacant' ? doctorName(duty.current.doctor,true) : undefined,
         note:occ ? occ.p.queue : state==='free' ? 'ว่าง' : state==='break' ? 'พัก' : 'ไม่มีแพทย์'};
     });
-    out.push(floor(buildingId,level,'ห้องตรวจ',units,waitingWhere(s=>(s.step.kind==='exam'||s.step.kind==='followup') && s.area.buildingId===buildingId && s.area.level===level),'รอพบแพทย์'));
+    out.push(floor('clinic',buildingId,level,'ห้องตรวจ',units,waitingWhere(s=>(s.step.kind==='exam'||s.step.kind==='followup') && s.area.buildingId===buildingId && s.area.level===level),'รอพบแพทย์'));
   }
   // ER: treatment beds and resuscitation bays.
   const er = servicePlace('er');
@@ -116,7 +118,7 @@ export function capacityBoard(patients:Patient[], minute:number):CapFloor[] {
       return {id:u.id,name:u.name,kind:'bed',dept:u.dept ?? '',state:boarding?'boarding':occ?'busy':'free',at:u.spot,mat:bedMat(u.spot),patient:occ,
         note:boarding ? `รอเตียง ${Math.round(occ!.stepWait)} น.` : occ ? occ.p.queue : 'ว่าง'};
     });
-    out.push(floor(er.buildingId,er.level,'เตียง',units,waitingWhere(s=>s.step.kind==='treatment'),'รอรักษา'));
+    out.push(floor('er',er.buildingId,er.level,'เตียง',units,waitingWhere(s=>s.step.kind==='treatment'),'รอรักษา'));
   }
   // Inpatient wards.
   const ward = bedBoard(patients,minute);
@@ -127,14 +129,14 @@ export function capacityBoard(patients:Patient[], minute:number):CapFloor[] {
       return {id:b.id,name:`เตียง ${b.bed}`,kind:'bed',dept:b.dept,state,at:b.spot,mat:bedMat(b.spot),patient:occ,until:b.until,
         note:state==='leaving'?`กลับ ${fmtMin(b.until!)}`:state==='cleaning'?`สะอาด ${fmtMin(b.until!)}`:state==='free'?'ว่าง':''};
     });
-    out.push(floor(f.buildingId,f.level,'เตียง',units,f.waitingAdmit,'รอเข้าจาก ER'));
+    out.push(floor('ward',f.buildingId,f.level,'เตียง',units,f.waitingAdmit,'รอเข้าจาก ER'));
   });
   // Blood-draw stations and x-ray rooms.
   const lab = servicePlace('lab');
   if (lab) {
     const labs = labStationSpots(DEFAULT_CAPACITY.lab).map<Unit>(u=>{ const occ = byPos.get(posKey(u.spot));
       return {id:u.id,name:u.name,kind:'station',dept:lab.name,state:occ?'busy':'free',at:u.spot,mat:{x:u.spot.x,z:u.spot.z-0.2,w:0.9,d:1.1},patient:occ,note:occ?occ.p.queue:'ว่าง'}; });
-    out.push(floor(lab.buildingId,lab.level,'จุดเจาะเลือด',labs,waitingWhere(s=>s.step.kind==='lab'),'รอเจาะเลือด'));
+    out.push(floor('lab',lab.buildingId,lab.level,'จุดเจาะเลือด',labs,waitingWhere(s=>s.step.kind==='lab'),'รอเจาะเลือด'));
   }
   const xray = servicePlace('xray'), xrooms = xrayRoomSpots(), dx = xray && buildings.find(b=>b.id===xray.buildingId);
   if (xray && dx && xrooms.length) {
@@ -142,7 +144,7 @@ export function capacityBoard(patients:Patient[], minute:number):CapFloor[] {
     const xr = xrooms.map<Unit>(u=>{ const occ = byPos.get(posKey(u.spot)), x0 = dx.x-dx.width/2+u.room!.index*rw;
       return {id:u.id,name:u.name,kind:'station',dept:xray.name,state:occ?'busy':'free',at:u.spot,
         mat:{x:x0+rw/2,z:dx.z-dx.depth/2+d/2,w:rw-0.15,d:d-0.15},patient:occ,note:occ?occ.p.queue:'ว่าง'}; });
-    out.push(floor(xray.buildingId,xray.level,'ห้องเอกซเรย์',xr,waitingWhere(s=>s.step.kind==='xray'),'รอเอกซเรย์'));
+    out.push(floor('xray',xray.buildingId,xray.level,'ห้องเอกซเรย์',xr,waitingWhere(s=>s.step.kind==='xray'),'รอเอกซเรย์'));
   }
   return out;
 }

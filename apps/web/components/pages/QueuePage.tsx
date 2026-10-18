@@ -8,11 +8,13 @@ import { LineLinkTab } from './LineLink';
 import dynamic from 'next/dynamic';
 import QRCode from 'qrcode';
 import { ArrowLeftRight, BellRing, CalendarCheck, CalendarClock, Camera, Link2, Coffee, Copy, Hand, Lock, LockOpen, MapPin, QrCode, Sparkles, CheckCircle2, ChevronDown, ChevronRight, ClipboardList, ExternalLink, HeartPulse, LayoutList, List, Map as MapIcon, Megaphone, Pause, PhoneCall, Pill, Play, Repeat, ScanLine, Settings2, Siren, SkipForward, Stethoscope, TestTube, UserCheck, Volume2, VolumeX, Wallet, X } from 'lucide-react';
-import { LONG_WAIT, NO_SHOW, fmtDur, fmtMin, maskHN, opdClinics, patientAt, patientToken, placeText, statusColor, statusText, stepText, triageLevels, type Patient, type PatientState, type PatientStatus, type StepKind } from '../../lib/patients';
+import { LONG_WAIT, NO_SHOW, fmtDur, fmtMin, maskHN, opdClinics, servicePlace, patientAt, patientToken, placeText, statusColor, statusText, stepText, triageLevels, type Patient, type PatientState, type PatientStatus, type StepKind } from '../../lib/patients';
 import { erBoard, serviceNote } from '../../lib/ops';
 import { DEFAULT_POLICY, SYSTEM_BY, actionText, openReports, groupName, moveNote, sameZone, allStations, everyStation, announce, capFor, healthText, modeText, rulesFor, scopeName, suggestionText, type AssistView, type Suggestion, groupOf, openStations, priorityOf, stationById, stationDoctor, stationQueue, stepGroup, type PriorityPolicy, type QueueCommand, type QueueEvent, type QueueSettings, type SettingsPatch, type Station, type AuthUser, type QueueSync, useTicket, canDo, isLive } from '../../lib/queue';
 
-import { DEFAULT_HOURS, buildings, floorRooms, layoutRevision, waitingSeats, deptArea } from '../../lib/scene-data';
+import { DEFAULT_HOURS, bandIndex, buildings, floorRooms, layoutRevision, placeName, waitingSeats, deptArea } from '../../lib/scene-data';
+import { buildingShort, erDepartment, fGroup, pointsOf } from '../../lib/facility';
+import { counterZones } from '../../lib/queue-screen';
 import FloorPlanSvg from '../FloorPlanSvg';
 import type { FloorUnit, SceneMode } from '../HospitalScene';
 import { Select } from '../Select';
@@ -396,7 +398,7 @@ function StationConsole({patients,minute,queue,onOpen,assist,onOpenSettings}:{pa
    {!!q?.calledElsewhere.length && <p className="note">กำลังถูกเรียกที่จุดอื่น: {q.calledElsewhere.map(s=>`${s.p.queue} (${stationById(s.step.manual)?.label})`).join(', ')}</p>}
    <span className="tvLinks"><a className="tvLink" href={`/tv?station=${encodeURIComponent(st.id)}`} target="_blank" rel="noreferrer">จอหน้า{st.roomId?'ห้อง':'ช่อง'}นี้ <ExternalLink size={12}/></a>
     <a className="tvLink" href={`/tv?dept=${encodeURIComponent(st.clinicKey ? st.section.split(' · ').slice(-1)[0] : st.section)}`} target="_blank" rel="noreferrer">จอพื้นที่รอ <ExternalLink size={12}/></a>
-    {st.buildingId==='opd' && <a className="tvLink" href={`/tv?floor=${st.level}`} target="_blank" rel="noreferrer">จอรวมชั้น {st.level} <ExternalLink size={12}/></a>}</span>
+    {hasFloorTv(st) && <a className="tvLink" href={`/tv?floor=${st.level}`} target="_blank" rel="noreferrer">จอรวมชั้น {st.level} <ExternalLink size={12}/></a>}</span>
   </section>
   {moving && <MoveDialog s={moving} from={st} patients={patients} minute={m} openIds={openIds} assist={assist} onClose={()=>setMoveFor(null)} onMove={(t,pos,r)=>void move(moving,t,pos,r)}/>}
   {camera && <CameraScanner onResult={t=>{ setCamera(false); findScanned(t); }} onClose={()=>setCamera(false)}/>}
@@ -493,14 +495,18 @@ const typeOf = (s:Station) => s.kinds[0]==='followup' ? 'exam' : s.kinds[0];
 const typeInfo = (s:Station) => stationTypes.find(t=>t[0]===typeOf(s))!;
 const norm = (t:string) => t.toLowerCase().replace(/\s+/g,'');
 const floorKey = (s:Station) => `${s.buildingId}:${s.level}`;
-const floorName = (s:Station) => `${s.buildingId==='opd'?'OPD':s.buildingId==='er'?'อาคารฉุกเฉิน':'ศูนย์การแพทย์'} ชั้น ${s.level}`;
-const floorOrder = ['opd','diagnostics','er'];
+// A building as the floor lists name it: the OPD by its short name, the others by their own name.
+const floorName = (s:Station) => { const b = buildings.find(x=>x.id===s.buildingId); return `${b?.kind==='opd' ? buildingShort(s.buildingId) : b ? placeName(b) : s.buildingId} ชั้น ${s.level}`; };
+// Floors in the facility's building order.
+const floorOrder = {indexOf:(id:string)=>buildings.findIndex(b=>b.id===id)};
 const loadLevel = (n:number) => n>=12 ? 'critical' : n>=6 ? 'busy' : 'normal';
 const loadText = {normal:'คิวปกติ',busy:'คิวเริ่มยาว',critical:'คิวยาว'};
 // Read live: departments can be added in Settings.
 const clinicLetter = {get:(key:string)=>opdClinics().find(c=>c.key===key)?.letter};
-// Which waiting band of the floor a station faces (clinics: their own band; OPD floor 1: registration, pharmacy, finance).
-const zoneOf = (st:Station) => st.clinicKey ? opdClinics().find(c=>c.key===st.clinicKey)?.deptIndex : st.buildingId==='opd' && st.level===1 ? ({registration:0,pharmacy:1,finance:2} as Record<string,number>)[st.kinds[0]] : undefined;
+// Which waiting band of the floor a station faces (its department's band on that floor).
+const zoneOf = (st:Station) => { const d = fGroup(st.group)?.departmentId, i = d ? bandIndex(st.buildingId,st.level,d) : -1; return i>=0 ? i : undefined; };
+// The /tv floor screen exists for floors with clinics and for the shared counters' floor.
+const hasFloorTv = (st:Station) => opdClinics().some(c=>c.buildingId===st.buildingId && c.level===st.level) || counterZones().some(z=>z.buildingId===st.buildingId && z.level===st.level);
 
 function StationPicker({stations,patients,minute,openIds,current,onPick,onCancel}:{stations:Station[];patients:Patient[];minute:number;openIds:Set<string>;current?:Station;onPick:(id:string)=>void;onCancel?:()=>void}) {
  const [q,setQ] = useState('');
@@ -561,7 +567,8 @@ function StationPicker({stations,patients,minute,openIds,current,onPick,onCancel
 // (registration, pharmacy, finance, a clinic's screening desks) share one mark so labels never pile up.
 function floorStationMarks(floor:string, here:Station[], labelOf:(id:string,list:Station[])=>string, stateOf:(list:Station[])=>string) {
  const [buildingId,lv] = floor.split(':'), level = Number(lv);
- const grouped = (s:Station) => (s.group.startsWith('counter:') && buildingId==='opd') || s.group.startsWith('screening:');
+ // Counters side by side (one long counter, several points) are shown as one group on the plan.
+ const grouped = (s:Station) => { const g = fGroup(s.group); return !!g && g.pointKind==='counter' && g.options?.arrange!=='booths' && pointsOf(g.id).length>1; };
  const b = buildings.find(x=>x.id===buildingId)!, rooms = floorRooms(buildingId,level), rw = b.width/Math.max(1,rooms.length), dz = b.depth*0.42;
  const roomMat = (roomId?:string, name?:string) => { const r = rooms.find(x=>x.id===roomId || x.name===name); if (!r) return undefined;
   const x0 = b.x-b.width/2+r.index*rw, z0 = b.z-b.depth/2; return {x:x0+rw/2,z:z0+dz/2,w:rw-0.15,d:dz-0.15}; };
@@ -644,11 +651,13 @@ type GroupKey = 'dept'|'floor'|'station'|'doctor'|'status'|'step';
 const groupKeys:[GroupKey,string][] = [['dept','แผนก / จุดบริการ'],['station','ห้อง / ช่อง'],['doctor','แพทย์'],['status','สถานะ'],['floor','อาคาร / ชั้น'],['step','ขั้นตอน']];
 const overviewStatuses:(PatientStatus|'all')[] = ['all','long','calling','serving','held','missed','result'];
 // Board cards: a clinic (screening → exam → follow-up) or a shared service point (registration, lab, pharmacy…).
-const svcCard:Record<string,[string,string]> = {registration:['ลงทะเบียน','registration'],lab:['ห้องเจาะเลือด','lab'],xray:['รังสีวิทยา','xray'],pharmacy:['ห้องยา','pharmacy'],finance:['การเงิน','finance'],er:['ห้องฉุกเฉิน','triage']};
+// A shared service card: its step ('er' = the ER, starting at triage) and its department's name in the facility.
+const svcStep = (key:string) => (key==='er' ? 'triage' : key) as StepKind;
+const svcName = (key:string) => key==='er' ? erDepartment()?.name : servicePlace(svcStep(key))?.name;
 const cardKeyOf = (s:PatientState) => s.p.flow==='er' && ['triage','treatment','admit'].includes(s.step.kind) ? 'er'
  : s.p.clinicKey && ['screening','exam','followup','labResult'].includes(s.step.kind) ? `clinic:${s.p.clinicKey}` : s.step.kind;
 const clinicsByKey = {get:(key:string)=>opdClinics().find(c=>c.key===key)};
-const cardName = (key:string) => key.startsWith('clinic:') ? clinicsByKey.get(key.slice(7))?.dept ?? key : svcCard[key]?.[0] ?? stepText[key as StepKind]?.serve ?? key;
+const cardName = (key:string) => key.startsWith('clinic:') ? clinicsByKey.get(key.slice(7))?.dept ?? key : svcName(key) ?? stepText[key as StepKind]?.serve ?? key;
 const severityText = {critical:'วิกฤต',warn:'เฝ้าระวัง',ok:'ปกติ'} as const;
 type SavedView = {name:string; g1:GroupKey; g2:GroupKey|''; filter:PatientStatus|'all'; q:string};
 function OverviewTab({patients,m,onOpen,queue,assist,onOpenSettings,onOpenPlace}:{patients:Patient[];m:number;onOpen:(id:string)=>void;queue:QueueControl;assist:AssistView;onOpenSettings:(group:string|null)=>void;onOpenPlace:OpenPlace}) {
@@ -712,17 +721,17 @@ function OverviewTab({patients,m,onOpen,queue,assist,onOpenSettings,onOpenPlace}
   return [...map.entries()].map(([key,list])=>{
    const w = list.filter(s=>m<s.step.called && (s.status==='waiting'||s.status==='long'));
    const long = w.filter(s=>s.status==='long').length, max = w.length ? Math.max(...w.map(s=>s.stepWait)) : 0, avg = w.length ? w.reduce((n,s)=>n+s.stepWait,0)/w.length : 0;
-   const stations = key.startsWith('clinic:') ? allStations().filter(st=>st.clinicKey===key.slice(7)) : allStations().filter(st=>st.group===`counter:${svcCard[key]?.[1] ?? key}`);
+   const stations = key.startsWith('clinic:') ? allStations().filter(st=>st.clinicKey===key.slice(7)) : allStations().filter(st=>!st.clinicKey && st.kinds.includes(svcStep(key)));
    const bad = stations.filter(st=>['stalled','slow','paused'].includes(assist.health.get(st.id)?.state ?? ''));
    // Clinic waiting area: patients sitting there against the chairs the floor plan has (relatives use seats too).
    const c = key.startsWith('clinic:') ? clinicsByKey.get(key.slice(7)) : undefined;
-   const seats = c ? waitingSeats('opd',c.level) : 0, seated = c ? list.filter(s=>m<s.step.called && s.area.buildingId==='opd' && s.area.level===c.level).length : 0, fill = seats ? seated/seats : 0;
+   const seats = c ? waitingSeats(c.buildingId,c.level) : 0, seated = c ? list.filter(s=>m<s.step.called && s.area.buildingId===c.buildingId && s.area.level===c.level).length : 0, fill = seats ? seated/seats : 0;
    const severity:'critical'|'warn'|'ok' = long>=5 || max>=90 || fill>=1 || bad.some(st=>assist.health.get(st.id)?.state==='stalled') ? 'critical' : long>0 || max>=45 || fill>=0.8 || bad.length ? 'warn' : 'ok';
    return {key,name:cardName(key),list,waiting:w.length,long,max,avg,stations,bad,severity,seats,seated,fill};
   }).filter(c=>c.list.length).sort((x,y)=>({critical:0,warn:1,ok:2}[x.severity]-{critical:0,warn:1,ok:2}[y.severity]) || y.max-x.max);
  },[rows,m,assist]);
  const cardBadge = (key:string) => { if (key.startsWith('clinic:')) return <span className="spBadge" style={{'--tc':'#2a78d6'} as React.CSSProperties}>{clinicLetter.get(key.slice(7))}</span>;
-  const t = stationTypes.find(x=>x[0]===(svcCard[key]?.[1] ?? key)), I = t?.[3] ?? LayoutList; return <span className="spBadge" style={{'--tc':t?.[2] ?? '#60738a'} as React.CSSProperties}><I size={14}/></span>; };
+  const t = stationTypes.find(x=>x[0]===svcStep(key)), I = t?.[3] ?? LayoutList; return <span className="spBadge" style={{'--tc':t?.[2] ?? '#60738a'} as React.CSSProperties}><I size={14}/></span>; };
  const dotOf = (st:Station) => { const h = assist.health.get(st.id)?.state ?? 'auto'; return h==='ok' ? 'ok' : h==='auto' ? 'auto' : h==='away' ? 'away' : h==='paused' || h==='slow' ? 'warn' : 'bad'; };
  const autoOpen = !!focus || !!q.trim() || filter!=='all';
  const isOpen = (id:string) => autoOpen ? !closed.has(id) : closed.has(id); // `closed` holds the groups the user flipped
@@ -738,8 +747,8 @@ function OverviewTab({patients,m,onOpen,queue,assist,onOpenSettings,onOpenPlace}
   {/* Own column, so the buttons line up on every row whatever the status. */}
   <td className="ovActCell" onClick={e=>e.stopPropagation()}><span className="ovRowActs"><QrButton p={s.p}/><button className={'mapBtn'+(mapPatient===s.p.id && mapOpen?' on':'')} title={`ดู ${s.p.queue} บนผัง`} aria-label={`ดู ${s.p.queue} บนผัง`} onClick={e=>{ e.stopPropagation(); setMapPatient(s.p.id); setMapFollow(n=>n+1); setMapFloor(`${s.area.buildingId}:${s.area.level}`); showMap(true); }}><MapPin size={14}/></button></span></td></tr>; };
  // Where a board card / group is on the map.
- const svcPlace:Record<string,[string,number]> = {registration:['opd',1],pharmacy:['opd',1],finance:['opd',1],lab:['diagnostics',1],xray:['diagnostics',2],er:['er',1],triage:['er',1]};
- const cardPlace = (key:string):[string,number,string?]|undefined => { if (key.startsWith('clinic:')) { const c = clinicsByKey.get(key.slice(7)); return c ? ['opd',c.level] : undefined; } return svcPlace[key]; };
+ const cardPlace = (key:string):[string,number,string?]|undefined => { if (key.startsWith('clinic:')) { const c = clinicsByKey.get(key.slice(7)); return c ? [c.buildingId,c.level] : undefined; }
+  const at = servicePlace(key==='er' ? 'er' : key as StepKind); return at ? [at.buildingId,at.level] : undefined; };
  const groupPlace = (list:PatientState[], k:GroupKey):[string,number,string?]|undefined => {
   if (k==='dept') return cardPlace(cardKeyOf(list[0]));
   if (k==='station' || k==='doctor') { const st = rowStation(list[0]); return st ? [st.buildingId,st.level,st.roomId] : cardPlace(cardKeyOf(list[0])); }
@@ -848,7 +857,7 @@ function OverviewMap({floor,onFloor,focusKey,patients,minute,assist,patient,foll
  const {units} = floorStationMarks(floor,here,labelOf,stateOf);
  // Zoom to the chosen clinic's rooms and waiting area when it is on this floor.
  const fc = focusKey?.startsWith('clinic:') ? opdClinics().find(c=>c.key===focusKey.slice(7)) : undefined;
- const area = fc && buildingId==='opd' && fc.level===level && !whole ? deptArea('opd',level,fc.deptIndex) : undefined;
+ const area = fc && buildingId===fc.buildingId && fc.level===level && !whole ? deptArea(fc.buildingId,level,fc.deptIndex) : undefined;
  // The assistant's proposals on this floor, as arrows from station to station.
  const arrows = assist.suggestions.filter(sg=>floorKey(sg.from)===floor && floorKey(sg.to)===floor).map(sg=>({from:{x:sg.from.spot.x,z:sg.from.spot.z},to:{x:sg.to.spot.x,z:sg.to.spot.z}}));
  const sel = patient ? patients.find(p=>p.id===patient) : undefined, st = sel ? patientAt(sel,m) : undefined;
@@ -856,7 +865,7 @@ function OverviewMap({floor,onFloor,focusKey,patients,minute,assist,patient,foll
   <div className="ovMapHead">
    <Select size="sm" value={floor} onChange={onFloor} aria-label="เลือกชั้น" className="selFilter" options={floors.map(f=>({value:f,label:floorName(allStations().find(x=>floorKey(x)===f)!)}))}/>
    <div className="viewSwitch inline">{(['2d','3d'] as const).map(x=><button key={x} className={mode===x?'active':''} onClick={()=>setMode(x)}>{x.toUpperCase()}</button>)}</div>
-   {fc && fc.level===level && buildingId==='opd' && <button className="chip" onClick={()=>setWhole(w=>!w)}>{whole?`ซูม ${fc.dept}`:'ดูทั้งชั้น'}</button>}
+   {fc && fc.level===level && buildingId===fc.buildingId && <button className="chip" onClick={()=>setWhole(w=>!w)}>{whole?`ซูม ${fc.dept}`:'ดูทั้งชั้น'}</button>}
    <button className="linkBtn dark" onClick={()=>onOpenPlace(buildingId,level)}>เปิดแผนที่เต็ม</button>
    <button className="iconBtn" aria-label="ปิดแผนที่" onClick={onClose}><X size={16}/></button>
   </div>

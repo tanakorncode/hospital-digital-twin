@@ -263,3 +263,14 @@ test('screens without a socket read the facility over REST (public view)', () =>
   assert.equal(r.facility.version, 1);
   assert.ok(r.facility.points.some((p) => p.id === 'room:opd-201'));
 });
+
+test('the ground around the buildings is part of the facility: changing it is a change to publish', () => {
+  const { api, admin, data } = setup();
+  const d = data();
+  d.site.roads.push([-80, 30, 80, 32]);
+  const impact = (api.gateway.facilityImpact(admin, { data: d }) as R).impact!;
+  assert.deepEqual(impact.changes.map((c) => `${c.id}:${c.change}`), ['site:changed']);
+  assert.equal((api.gateway.facilityPublish(admin, { data: d }) as R).ok, true);
+  assert.equal(api.facility.current().site.roads.length, 7);
+  assert.ok(api.facility.current().site.flows?.length, 'walking routes come with the sample');
+});

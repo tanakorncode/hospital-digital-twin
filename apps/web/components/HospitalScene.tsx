@@ -5,8 +5,9 @@ import { useEffect, useLayoutEffect, useMemo, useRef, type ReactNode, type RefOb
 import * as THREE from 'three';
 import { screenData, type ScreenData } from '../lib/queue-screen';
 import { BedDouble, DoorOpen, FlaskConical, Plus, Settings, SquareParking, Ticket, type LucideIcon } from 'lucide-react';
-import { erResusSpots, fmtMin, labStationSpots, patientAt, statusColor as patientColor, stepText, wardBeds, type Patient, type PatientState, type StepKind } from '../lib/patients';
-import { REF_HOUR, isOff, layoutRevision, kioskY, kiosks, type KioskStatus, buildingDensityAt, doctorName, findRoom, floorDutyAt, floorRooms, type DutyStatus, buildings, buildingStats, demoFlows, densityColor, fillerBuildings, floorCountAt, floorDepartments, floorPresence, isRealMode, kindPresence, peakFloorCount, parkingLots, personTypes, roads, type BuildingKind, type PersonType, type BuildingSpec, type Department, type Rect } from '../lib/scene-data';
+import { bandBeds, bandBooths, fmtMin, patientAt, statusColor as patientColor, stepText, wardBeds, type Patient, type PatientState, type StepKind } from '../lib/patients';
+import { REF_HOUR, entranceSpot, floorBands, isOff, layoutRevision, plazas, kioskY, kiosks, type KioskStatus, buildingDensityAt, doctorName, findRoom, floorDutyAt, floorRooms, type DutyStatus, buildings, buildingStats, demoFlows, densityColor, fillerBuildings, floorCountAt, floorDepartments, floorPresence, isRealMode, kindPresence, peakFloorCount, parkingLots, personTypes, roads, type BuildingKind, type PersonType, type BuildingSpec, type Department, type Rect } from '../lib/scene-data';
+import { buildingShort, facility, fGroup, groupsOf } from '../lib/facility';
 
 export type SceneMode = '2d'|'3d';
 export type SceneView = 'campus'|'building'|'floor'|'department';
@@ -21,8 +22,6 @@ const pick = <T,>(r:()=>number, list:readonly T[]) => list[Math.floor(r()*list.l
 const inRect = (x:number,z:number,[x0,z0,x1,z1]:Rect,m=0) => x>x0-m && x<x1+m && z>z0-m && z<z1+m;
 const footprint = (b:BuildingSpec):Rect => [b.x-b.width/2,b.z-b.depth/2,b.x+b.width/2,b.z+b.depth/2];
 
-const plazas:Rect[] = [...buildings.map(b=>{const [x0,z0,x1,z1]=footprint(b);return [x0-1.1,z0-1.1,x1+1.1,z1+1.1] as Rect;}),[-12.4,10.6,-5.5,16]];
-const entrance = {x:-8,z:7.4};
 const personColor = Object.fromEntries(personTypes.map(t=>[t.id,t.color])) as Record<PersonType,string>;
 // Relative weights of who is found where in the ambient crowd (demo assumption, not live data).
 // No patient types here: every patient on the map is a tracked patient with a record you can open.
@@ -30,7 +29,8 @@ type Mix = Partial<Record<PersonType,number>>;
 const outdoorMix:Mix = {visitor:3,staff:1,doctor:0.3};
 const floorMix:Record<BuildingKind,Mix> = {opd:{visitor:3,staff:1,doctor:0.3},er:{visitor:3,staff:2,doctor:0.8},inpatient:{visitor:3,staff:2,doctor:0.4},diagnostics:{visitor:2,staff:2,doctor:0.5},support:{staff:1}};
 const entranceMix:Partial<Record<BuildingKind,Mix>> = {er:{visitor:2,staff:2},inpatient:{visitor:4,staff:2}};
-const flowMix:Record<string,Mix> = {'flow-er':{visitor:2,staff:1,doctor:0.4},'flow-ipd':{visitor:3,staff:2,doctor:0.5},'flow-entry':{visitor:4,staff:0.5},'flow-dx':{visitor:2,staff:1},'flow-support':{staff:1}};
+// Who walks a route, by the kind of building it leads to.
+const flowMix:Record<BuildingKind,Mix> = {er:{visitor:2,staff:1,doctor:0.4},inpatient:{visitor:3,staff:2,doctor:0.5},opd:{visitor:4,staff:0.5},diagnostics:{visitor:2,staff:1},support:{staff:1}};
 function weighted<K extends string>(r:()=>number,mix:Partial<Record<K,number>>):K {
  const entries = Object.entries(mix) as [K,number][];
  let roll = r()*entries.reduce((n,[,w])=>n+w,0);
@@ -82,13 +82,13 @@ export type LabelKind = 'building'|'zone'|'room'|'counter'|'area'|'kiosk';
 const labelKindOf = (l:LabelSpec):LabelKind|undefined => l.kiosk ? 'kiosk' : l.variant==='zone' ? 'zone' : l.variant==='room' || l.variant==='counter' || l.variant==='area' ? l.variant : l.variant==='tag' || l.variant==='pin' ? 'building' : undefined;
 type LabelSpec = {id:string;pos:V3;text:string;variant:'tag'|'pin'|'floor'|'zone'|'route'|'bed'|SignKind;bedState?:string;bedId?:string;routeState?:'done'|'now'|'next';num?:string;sub?:string;building?:string;floor?:number;room?:string;kiosk?:string;tone?:DutyStatus;Icon?:LucideIcon;iconColor?:string;iconBg?:string;dot?:string;minZoom?:number};
 const buildingTag = (b:BuildingSpec,y:number):LabelSpec => ({id:b.id,pos:[b.x,y,b.z],text:b.name,variant:'tag',building:b.id,Icon:labelIcons[b.kind].Icon,iconColor:labelIcons[b.kind].color,iconBg:labelIcons[b.kind].bg});
-const campusLabels:LabelSpec[] = [
- ...buildings.map<LabelSpec>(b=>b.kind==='opd'
-  ? {id:b.id,pos:[b.x+2.5,b.floors*floorH+0.7,b.z+1],text:'OPD',variant:'pin',building:b.id}
+// Campus labels from the facility: every building (the OPD as a pin with its short name), the main entrance, the car park.
+const campusLabels = ():LabelSpec[] => { const e = entranceSpot(), lot = parkingLots[0];
+ return [...buildings.map<LabelSpec>(b=>b.kind==='opd'
+  ? {id:b.id,pos:[b.x+2.5,b.floors*floorH+0.7,b.z+1],text:buildingShort(b.id),variant:'pin',building:b.id}
   : buildingTag(b,b.floors*floorH+0.9)),
- {id:'entrance',pos:[entrance.x,1.6,entrance.z],text:'ทางเข้า',variant:'tag',Icon:DoorOpen,iconColor:'#1677ff'},
- {id:'parking',pos:[5,0.4,14.3],text:'ลานจอดรถ',variant:'tag',Icon:SquareParking,iconColor:'#fff',iconBg:'#111b26'},
-];
+ {id:'entrance',pos:[e.x,1.6,e.z],text:'ทางเข้า',variant:'tag',Icon:DoorOpen,iconColor:'#1677ff'},
+ ...(lot ? [{id:'parking',pos:[(lot[0]+lot[2])/2,0.4,(lot[1]+lot[3])/2],text:'ลานจอดรถ',variant:'tag',Icon:SquareParking,iconColor:'#fff',iconBg:'#111b26'} as LabelSpec] : [])]; };
 
 function Flat({r,y,color}:{r:Rect;y:number;color:string}) {
  return <mesh rotation-x={-Math.PI/2} position={[(r[0]+r[2])/2,y,(r[1]+r[3])/2]} receiveShadow><planeGeometry args={[r[2]-r[0],r[3]-r[1]]}/><meshStandardMaterial color={color}/></mesh>;
@@ -159,10 +159,11 @@ function Cars() {
    const zm = (z0+z1)/2;
    for (let x=x0+0.65; x<x1-0.3; x+=1.1) for (const z of [(z0+zm)/2,(zm+z1)/2]) if (r()<0.72) out.push({p:[x,0,z],rotY:0,c:pick(r,carColors)});
   });
-  [[-26,8.5],[-6,9.5],[12,8.5],[2.3,-14],[3.3,20],[21.5,-6],[-14.5,-10]].forEach(([x,z],i)=>{
-   const onAvenue = z>7 && z<11;
-   out.push({p:[x,0,z],rotY:onAvenue?Math.PI/2:0,c:pick(r,carColors)});
-  });
+  // A car or two driving on each road wide enough for two lanes, in its lanes.
+  roads.forEach(([x0,z0,x1,z1])=>{ const alongX = x1-x0>z1-z0, lane = (alongX ? z1-z0 : x1-x0)/4; if (lane*4<1.9) return;
+   for (let k=0;k<2;k++) { const t = -24+r()*48, side = k ? lane : -lane;
+    const x = alongX ? Math.min(x1-1,Math.max(x0+1,t)) : (x0+x1)/2+side, z = alongX ? (z0+z1)/2+side : Math.min(z1-1,Math.max(z0+1,t));
+    out.push({p:[x,0,z],rotY:alongX?Math.PI/2:0,c:pick(r,carColors)}); } });
   return out;
  },[]);
  return <group>
@@ -277,8 +278,10 @@ function planLayout(b:BuildingSpec,level:number):Plan {
   p.rooms.push({id:rooms[k].id,...roomRect(b,k,n)});
   if (r()<0.75) person(x0+0.4+r()*(roomW-0.8),-hd+0.6+r()*(roomFront+hd-1),b.kind==='support'||rooms[k].kind==='scan'||rooms[k].kind==='office'?floorMix.support:{...floorMix[b.kind],staff:1,doctor:0}); // no relatives in imaging / lab rooms
  }
- const bandW = b.width/zoneDepts.length;
+ const bandW = b.width/zoneDepts.length, bandIds = floorBands(b.id,level);
  zoneDepts.forEach((dept,i)=>{
+  // What the facility puts in this band: booths (blood draw) or beds out in the open (resuscitation bays).
+  const booths = bandIds[i] ? bandBooths(b.id,level,bandIds[i].deptId) : [], openBeds = bandIds[i] ? bandBeds(b.id,level,bandIds[i].deptId) : [];
   const bx0 = -hw+i*bandW, bx1 = bx0+bandW;
   p.zones.push({x0:bx0,x1:bx1,z0:-hd,z1:hd,dept});
   if (i>0) p.walls.push({p:[bx0,wy,(front0+0.9+hd)/2],s:[0.08,wallH,hd-front0-0.9]});
@@ -289,9 +292,9 @@ function planLayout(b:BuildingSpec,level:number):Plan {
   } else if (b.kind==='support') {
    for (let x=bx0+0.7; x<bx1-0.5; x+=1.1) for (let z=front0+0.6; z<hd-0.4; z+=1) { p.desks.push([x,y+0.15,z]); p.chairs.push([x,y+0.07,z+0.42]); p.monitors.push({p:[x,y+0.3,z-0.08],rot:0}); }
    p.signs.push({text:'พื้นที่ทำงาน',pos:[(bx0+bx1)/2,y+0.5,(front0+hd)/2],kind:'area'});
-  } else if (b.kind==='diagnostics' && level===1 && i===zoneDepts.length-1) {
-   // Blood-draw zone: a desk, a draw chair and a computer per station; waiting chairs behind.
-   labStationSpots().forEach((st,k)=>{ const x = st.spot.x-b.x, z = st.spot.z-b.z;
+  } else if (booths.length) {
+   // Booths (blood draw): a desk, a chair and a computer per booth; waiting chairs behind.
+   booths.forEach(st=>{ const x = st.spot.x-b.x, z = st.spot.z-b.z;
     p.desks.push([x,y+0.15,z-0.45]); p.chairs.push([x,y+0.07,z]); p.monitors.push({p:[x+0.22,y+0.3,z-0.5],rot:0}); staffAt(x,z-0.85,'staff');
     p.signs.push({text:st.name,pos:[x,y+0.62,z-0.45],kind:'counter'}); });
    for (let z=front0+2; z<hd-0.3; z+=0.68) for (let x=bx0+0.45; x<bx1-0.3; x+=0.46) p.chairs.push([x,y+0.07,z]);
@@ -299,11 +302,11 @@ function planLayout(b:BuildingSpec,level:number):Plan {
    p.counters.push([bx0+0.95,y+0.16,front0+0.45]);
    p.monitors.push({p:[bx0+0.6,y+0.36,front0+0.42],rot:Math.PI});
    p.poles.push([bx1-0.35,y,front0+0.75]); p.screens.push({p:[bx1-0.35,y,front0+0.75],rot:0});
-   // The ER's last band holds the two resuscitation bays instead of waiting chairs.
-   const resus = b.kind==='er' && level===1 && i===zoneDepts.length-1;
-   if (resus) erResusSpots().forEach(r=>{ p.beds.push([r.spot.x-b.x,y+0.11,r.spot.z-b.z]); p.vitals.push({p:[r.spot.x-b.x+0.42,y,r.spot.z-b.z-0.35],rot:0}); p.poles.push([r.spot.x-b.x+0.42,y,r.spot.z-b.z-0.35]); });
+   // Beds out in the band (the ER's resuscitation bays) instead of waiting chairs.
+   const resus = openBeds.length>0;
+   if (resus) openBeds.forEach(r=>{ p.beds.push([r.spot.x-b.x,y+0.11,r.spot.z-b.z]); p.vitals.push({p:[r.spot.x-b.x+0.42,y,r.spot.z-b.z-0.35],rot:0}); p.poles.push([r.spot.x-b.x+0.42,y,r.spot.z-b.z-0.35]); });
    else for (let z=front0+1.2; z<hd-0.3; z+=0.68) for (let x=bx0+0.45; x<bx1-0.3; x+=0.46) p.chairs.push([x,y+0.07,z]);
-   p.signs.push({text:counterName[b.kind],pos:[bx0+0.95,y+0.5,front0+0.45],kind:'counter'},{text:resus?'เตียงกู้ชีพ':'พื้นที่รอ',pos:[(bx0+bx1)/2+0.4,y+0.45,(front0+1.2+hd)/2],kind:'area'});
+   p.signs.push({text:counterName[b.kind],pos:[bx0+0.95,y+0.5,front0+0.45],kind:'counter'},{text:resus?openBeds[0].name:'พื้นที่รอ',pos:[(bx0+bx1)/2+0.4,y+0.45,(front0+1.2+hd)/2],kind:'area'});
   }
  });
  const crowd = Math.min(30,Math.max(4,Math.round(count/14))); // relatives and staff only; patients are tracked
@@ -580,6 +583,7 @@ function Building({b,mode,level,active,onSelect,hidden,showDensity,hour,selected
 }
 
 function Entrance() {
+ const entrance = entranceSpot();
  return <group position={[entrance.x,0,entrance.z]}>
   <Box p={[0,1.15,0]} s={[5,0.14,2.4]} color="#f5f7f9"/>
   <Box p={[0,1.24,0]} s={[5,0.05,0.3]} color="#2f8cff" cast={false}/>
@@ -649,31 +653,33 @@ function usePeople():Person[] {
  return useMemo(()=>{
   const r = seeded(3), out:Person[] = [];
   const scatter = (n:number,[x0,z0,x1,z1]:Rect,mix:Mix=outdoorMix) => { for (let i=0;i<Math.ceil(n/2);i++) out.push(makePerson(r,x0+r()*(x1-x0),0,z0+r()*(z1-z0),pickType(r,mix))); };
+  const entrance = entranceSpot(), reg = buildings.find(b=>Math.abs(b.x-b.width/4-entrance.x)<0.01 && Math.abs(b.z+b.depth/2+0.9-entrance.z)<0.01), plaza = facility().site.plazas?.[0], lot = parkingLots[0];
   scatter(26,[entrance.x-4,entrance.z-0.9,entrance.x+3,entrance.z+1]);
-  scatter(18,[-12.2,10.8,-5.8,15.8]);
-  buildings.filter(b=>b.kind!=='opd').forEach(b=>scatter(8,[b.x-b.width/2-0.9,b.z+b.depth/2+0.2,b.x+b.width/2+0.9,b.z+b.depth/2+1],entranceMix[b.kind]));
-  scatter(14,[-1,10.2,11,11]);
-  scatter(30,[-12,7.2,1.4,7.8]); scatter(16,[4.2,-6,7,6.5]); scatter(12,[-12.6,-3,-11.6,7]); scatter(10,[4,10.3,19,10.8]);
+  if (plaza) scatter(18,[plaza[0]+0.2,plaza[1]+0.2,plaza[2]-0.3,plaza[3]-0.2]);
+  buildings.filter(b=>b!==reg).forEach(b=>scatter(8,[b.x-b.width/2-0.9,b.z+b.depth/2+0.2,b.x+b.width/2+0.9,b.z+b.depth/2+1],entranceMix[b.kind]));
+  if (lot) scatter(14,[lot[0],lot[1]-1,lot[2],lot[1]-0.2]);
+  if (reg) scatter(30,[reg.x-reg.width/2-1,reg.z+reg.depth/2+0.7,reg.x+reg.width/2+0.4,reg.z+reg.depth/2+1.3]);
+  // People on the pavements beside the roads.
+  roads.slice(0,4).forEach(([x0,z0,x1,z1])=>{ const alongX = x1-x0>z1-z0;
+   scatter(10,alongX ? [Math.max(x0,-20),z1+0.3,Math.min(x1,20),z1+0.8] : [x1+0.3,Math.max(z0,-12),x1+0.8,Math.min(z1,12)]); });
   return out;
  },[]);
 }
 
 const walkersPerFlow = 14;
-// Which building's daily rhythm each route follows.
-const flowKind:Record<string,BuildingKind> = {'flow-entry':'opd','flow-er':'er','flow-ipd':'inpatient','flow-dx':'diagnostics','flow-support':'support'};
 function People({flows,highlight,hidden,hour,onPickPerson}:{flows:FlowCurve[];highlight:string|null;hidden:PersonType[];hour:number;onPickPerson?:(p:PickedPerson)=>void}) {
  const standing = usePeople();
  // Standing people first, then the walkers; walks[] lines up with that combined list.
  const {people,walks} = useMemo(()=>{
   const r = seeded(5), walkers:Person[] = [], walkInfo:Walk[] = [];
   flows.forEach(f=>{ for (let i=0;i<walkersPerFlow;i++) {
-   walkers.push(makePerson(r,0,0,0,pickType(r,flowMix[f.id]??outdoorMix)));
+   walkers.push(makePerson(r,0,0,0,pickType(r,flowMix[demoFlows.find(x=>x.id===f.id)?.kind ?? 'opd']??outdoorMix)));
    walkInfo.push({curve:f.curve,offset:i/walkersPerFlow+r()*0.05,side:(r()-0.5)*0.5,flowId:f.id});
   } });
   return {people:[...standing,...walkers],walks:[...standing.map(()=>null),...walkInfo]};
  },[flows,standing]);
  // Outdoor crowds follow the OPD rhythm; walkers follow their route's destination.
- const fraction = useMemo(()=>walks.map(w=>kindPresence(w?flowKind[w.flowId]??'opd':'opd',hour)),[walks,hour]);
+ const fraction = useMemo(()=>walks.map(w=>kindPresence(w?demoFlows.find(x=>x.id===w.flowId)?.kind ?? 'opd':'opd',hour)),[walks,hour]);
  return <Figures people={people} hidden={hidden} walks={walks} highlight={highlight} fraction={fraction} onPick={onPickPerson?i=>onPickPerson({type:people[i].type}):undefined}/>;
 }
 
@@ -824,15 +830,15 @@ function viewLabels(view:SceneView,focus:BuildingSpec|null,level:number,density:
 function placeLabels(view:SceneView,focus:BuildingSpec|null,level:number,density:boolean,hour:number):LabelSpec[] {
  if (!focus || view==='campus') {
   // The OPD's cut-away top floor gets its signs too, revealed when zooming in.
-  const opd = buildings.find(b=>b.kind==='opd')!, plan = planLayout(opd,opd.floors);
-  const tags = density ? campusLabels.map(l=>{
+  const opd = buildings.find(b=>b.kind==='opd') ?? buildings[0], plan = planLayout(opd,opd.floors);
+  const tags = density ? campusLabels().map(l=>{
    if (!l.building) return l;
    const avg = buildingDensityAt(l.building,hour);
    return {...l,text:`${l.text} · ${avg} คน/ชั้น`,dot:densityColor(avg)};
-  }) : campusLabels;
+  }) : campusLabels();
   return [...tags,...deptLabels(opd,plan,view,density,hour,1.6),...signLabels(opd,plan,1.6,hour)];
  }
- const others = campusLabels.filter(l=>l.building && l.building!==focus.id);
+ const others = campusLabels().filter(l=>l.building && l.building!==focus.id);
  if (view==='building') return [...others,buildingTag(focus,focus.floors*floorH+0.9),
   ...(buildingStats[focus.id]?.floors??[]).map<LabelSpec>(f=>({id:`floor-${f.level}`,pos:[focus.x+focus.width/2+0.15,(f.level-0.5)*floorH,focus.z-focus.depth/2],text:`ชั้น ${f.level} · ${floorCountAt(focus.id,f.level,hour)} คน`,variant:'floor',floor:f.level,dot:densityColor(floorCountAt(focus.id,f.level,hour))}))];
  const plan = planLayout(focus,level);
@@ -968,7 +974,7 @@ function Campus({solo=null,view,focusId,level,selected,onSelect,highlightFlow,hi
   {buildings.map(b=><Building key={b.id} b={b} mode={modeFor(b)} level={level} active={selected===b.id} onSelect={onSelect} hidden={hiddenTypes} showDensity={showDensity} hour={hour} selectedRoom={selectedRoom} selectedDept={b.id===selected?selectedDept:null} onPickPerson={onPickPerson}/>)}
   {fillerBuildings.map(b=><group key={b.id} position={[b.x,0,b.z]}><ClosedFloors b={b} from={0} to={b.floors}/><Roof b={b} active={false}/></group>)}
   <Kiosks vis={vis} selected={selectedKiosk} onPick={onSelectKiosk}/>
-  {(()=>{ const opd = buildings.find(b=>b.kind==='opd')!, m = modeFor(opd), cut = m==='campus' ? opd.floors : m==='floor' || m==='department' ? level : 0;
+  {(()=>{ const opd = buildings.find(b=>b.kind==='opd'); if (!opd) return null; const m = modeFor(opd), cut = m==='campus' ? opd.floors : m==='floor' || m==='department' ? level : 0;
    return cut>0 && <QueueScreens b={opd} level={cut} patients={patients} minute={minute}/>; })()}
   <TrackedPatients patients={patients} minute={minute} vis={vis} hidden={tracked} selected={selectedPatient} onPick={onSelectPatient} solo={solo}/>
  </group>;
@@ -1115,7 +1121,7 @@ export default function HospitalScene({view='campus',selectedBuilding,onSelectBu
   <hemisphereLight args={['#ffffff','#7fa36a',1.25]}/>
   <directionalLight position={[HOME.x+28,45,HOME.z+12]} intensity={1.7} castShadow shadow-mapSize={[4096,4096]} shadow-bias={-0.0004}
    shadow-camera-left={-48} shadow-camera-right={48} shadow-camera-top={48} shadow-camera-bottom={-48} shadow-camera-near={1} shadow-camera-far={140}/>
-  <Campus solo={soloPatient} view={view} focusId={focusB?.id??null} level={level} selected={selectedBuilding} onSelect={onSelectBuilding} highlightFlow={highlightFlow} hiddenTypes={hiddenTypes} showDensity={showDensity} showFlows={showFlows} hour={hour} selectedRoom={selectedRoom} selectedDept={selectedDept}
+  <Campus key={layoutRevision()} solo={soloPatient} view={view} focusId={focusB?.id??null} level={level} selected={selectedBuilding} onSelect={onSelectBuilding} highlightFlow={highlightFlow} hiddenTypes={hiddenTypes} showDensity={showDensity} showFlows={showFlows} hour={hour} selectedRoom={selectedRoom} selectedDept={selectedDept}
    patients={patients} minute={minute} selectedPatient={selectedPatient} onSelectPatient={id=>onSelectPatient?.(id)} selectedKiosk={selectedKiosk} onSelectKiosk={id=>onSelectKiosk?.(id)} onPickPerson={p=>onPickPerson?.(p)}/>
   <CameraRig focus={focus} focusKey={focusKey} mode={mode} apiRef={apiRef}/>
   {/* Only from the campus view, so buildings aren't ghosted or cut away in the photos. */}
@@ -1184,7 +1190,7 @@ function QueueScreens({b,level,patients,minute}:{b:BuildingSpec;level:number;pat
  const m = Math.floor(minute);
  // Everyone's state once per minute, shared by all the screens on the floor.
  const zones = useMemo(()=>{ const now = patients.map(p=>patientAt(p,m)).filter((x):x is PatientState=>!!x);
-  return L.zones.map((z,i)=>({i,x:b.x+z.x1-0.35,z:b.z+L.corridor[1]+0.75,data:screenData(level,i,now,m)})).filter(z=>z.data); },[L,b,level,patients,m]);
+  return L.zones.map((z,i)=>({i,x:b.x+z.x1-0.35,z:b.z+L.corridor[1]+0.75,data:screenData(level,i,now,m,b.id)})).filter(z=>z.data); },[L,b,level,patients,m]);
  return <>{zones.map(z=><QueueScreen key={`${level}-${z.i}`} pos={[z.x,L.y+0.8,z.z+0.0205]} data={z.data!}/>)}</>;
 }
 function QueueScreen({pos,data}:{pos:V3;data:ScreenData}) {

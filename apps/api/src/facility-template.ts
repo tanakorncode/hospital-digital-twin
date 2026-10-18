@@ -53,6 +53,13 @@ const KIOSKS: { id: string; name: string; x: number; z: number; floorId?: string
 export const SAMPLE_SITE: Site = {
   roads: [[-80, 8, 80, 10], [1.9, -80, 3.7, 80], [-80, -5.3, 1.9, -3.7], [3.7, -8.6, 80, -7.2], [-15, -80, -13.2, 80], [20.2, -80, 22, 80]],
   parking: [[-1, 11.2, 11, 17.4], [-24, 11.2, -16.5, 17.4]],
+  plazas: [[-12.4, 10.6, -5.5, 16]],
+  flows: [
+    { id: 'flow-entry', name: 'มาถึง → ทางเข้า OPD', color: '#2563eb', kind: 'opd', points: [[-17, 9.4], [-12.5, 9.4], [-9.5, 7.2]] },
+    { id: 'flow-er', name: 'ไปห้องฉุกเฉิน (ER)', color: '#e0368c', kind: 'er', points: [[-11, 13], [-11, 8.6], [-1, 8.6], [2.8, 8.6], [2.8, -5], [2.8, -8.5], [5, -8.5]] },
+    { id: 'flow-ipd', name: 'OPD → รับเป็นผู้ป่วยใน', color: '#8b4fe6', kind: 'inpatient', points: [[-3, -1.6], [-3, -5.6], [-1, -5.6], [-1, -7.2]] },
+    { id: 'flow-dx', name: 'OPD → ส่งตรวจแล็บ / เอกซเรย์', color: '#0aa5c2', kind: 'diagnostics', points: [[1, 0.5], [2.2, 0.5], [3.6, -0.4], [7.6, -0.4]] },
+    { id: 'flow-support', name: 'ศูนย์การแพทย์ → อาคารสนับสนุน', color: '#475569', kind: 'support', points: [[14.2, -0.8], [14.2, 2.4]] }],
   fillers: [
     { id: 'f1', x: -21, z: -9, width: 6, depth: 5, floors: 3, color: '#e6ebef' }, { id: 'f2', x: -22, z: 1, width: 5, depth: 6, floors: 2, color: '#e9edf1' },
     { id: 'f3', x: -6, z: -25, width: 9, depth: 5, floors: 4, color: '#e6ebef' }, { id: 'f4', x: 9, z: -24, width: 7, depth: 6, floors: 3, color: '#e9edf1' },

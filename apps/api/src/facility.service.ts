@@ -11,7 +11,8 @@ import type { Layout, QueueSettings } from './queue.service';
 // version in one transaction. The first start makes version 1 from the sample hospital and the Settings layout.
 // Until the Settings page edits the model itself (F3), a layout change re-makes it — only while nobody has published.
 export type VersionInfo = { version: number; publishedAt: string; publishedBy: string; source: 'seed' | 'layout' | 'publish' | 'rollback'; note?: string; summary: ChangeSummary };
-export type ChangeSummary = Record<'buildings' | 'floors' | 'departments' | 'groups' | 'points', { added: number; changed: number; removed: number }>;
+// site: the ground around the buildings (roads, car parks, plazas, neighbouring blocks, walking routes) — changed or not.
+export type ChangeSummary = Record<'buildings' | 'floors' | 'departments' | 'groups' | 'points' | 'site', { added: number; changed: number; removed: number }>;
 export type Change = { kind: keyof ChangeSummary; id: string; name: string; change: 'added' | 'changed' | 'removed' | 'off' | 'on' | 'retired' };
 export type Impact = { baseVersion: number; issues: Issue[]; summary: ChangeSummary; changes: Change[]; ok: boolean };
 export type Draft = { baseVersion: number; data: FacilityData; updatedAt: string };
@@ -54,6 +55,11 @@ export class FacilityService {
   isClinic(id: unknown, feature: 'booking' | 'appointments' | 'walkIn' = 'walkIn'): boolean {
     const d = this.department(id);
     return !!d && departmentInUse(this.ix, d.id) && d.features[feature];
+  }
+  // The emergency department (ER patients, and the staff scope that covers them): the sample's is 'er'.
+  erDepartment(): Department | undefined {
+    const list = this.cur.departments.filter((d) => d.type === 'emergency' && !d.retiredAt);
+    return list.find((d) => d.queuePrefix) ?? list[0];
   }
   // Known department (also when switched off — existing records keep their department).
   knowsDepartment(id: unknown): boolean { return !!this.department(id); }
@@ -224,7 +230,7 @@ export class FacilityService {
 }
 
 const localDay = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-const emptySummary = (): ChangeSummary => Object.fromEntries(KINDS.map((k) => [k, { added: 0, changed: 0, removed: 0 }])) as ChangeSummary;
+const emptySummary = (): ChangeSummary => Object.fromEntries([...KINDS, 'site'].map((k) => [k, { added: 0, changed: 0, removed: 0 }])) as ChangeSummary;
 // What differs between two facilities, entity by entity (order changes count as a change of the moved thing).
 function diff(a: FacilityData | undefined, b: FacilityData): { summary: ChangeSummary; changes: Change[] } {
   const summary = emptySummary(), changes: Change[] = [];
@@ -242,5 +248,6 @@ function diff(a: FacilityData | undefined, b: FacilityData): { summary: ChangeSu
     }
     for (const [id, { x }] of before) if (!after.has(id)) { summary[k].removed++; changes.push({ kind: k, id, name: nameOf(x), change: 'removed' }); }
   }
+  if (a && JSON.stringify(a.site ?? null) !== JSON.stringify(b.site ?? null)) { summary.site.changed = 1; changes.push({ kind: 'site', id: 'site', name: 'ผังพื้นที่รอบอาคาร', change: 'changed' }); }
   return { summary, changes };
 }

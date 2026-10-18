@@ -177,7 +177,7 @@ function LiveStatusBadge({status,at,source}:{status:LiveStatus;at?:string;source
 }
 
 export default function HospitalDashboard() {
- const [selected,setSelected] = useState<string|null>('opd');
+ const [selected,setSelected] = useState<string|null>(()=>buildings.find(b=>b.kind==='opd')?.id ?? buildings[0]?.id ?? null);
  const [activeNav,setActiveNav] = useState('ภาพรวม');
  const onMap = activeNav==='ภาพรวม';
  // Alert rules and acknowledgements: kept in this browser only (a real deployment stores them server-side).
@@ -258,7 +258,7 @@ export default function HospitalDashboard() {
   if (views.some(([value])=>value===v)) setView(v as SceneView);
   if (m==='2d'||m==='3d') setMode(m);
   if (b && buildings.some(x=>x.id===b)) setSelected(b);
-  if (f) linkedFloor.current = {building:b ?? 'opd',floor:f};
+  if (f) linkedFloor.current = {building:b ?? buildings.find(x=>x.kind==='opd')?.id ?? buildings[0]?.id ?? '',floor:f};
   const fl = q.get('flow');
   if (fl && demoFlows.some(x=>x.id===fl)) setPinnedFlow(fl);
   if (q.get('density')==='1') setShowDensity(true);
@@ -313,7 +313,7 @@ export default function HospitalDashboard() {
  const activeRoom = (view==='floor'||view==='department') && roomOf && roomOf.buildingId===panelBuilding.id && roomOf.level===activeFloor ? roomOf.id : null;
  const roomDuty = activeRoom ? roomDutyAt(activeRoom,hour) : undefined;
  const activeDept = (view==='floor'||view==='department') && selectedDept && selectedDept.buildingId===panelBuilding.id && selectedDept.level===activeFloor ? selectedDept.name : null;
- const changeView = (v:SceneView) => { if (v!=='campus' && !selected) setSelected('opd'); setView(v); };
+ const changeView = (v:SceneView) => { if (v!=='campus' && !selected) setSelected(buildings.find(b=>b.kind==='opd')?.id ?? buildings[0]?.id ?? null); setView(v); };
  // Picking a floor from the campus or building view drills down into that floor's plan.
  const pickFloor = (level:number) => { setSelectedRoom(null); setActiveFloor(level); setSelected(panelBuilding.id); if (view==='campus'||view==='building') setView('floor'); };
  // Selecting a room (from the roster or its sign) opens its floor plan and zooms to it.

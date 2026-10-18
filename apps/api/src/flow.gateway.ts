@@ -49,7 +49,8 @@ function overLimit(c: Socket, kind: keyof typeof LIMITS) {
 }
 const SIGN_IN = { ...fail('AUTH_REQUIRED', 'กรุณาเข้าสู่ระบบก่อน'), auth: true };
 // Clinic scope (spec §14.2): staff and supervisors may be limited to some clinics — they then find, book, move, cancel
-// and check in only for those. No list = every clinic; administrators always cover every clinic. 'er' = emergency room.
+// and check in only for those. No list = every clinic; administrators always cover every clinic. The emergency
+// department's id (the sample's 'er') covers ER patients.
 export const covers = (u: User, clinic: string | undefined) => u.role === 'admin' || !u.clinics?.length || (!!clinic && u.clinics.includes(clinic));
 const OUTSIDE = () => new AppError('FORBIDDEN', 'รายการนี้อยู่นอกแผนกที่คุณรับผิดชอบ');
 function mustCover(u: User, clinic: string | undefined) { if (clinic !== undefined && !covers(u, clinic)) throw OUTSIDE(); }
@@ -491,10 +492,10 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
       const { key, hn, ...input } = (body ?? {}) as EnterInput & { key?: unknown; hn?: unknown };
       const withHn = typeof hn === 'string' && hn.trim() !== '';
       const { result, replayed } = this.idempotency.run(`visit:enter:user:${me.id}`, key, { ...input, hn: withHn ? hn : undefined }, () => {
-        mustCover(me, input.flow === 'er' ? 'er' : typeof input.clinicKey === 'string' ? input.clinicKey : undefined);
+        mustCover(me, input.flow === 'er' ? this.facility.erDepartment()?.id ?? 'er' : typeof input.clinicKey === 'string' ? input.clinicKey : undefined);
         const profileId = withHn ? this.booking.profileForHN(hn) : undefined;
         const v = this.visits.enter(input, undefined, { profileId }).visit;
-        if (profileId) this.notify.checkedIn(v, profileId, v.flow === 'er' ? 'ห้องฉุกเฉิน' : `พื้นที่รอ ${v.dept}`);
+        if (profileId) this.notify.checkedIn(v, profileId, v.flow === 'er' ? this.facility.erDepartment()?.name ?? 'ห้องฉุกเฉิน' : `พื้นที่รอ ${v.dept}`);
         return v;
       });
       if (!replayed) {
