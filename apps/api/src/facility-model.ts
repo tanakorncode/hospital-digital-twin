@@ -29,8 +29,9 @@ export type Department = { id: string; name: string; shortName?: string; type: D
 // without its own name is "<pointNoun> <number>"). serves: this department's patients, or everyone (shared counters).
 // floorId null = outdoors on the site (kiosks at the gate). minOpen: open points the group needs while the department is open.
 // options.arrange: counters as one long counter (staff side by side, the default) or separate booths spread across the
-// area · options.triage: the ER triage levels [from, to] a treatment group takes (resuscitation bays: [1, 2]).
-export type GroupOptions = { arrange?: 'counter' | 'booths'; triage?: [number, number] };
+// area · options.triage: the ER triage levels [from, to] a treatment group takes (resuscitation bays: [1, 2]) ·
+// options.seats: waiting chairs for the group's patients (0 = none; not set = as the building type usually has).
+export type GroupOptions = { arrange?: 'counter' | 'booths'; triage?: [number, number]; seats?: number };
 export type ServiceGroup = { id: string; departmentId: string; name: string; floorId: string | null; pointKind: PointKind; pointNoun: string;
   steps: StepKind[]; serves: 'department' | 'all'; minOpen: number; options?: GroupOptions; active: boolean; retiredAt?: string };
 // roomCode: the number on the door (announcements, signs). floorId: only when the point is on another floor than its
@@ -182,9 +183,10 @@ export function validateFacility(input: unknown): { data?: FacilityData; issues:
     if (g.serves !== 'department' && g.serves !== 'all') err('กลุ่มนี้ให้บริการใครไม่ถูกต้อง', g.id);
     if (!Number.isInteger(g.minOpen) || g.minOpen < 0 || g.minOpen > 50) err('จำนวนที่ต้องเปิดอย่างน้อยไม่ถูกต้อง', g.id);
     const o = g.options as GroupOptions | undefined;
-    if (o !== undefined && (!o || typeof o !== 'object' || Array.isArray(o) || Object.keys(o).some((k) => k !== 'arrange' && k !== 'triage')
+    if (o !== undefined && (!o || typeof o !== 'object' || Array.isArray(o) || Object.keys(o).some((k) => k !== 'arrange' && k !== 'triage' && k !== 'seats')
       || (o.arrange !== undefined && o.arrange !== 'counter' && o.arrange !== 'booths')
-      || (o.triage !== undefined && !(Array.isArray(o.triage) && o.triage.length === 2 && o.triage.every((n) => Number.isInteger(n) && n >= 1 && n <= 5) && o.triage[0] <= o.triage[1]))))
+      || (o.triage !== undefined && !(Array.isArray(o.triage) && o.triage.length === 2 && o.triage.every((n) => Number.isInteger(n) && n >= 1 && n <= 5) && o.triage[0] <= o.triage[1]))
+      || (o.seats !== undefined && !(Number.isInteger(o.seats) && o.seats >= 0 && o.seats <= 500))))
       err('ตัวเลือกของกลุ่มบริการไม่ถูกต้อง', g.id);
     if (!isBool(g.active) || !isRetired(g.retiredAt)) err('สถานะกลุ่มบริการไม่ถูกต้อง', g.id);
   }

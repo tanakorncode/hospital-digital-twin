@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { screenData, type ScreenData } from '../lib/queue-screen';
 import { BedDouble, DoorOpen, FlaskConical, Plus, Settings, SquareParking, Ticket, type LucideIcon } from 'lucide-react';
 import { bandBeds, bandBooths, fmtMin, patientAt, statusColor as patientColor, stepText, wardBeds, type Patient, type PatientState, type StepKind } from '../lib/patients';
-import { REF_HOUR, entranceSpot, floorBands, isOff, layoutRevision, plazas, kioskY, kiosks, type KioskStatus, buildingDensityAt, doctorName, findRoom, floorDutyAt, floorRooms, type DutyStatus, buildings, buildingStats, demoFlows, densityColor, fillerBuildings, floorCountAt, floorDepartments, floorPresence, isRealMode, kindPresence, peakFloorCount, parkingLots, personTypes, roads, type BuildingKind, type PersonType, type BuildingSpec, type Department, type Rect } from '../lib/scene-data';
+import { REF_HOUR, entranceSpot, floorBands, floorPlan, isOff, layoutRevision, plazas, kioskY, kiosks, type KioskStatus, buildingDensityAt, doctorName, findRoom, floorDutyAt, floorRooms, type DutyStatus, buildings, buildingStats, demoFlows, densityColor, fillerBuildings, floorCountAt, floorDepartments, floorPresence, isRealMode, kindPresence, peakFloorCount, parkingLots, personTypes, roads, type BuildingKind, type PersonType, type BuildingSpec, type Department, type Rect } from '../lib/scene-data';
 import { buildingShort, facility } from '../lib/facility';
 
 export type SceneMode = '2d'|'3d';
@@ -293,22 +293,22 @@ function planLayout(b:BuildingSpec,level:number):Plan {
    for (let x=bx0+0.7; x<bx1-0.5; x+=1.1) for (let z=front0+0.6; z<hd-0.4; z+=1) { p.desks.push([x,y+0.15,z]); p.chairs.push([x,y+0.07,z+0.42]); p.monitors.push({p:[x,y+0.3,z-0.08],rot:0}); }
    p.signs.push({text:'พื้นที่ทำงาน',pos:[(bx0+bx1)/2,y+0.5,(front0+hd)/2],kind:'area'});
   } else if (booths.length) {
-   // Booths (blood draw): a desk, a chair and a computer per booth; waiting chairs behind.
+   // Booths (blood draw): a desk, a chair and a computer per booth (waiting chairs behind come from the layout).
    booths.forEach(st=>{ const x = st.spot.x-b.x, z = st.spot.z-b.z;
     p.desks.push([x,y+0.15,z-0.45]); p.chairs.push([x,y+0.07,z]); p.monitors.push({p:[x+0.22,y+0.3,z-0.5],rot:0}); staffAt(x,z-0.85,'staff');
     p.signs.push({text:st.name,pos:[x,y+0.62,z-0.45],kind:'counter'}); });
-   for (let z=front0+2; z<hd-0.3; z+=0.68) for (let x=bx0+0.45; x<bx1-0.3; x+=0.46) p.chairs.push([x,y+0.07,z]);
   } else {
    p.counters.push([bx0+0.95,y+0.16,front0+0.45]);
    p.monitors.push({p:[bx0+0.6,y+0.36,front0+0.42],rot:Math.PI});
    p.poles.push([bx1-0.35,y,front0+0.75]); p.screens.push({p:[bx1-0.35,y,front0+0.75],rot:0});
-   // Beds out in the band (the ER's resuscitation bays) instead of waiting chairs.
+   // Beds out in the band (the ER's resuscitation bays); waiting chairs come from the layout below.
    const resus = openBeds.length>0;
-   if (resus) openBeds.forEach(r=>{ p.beds.push([r.spot.x-b.x,y+0.11,r.spot.z-b.z]); p.vitals.push({p:[r.spot.x-b.x+0.42,y,r.spot.z-b.z-0.35],rot:0}); p.poles.push([r.spot.x-b.x+0.42,y,r.spot.z-b.z-0.35]); });
-   else for (let z=front0+1.2; z<hd-0.3; z+=0.68) for (let x=bx0+0.45; x<bx1-0.3; x+=0.46) p.chairs.push([x,y+0.07,z]);
+   openBeds.forEach(r=>{ p.beds.push([r.spot.x-b.x,y+0.11,r.spot.z-b.z]); p.vitals.push({p:[r.spot.x-b.x+0.42,y,r.spot.z-b.z-0.35],rot:0}); p.poles.push([r.spot.x-b.x+0.42,y,r.spot.z-b.z-0.35]); });
    p.signs.push({text:counterName[b.kind],pos:[bx0+0.95,y+0.5,front0+0.45],kind:'counter'},{text:resus?openBeds[0].name:'พื้นที่รอ',pos:[(bx0+bx1)/2+0.4,y+0.45,(front0+1.2+hd)/2],kind:'area'});
   }
  });
+ // Waiting chairs, band by band, as the floor's layout seats them (lib/floor-layout.ts — the settings preview shows the same).
+ floorPlan(b.id,level)?.bands.forEach(bd=>bd.seats.forEach(st=>p.chairs.push([st.x,y+0.07,st.z])));
  const crowd = Math.min(30,Math.max(4,Math.round(count/14))); // relatives and staff only; patients are tracked
  for (let i=0; i<crowd; i++) {
   if (r()<0.25) person(-hw+0.4+r()*(b.width-0.8),roomFront+0.2+r()*0.8);

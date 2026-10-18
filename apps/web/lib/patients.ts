@@ -1,9 +1,10 @@
 // Simulated patient journeys for one day (demo). Real journeys would be assembled from events that
 // existing systems already record (kiosk ticket, queue call, vital signs, HIS orders, LIS, pharmacy,
 // cashier), so no extra data entry for doctors or nurses. No names: an opaque id, queue number and HN.
-import { bandIndex, buildings, counterSpot, floorBands, floorRooms, floorY, isDoctorRoom, findRoom, isOff, kiosks, layoutRevision, parkingLots, roomOpenIntervals, roomSpot, waitingSpot,
+import { bandIndex, buildings, counterSpot, floorPlan, floorRooms, floorY, isDoctorRoom, findRoom, isOff, kiosks, layoutRevision, parkingLots, roomOpenIntervals, roomSpot, waitingSpot,
   type Room, type Spot, getServiceHours, opdOpenMin } from './scene-data';
-import { buildingShort, erDepartment, facility, fBuildings, fDepartment, fDepartments, fFloor, fFloors, fGroup, fPoints, groupsForStep, groupsOf, pointFloor, pointLabel, pointsOf,
+import { boothAt, type FloorPlan } from './floor-layout';
+import { buildingShort, erDepartment, fBuildings, fDepartment, fDepartments, fFloor, fFloors, fGroup, groupsForStep, groupsOf, pointFloor, pointLabel, pointsOf,
   onFacility, type FGroup, type FPoint } from './facility';
 
 export type StepKind = 'kiosk'|'registration'|'screening'|'exam'|'lab'|'labResult'|'xray'|'followup'|'pharmacy'|'finance'|'triage'|'treatment'|'admit'|'ward'|'leave';
@@ -143,14 +144,12 @@ export const clinicScreensOn = (c:Clinic, cap=SCREENING_BASE) => Array.from({len
 export const clinicOpen = (c:Clinic) => !isOff(`dept:${c.dept}`) && clinicRoomsOn(c).length>0 && clinicScreensOn(c).length>0;
 
 // ---- Where points stand ------------------------------------------------------------------------------------------
-// Beds: inside their room (spread across it), else in a row at the front — across the whole floor for an open ward,
-// across the department's band otherwise (resuscitation bays). Booths (blood draw): spread across the band.
-const bedRow = (k:number, m:number) => m<=1 ? 0.5 : 0.3+0.42*k/(m-1);
-const bandSpan = (buildingId:string, level:number, deptId:string) => { const b = buildings.find(x=>x.id===buildingId)!, n = Math.max(1,floorBands(buildingId,level).length), w = b.width/n;
-  return {b,w,x0:b.x-b.width/2+Math.max(0,bandIndex(buildingId,level,deptId))*w}; };
+// From each floor's layout (lib/floor-layout.ts, the rules the settings preview shares), in world coordinates.
+const world = (plan:FloorPlan, at:{x:number; z:number}):Spot => ({x:plan.cx+at.x,y:floorY(plan.level),z:plan.cz+at.z});
+// Booth i of n across a group's band (n may differ from the group's own count: the what-if view adds or removes some).
 export function boothSpot(g:FGroup, i:number, n:number):Spot {
-  const fl = fFloor(g.floorId)!, {b,w,x0} = bandSpan(fl.buildingId,fl.level,g.departmentId);
-  return {x:x0+(i+0.5)*w/n,y:floorY(fl.level),z:b.z-b.depth/2+b.depth*0.42+1.2+0.95};
+  const fl = fFloor(g.floorId)!, plan = floorPlan(fl.buildingId,fl.level)!, band = plan.bands.find(x=>x.deptId===g.departmentId) ?? plan.bands[0];
+  return world(plan,boothAt(band?.x0 ?? -plan.W/2,band ? band.x1-band.x0 : plan.W,plan.front0,i,n));
 }
 type BedSpot = {p:FPoint; g:FGroup; buildingId:string; level:number; index:number; count:number; spot:Spot; room?:Room};
 let bedCache:{rev:number; list:BedSpot[]}|null = null;
@@ -158,41 +157,29 @@ function bedSpots():BedSpot[] {
   if (bedCache?.rev===layoutRevision()) return bedCache.list;
   const list:BedSpot[] = [];
   for (const bl of fBuildings()) for (const fl of fFloors(bl.id)) {
-    const b = buildings.find(x=>x.id===bl.id); if (!b) continue;
-    const beds = fPoints().filter(p=>fGroup(p.groupId)?.pointKind==='bed' && pointFloor(p)?.id===fl.id).map(p=>({p,g:fGroup(p.groupId)!,room:p.inRoomId ? findRoom(p.inRoomId) : undefined}));
-    const rooms = floorRooms(bl.id,fl.level), rw = b.width/Math.max(1,rooms.length), y = floorY(fl.level), bands = floorBands(bl.id,fl.level);
-    const band = (g:FGroup) => Math.max(0,bands.findIndex(x=>x.deptId===g.departmentId));
-    const inRoom = beds.filter(x=>x.room).sort((a,c)=>a.room!.index-c.room!.index || a.p.number-c.p.number);
-    const open = beds.filter(x=>!x.room).sort((a,c)=>band(a.g)-band(c.g) || a.p.number-c.p.number);
-    const placed:BedSpot[] = [];
-    inRoom.forEach(x=>{ const mates = inRoom.filter(o=>o.room===x.room), k = mates.indexOf(x);
-      placed.push({...x,buildingId:bl.id,level:fl.level,index:0,count:0,spot:{x:b.x-b.width/2+x.room!.index*rw+rw*bedRow(k,mates.length),y,z:b.z-b.depth/2+0.9}}); });
-    const wardRow = open.filter(x=>x.g.steps.includes('ward'));
-    wardRow.forEach((x,j)=>placed.push({...x,buildingId:bl.id,level:fl.level,index:0,count:0,spot:{x:b.x-b.width/2+0.55+j*((b.width-1.1)/Math.max(1,wardRow.length-1)),y,z:b.z+b.depth/2-0.8}}));
-    open.filter(x=>!x.g.steps.includes('ward')).forEach(x=>{ const mates = open.filter(o=>o.g===x.g), k = mates.indexOf(x), {w,x0} = bandSpan(bl.id,fl.level,x.g.departmentId);
-      placed.push({...x,buildingId:bl.id,level:fl.level,index:0,count:0,spot:{x:x0+w*bedRow(k,mates.length),y,z:b.z+b.depth/2-0.8}}); });
-    placed.forEach((x,i)=>{ x.index = i; x.count = placed.length; });
-    list.push(...placed);
+    const plan = floorPlan(bl.id,fl.level); if (!plan) continue;
+    plan.beds.forEach((bd,i)=>list.push({p:bd.point,g:bd.group,buildingId:bl.id,level:fl.level,index:i,count:plan.beds.length,spot:world(plan,bd.at),...(bd.room ? {room:findRoom(bd.room.point.id)} : {})}));
   }
   bedCache = {rev:layoutRevision(),list};
   return list;
 }
-// What stands in one department's band of a floor (for the floor plan): its booths (blood draw) and its beds that are
-// not in a room or the open ward (resuscitation bays).
+// What stands in one department's band of a floor (for the 3D floor plan): its booths, its beds out in the band
+// (resuscitation bays) and its waiting chairs — all from the floor's layout.
 export function bandBooths(buildingId:string, level:number, deptId:string) {
-  const fl = facility().floors.find(x=>x.buildingId===buildingId && x.level===level && !x.retiredAt);
-  return groupsOf(deptId).filter(g=>g.floorId===fl?.id && g.options?.arrange==='booths').flatMap(g=>{ const pts = pointsOf(g.id); return pts.map((p,i)=>({name:pointLabel(p),spot:boothSpot(g,i,pts.length)})); });
+  const plan = floorPlan(buildingId,level); if (!plan) return [];
+  return plan.counters.filter(c=>c.booth && c.group.departmentId===deptId).map(c=>({name:pointLabel(c.point),spot:world(plan,c.at)}));
 }
 export function bandBeds(buildingId:string, level:number, deptId:string) {
-  return bedSpots().filter(x=>!x.room && !x.g.steps.includes('ward') && x.g.departmentId===deptId && x.buildingId===buildingId && x.level===level).map(x=>({name:x.g.name,spot:x.spot}));
+  const plan = floorPlan(buildingId,level); if (!plan) return [];
+  return plan.beds.filter(b=>!b.room && !b.ward && b.group.departmentId===deptId).map(b=>({name:b.group.name,spot:world(plan,b.at)}));
 }
 // Where a queue station's patient stands: across the desk in a room, at the counter, at a booth, beside a bed.
 export function stationSpot(p:FPoint):Spot|undefined {
   const g = fGroup(p.groupId), fl = pointFloor(p); if (!g || !fl) return undefined;
   if (g.pointKind==='room') { const r = findRoom(p.id); return r ? roomSpot(r.id) : undefined; }
   if (g.pointKind==='bed') return bedSpots().find(x=>x.p.id===p.id)?.spot;
-  const list = pointsOf(g.id), i = Math.max(0,list.findIndex(x=>x.id===p.id));
-  return g.options?.arrange==='booths' ? boothSpot(g,i,list.length) : counterSpot(fl.buildingId,fl.level,Math.max(0,bandIndex(fl.buildingId,fl.level,g.departmentId)),(i+0.5)/list.length);
+  const plan = floorPlan(fl.buildingId,fl.level), c = plan?.counters.find(x=>x.point.id===p.id);
+  return plan && c ? world(plan,c.at) : undefined;
 }
 
 // Inpatient beds (the facility's ward beds), where the 3D floor plan draws them; the plan and the bed board use this list.

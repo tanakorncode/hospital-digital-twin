@@ -13,7 +13,8 @@ export type FBuilding = {id:string; name:string; shortName:string; kind:Building
 export type FFloor = {id:string; buildingId:string; level:number; name:string; description:string; active:boolean; retiredAt?:string};
 export type FDepartment = {id:string; name:string; shortName?:string; type:DepartmentType; queuePrefix?:string; features:{booking:boolean; appointments:boolean; walkIn:boolean};
   firstGroupId?:string; active:boolean; retiredAt?:string};
-export type GroupOptions = {arrange?:'counter'|'booths'; triage?:[number,number]};
+// seats: waiting chairs for this group's patients (0 = none; not set = as the building type usually has).
+export type GroupOptions = {arrange?:'counter'|'booths'; triage?:[number,number]; seats?:number};
 export type FGroup = {id:string; departmentId:string; name:string; floorId:string|null; pointKind:PointKind; pointNoun:string; steps:string[]; serves:'department'|'all';
   minOpen:number; options?:GroupOptions; active:boolean; retiredAt?:string};
 export type FPoint = {id:string; groupId:string; number:number; name?:string; roomCode?:string; floorId?:string; roomKind?:FRoomKind; inRoomId?:string; map?:{x:number; z:number};

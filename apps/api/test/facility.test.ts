@@ -245,6 +245,12 @@ test('the sample comes with how groups are set out: blood-draw booths, resuscita
   const bad = sampleFacility();
   bad.groups.find((g) => g.id === 'beds:er')!.options = { triage: [4, 2] };
   assert.match(validateFacility(bad).issues[0].message, /ตัวเลือกของกลุ่มบริการ/);
+  // Waiting chairs: a whole number from 0 (none) up.
+  const seats = sampleFacility();
+  seats.groups.find((g) => g.id === 'counter:pharmacy')!.options = { seats: 40 };
+  assert.deepEqual(validateFacility(seats).issues, []);
+  seats.groups.find((g) => g.id === 'counter:pharmacy')!.options = { seats: -1 };
+  assert.match(validateFacility(seats).issues[0].message, /ตัวเลือกของกลุ่มบริการ/);
 });
 
 test('an installation nobody has edited follows a newer sample on the next start; an edited one keeps its facility', () => {

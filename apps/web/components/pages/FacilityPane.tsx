@@ -8,6 +8,7 @@ import type { QueueSync } from '../../lib/queue';
 import { Select } from '../Select';
 import { ConfirmDialog, type Confirm } from './ConfirmDialog';
 import { FloorPreview, Help } from './FacilityHelp';
+import { planFloor, seatCapacity } from '../../lib/floor-layout';
 import { ModalPortal } from '../ModalPortal';
 
 // Settings → ผังโรงพยาบาล (docs/FACILITY-MODEL-DESIGN.md §7): the whole facility on one page — buildings, floors,
@@ -333,6 +334,14 @@ function GroupCard({g,first,last,focused,active,onActive,usage,ctx}:{g:FGroup; f
       <label className="wide"><span>ผู้ป่วยมาทำอะไรที่นี่ <Help topic="steps"/></span><Select multiple value={g.steps as StepKind[]} disabled={!editable} onChange={v=>set(x=>{ x.steps = v; })}
         options={STEPS.map(s=>({value:s,label:stepText[s].serve}))} placeholder="ไม่ใช่จุดคิว (เช่น ห้องทำงาน)" aria-label="ขั้นตอนที่ให้บริการ"/></label>
       <label><span>ใครมาใช้ <Help topic="serves"/></span><Select value={g.serves} disabled={!editable} onChange={v=>set(x=>{ x.serves = v; })} options={[{value:'department' as const,label:'ผู้ป่วยของแผนกนี้'},{value:'all' as const,label:'ทุกแผนก (จุดบริการร่วม)'}]} aria-label="ใครมาใช้"/></label>
+      {g.pointKind!=='kiosk' && g.floorId && (()=>{ const plan = planFloor(data,g.floorId), cap = plan ? seatCapacity(plan,g.departmentId) : 0, now = plan?.bands.find(x=>x.deptId===g.departmentId)?.seats.length ?? 0;
+        const mode = g.options?.seats===undefined ? 'auto' : g.options.seats===0 ? 'none' : 'set';
+        const setSeats = (v:number|undefined) => set(x=>{ if (v===undefined) { if (x.options) { delete x.options.seats; if (!Object.keys(x.options).length) delete x.options; } } else x.options = {...x.options,seats:v}; });
+        return <label><span>เก้าอี้พื้นที่รอ <Help topic="seats"/></span>
+          <Select value={mode} disabled={!editable} onChange={m=>setSeats(m==='auto' ? undefined : m==='none' ? 0 : Math.min(cap,Math.max(1,now || 12)))}
+            options={[{value:'auto' as const,label:'อัตโนมัติ'},{value:'none' as const,label:'ไม่มี'},{value:'set' as const,label:'ระบุจำนวน'}]} aria-label="เก้าอี้พื้นที่รอ"/>
+          {mode==='set' && <span className="facUnit"><input type="number" min={1} max={cap} value={g.options?.seats ?? 0} disabled={!editable} onChange={e=>setSeats(Math.max(1,Math.min(cap,Math.round(Number(e.target.value)||1))))} aria-label="จำนวนเก้าอี้"/><em>ที่นั่ง (โซนนี้จุได้ {cap})</em></span>}
+          <small className="facExample">ตอนนี้ในโซน{data.departments.find(d=>d.id===g.departmentId)?.name ?? ''}: {now} ที่นั่ง</small></label>; })()}
       {g.pointKind==='counter' && <label><span>การจัดวาง <Help topic="arrange"/></span><Select value={g.options?.arrange ?? 'counter'} disabled={!editable} onChange={v=>set(x=>{ x.options = {...x.options,arrange:v}; if (v==='counter') { delete x.options.arrange; if (!Object.keys(x.options).length) delete x.options; } })}
         options={[{value:'counter' as const,label:'เคาน์เตอร์ยาว (นั่งเรียงกัน)'},{value:'booths' as const,label:'โต๊ะแยกกระจายในพื้นที่'}]} aria-label="การจัดวาง"/></label>}
       {g.pointKind==='bed' && g.steps.includes('treatment') && <label><span>รับผู้ป่วยระดับ <Help topic="triage"/></span><Select value={(g.options?.triage ?? [1,5]).join('-')} disabled={!editable}

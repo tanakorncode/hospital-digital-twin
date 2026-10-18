@@ -1,4 +1,5 @@
-import { facility, facilityRevision, fBuildings, fDepartment, fFloors, fGroup, fPoint, fPoints, floorAt, fGroups, isActive, onFacility, pointLabel,
+import { CORRIDOR, SEAT_DX, SEAT_DZ, counterAt, floorFrame, planFloor, type FloorPlan } from './floor-layout';
+import { facility, facilityRevision, fBuildings, fFloors, fGroup, fPoint, fPoints, floorAt, isActive, onFacility, pointLabel,
   type FBuilding, type FPoint } from './facility';
 
 // The hospital as drawn and simulated comes from the facility model (lib/facility.ts) — buildings, floors, the
@@ -18,25 +19,23 @@ const DEMO_BUILDING:Record<string,[number,number,[number,number]]> = {opd:[396,5
 const DEMO_FLOOR:Record<string,number> = {'opd-4':120,'opd-3':186,'opd-2':243,'opd-1':396,'inpatient-5':38,'inpatient-4':52,'inpatient-3':61,'inpatient-2':34,'inpatient-1':48,
   'er-3':6,'er-2':18,'er-1':27,'diagnostics-3':22,'diagnostics-2':31,'diagnostics-1':84,'support-2':42,'support-1':18};
 const kindFor = (b:FBuilding):BuildingKind => b.kind==='other' ? 'support' : b.kind;
+// Every floor laid out by the shared rules (lib/floor-layout.ts — the settings page's preview uses the same).
+const plans = new Map<string,FloorPlan>(); // floor id → layout
+export const floorPlan = (buildingId:string, level:number) => plans.get(floorAt(buildingId,level)?.id ?? '');
 // The departments on a floor, in band order (department order).
 type Band = {deptId:string; name:string};
-const bandsOf = new Map<string,Band[]>(); // floor id → bands
-export const floorBands = (buildingId:string, level:number) => bandsOf.get(floorAt(buildingId,level)?.id ?? '') ?? [];
+export const floorBands = (buildingId:string, level:number):Band[] => floorPlan(buildingId,level)?.bands ?? [];
 // Band index of a department on a floor (−1: not there).
 export const bandIndex = (buildingId:string, level:number, deptId:string) => floorBands(buildingId,level).findIndex(x=>x.deptId===deptId);
 function rebuildPlan() {
-  const f = facility(), order = new Map(f.departments.map((d,i)=>[d.id,i]));
-  bandsOf.clear();
-  const on = new Map<string,Set<string>>();
-  const add = (floorId:string|null|undefined, deptId:string) => { if (!floorId) return; if (!on.has(floorId)) on.set(floorId,new Set()); on.get(floorId)!.add(deptId); };
-  for (const g of fGroups()) if (g.pointKind!=='kiosk') add(g.floorId,g.departmentId);
-  for (const p of fPoints()) { const g = fGroup(p.groupId)!; if (g.pointKind!=='kiosk' && p.floorId) add(p.floorId,g.departmentId); }
-  for (const [floorId,ids] of on) bandsOf.set(floorId,[...ids].filter(id=>fDepartment(id)).sort((a,b)=>order.get(a)!-order.get(b)!).map(id=>({deptId:id,name:fDepartment(id)!.name})));
+  const f = facility();
+  plans.clear();
+  for (const fl of f.floors) { const plan = planFloor(f,fl.id); if (plan) plans.set(fl.id,plan); }
   buildings.splice(0,buildings.length,...fBuildings().map(b=>({id:b.id,name:b.name,kind:kindFor(b),x:b.map.x,z:b.map.z,width:b.map.width,depth:b.map.depth,
     floors:Math.max(1,...fFloors(b.id).map(x=>x.level)),color:b.map.color})));
   for (const k of Object.keys(buildingStats)) delete buildingStats[k];
   for (const b of fBuildings()) {
-    const floors = fFloors(b.id).slice().reverse().map(x=>{ const bands = bandsOf.get(x.id) ?? [];
+    const floors = fFloors(b.id).slice().reverse().map(x=>{ const bands = plans.get(x.id)?.bands ?? [];
       return {level:x.level,desc:x.description,count:DEMO_FLOOR[x.id] ?? 20*Math.max(1,bands.length),depts:bands.map(d=>d.name)}; });
     const [waiting,avgWait,rooms] = DEMO_BUILDING[b.id] ?? [0,0,[0,0] as [number,number]];
     buildingStats[b.id] = {waiting,avgWait,rooms,floors};
@@ -238,15 +237,11 @@ const roomIdOf = (p:FPoint) => p.id.startsWith('room:') ? p.id.slice(5) : p.id;
 function rebuildRooms() {
   roomsByFloor.clear(); roomById.clear();
   for (const b of fBuildings()) for (const fl of fFloors(b.id)) {
-    const bands = bandsOf.get(fl.id) ?? [], band = new Map(bands.map((x,i)=>[x.deptId,i]));
-    const list = fPoints().map(p=>({p,g:fGroup(p.groupId)!})).filter(({p,g})=>g.pointKind==='room' && (p.floorId ?? g.floorId)===fl.id)
-      .map(({p,g})=>({p,g,band:band.get(g.departmentId) ?? 0}));
-    const gOrder = new Map(facility().groups.map((g,i)=>[g.id,i]));
-    list.sort((a,b)=>a.band-b.band || gOrder.get(a.g.id)!-gOrder.get(b.g.id)! || a.p.number-b.p.number);
-    const rooms = list.map(({p,g,band:deptIndex},k):Room=>{
+    const plan = plans.get(fl.id); if (!plan) continue;
+    const bandOfDept = new Map(plan.bands.map((x,i)=>[x.deptId,i]));
+    const rooms = plan.rooms.map((r):Room=>{ const p = r.point, deptIndex = bandOfDept.get(r.deptId) ?? 0;
       const number = /^\d+$/.test(p.roomCode ?? '') ? Number(p.roomCode) : p.number;
-      const kind:RoomKind = p.roomKind==='lab' ? 'office' : p.roomKind ?? (g.steps.includes('exam') ? 'exam' : b.kind==='er' ? 'treatment' : b.kind==='inpatient' ? 'ward' : 'office');
-      return {id:roomIdOf(p),buildingId:b.id,level:fl.level,index:k,count:list.length,number,name:pointLabel(p),kind,dept:bands[deptIndex]?.name ?? '',deptIndex,pointId:p.id};
+      return {id:roomIdOf(p),buildingId:b.id,level:fl.level,index:r.index,count:r.count,number,name:pointLabel(p),kind:r.kind,dept:plan.bands[deptIndex]?.name ?? '',deptIndex,pointId:p.id};
     });
     roomsByFloor.set(`${b.id}:${fl.level}`,rooms);
     for (const r of rooms) { roomById.set(r.id,r); roomById.set(r.pointId,r); }
@@ -325,14 +320,17 @@ export const floorY = (level:number) => (level-1)*FLOOR_H+0.11;
 function bandOf(id:string, level:number, deptIndex:number) {
   const b = bld(id), n = buildingStats[id]?.floors.find(f=>f.level===level)?.depts.length ?? 1, w = b.width/n;
   const x0 = b.x-b.width/2+deptIndex*w;
-  return {b,x0,x1:x0+w,front0:-b.depth/2+b.depth*0.42+1.2};
+  return {b,x0,x1:x0+w,front0:floorFrame(b.width,b.depth).front0};
 }
-// Waiting chairs in a department's band — the same rows the 3D floor plan draws (seats every 0.46 × 0.68).
-export function waitingSeats(id:string, level:number) {
-  const b = bld(id), n = buildingStats[id]?.floors.find(f=>f.level===level)?.depts.length ?? 1, bandW = b.width/n, hd = b.depth/2, front0 = -hd+b.depth*0.42+1.2;
+// Waiting chairs in a department's band, as the 3D floor plan draws them (lib/floor-layout.ts) · without a
+// department: how many a plain band of the floor holds.
+export function waitingSeats(id:string, level:number, deptId?:string) {
+  const plan = floorPlan(id,level);
+  if (deptId) return plan?.bands.find(x=>x.deptId===deptId)?.seats.length ?? 0;
+  const b = bld(id), n = buildingStats[id]?.floors.find(f=>f.level===level)?.depts.length ?? 1, bandW = b.width/n, hd = b.depth/2, {front0} = floorFrame(b.width,b.depth);
   let rows = 0, cols = 0;
-  for (let z=front0+1.2; z<hd-0.3; z+=0.68) rows++;
-  for (let x=0.45; x<bandW-0.3; x+=0.46) cols++;
+  for (let z=front0+CORRIDOR; z<hd-0.3; z+=SEAT_DZ) rows++;
+  for (let x=0.45; x<bandW-0.3; x+=SEAT_DX) cols++;
   return rows*cols;
 }
 // The floor area of one department: its band of rooms at the back and its waiting area in front.
@@ -346,8 +344,8 @@ export function waitingSpot(id:string, level:number, deptIndex:number, u:number,
   return {x:x0+0.5+u*(x1-x0-0.9),y:floorY(level),z:b.z+front0+1.1+v*Math.max(0.2,b.depth/2-front0-1.5)};
 }
 export function counterSpot(id:string, level:number, deptIndex:number, u:number):Spot {
-  const {b,x0,front0} = bandOf(id,level,deptIndex);
-  return {x:x0+0.5+u*0.9,y:floorY(level),z:b.z+front0+0.85};
+  const {b,x0,front0} = bandOf(id,level,deptIndex), at = counterAt(x0,front0,u);
+  return {x:at.x,y:floorY(level),z:b.z+at.z};
 }
 // Where a patient stands while being seen in a room: across the desk, or beside the bed.
 export function roomSpot(roomId:string):Spot {

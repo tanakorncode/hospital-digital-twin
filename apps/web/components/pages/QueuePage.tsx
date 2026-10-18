@@ -726,7 +726,7 @@ function OverviewTab({patients,m,onOpen,queue,assist,onOpenSettings,onOpenPlace}
    const bad = stations.filter(st=>['stalled','slow','paused'].includes(assist.health.get(st.id)?.state ?? ''));
    // Clinic waiting area: patients sitting there against the chairs the floor plan has (relatives use seats too).
    const c = key.startsWith('clinic:') ? clinicsByKey.get(key.slice(7)) : undefined;
-   const seats = c ? waitingSeats(c.buildingId,c.level) : 0, seated = c ? list.filter(s=>m<s.step.called && s.area.buildingId===c.buildingId && s.area.level===c.level).length : 0, fill = seats ? seated/seats : 0;
+   const seats = c ? waitingSeats(c.buildingId,c.level,c.key) : 0, seated = c ? list.filter(s=>m<s.step.called && s.area.buildingId===c.buildingId && s.area.level===c.level).length : 0, fill = seats ? seated/seats : 0;
    const severity:'critical'|'warn'|'ok' = long>=5 || max>=90 || fill>=1 || bad.some(st=>assist.health.get(st.id)?.state==='stalled') ? 'critical' : long>0 || max>=45 || fill>=0.8 || bad.length ? 'warn' : 'ok';
    return {key,name:cardName(key),list,waiting:w.length,long,max,avg,stations,bad,severity,seats,seated,fill};
   }).filter(c=>c.list.length).sort((x,y)=>({critical:0,warn:1,ok:2}[x.severity]-{critical:0,warn:1,ok:2}[y.severity]) || y.max-x.max);

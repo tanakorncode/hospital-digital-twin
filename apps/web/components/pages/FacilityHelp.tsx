@@ -2,15 +2,17 @@
 import { useId, useMemo, useState, type ReactNode } from 'react';
 import dynamic from 'next/dynamic';
 import { Info } from 'lucide-react';
-import type { Facility, FGroup, FPoint } from '../../lib/facility';
+import type { Facility } from '../../lib/facility';
+import { layoutFloor, type FloorLayout } from '../../lib/floor-preview';
 
 // Help for the facility settings: an (i) after a field's label that explains, with a small picture, where the value
 // shows up — and a live floor plan drawn from the draft, so a change is seen on the map before it is published.
 type Data = Omit<Facility,'version'|'publishedAt'>;
 
 // ---- (i) popovers -------------------------------------------------------------------------------------------------
-export type HelpTopic = 'floor'|'pointKind'|'noun'|'minOpen'|'steps'|'serves'|'arrange'|'triage'|'prefix'|'firstGroup'|'features'|'roomCode'|'pointFloor';
+export type HelpTopic = 'seats'|'floor'|'pointKind'|'noun'|'minOpen'|'steps'|'serves'|'arrange'|'triage'|'prefix'|'firstGroup'|'features'|'roomCode'|'pointFloor';
 const TOPICS:Record<HelpTopic,{title:string; text:ReactNode; pic?:ReactNode}> = {
+  seats:{title:'เก้าอี้พื้นที่รอ',text:<>เก้าอี้ที่ผู้ป่วยของกลุ่มนี้นั่งรอเรียก วางเป็นแถวหันเข้าหาเคาน์เตอร์ในโซนของแผนก · <b>อัตโนมัติ</b> = เต็มโซน ยกเว้นหอผู้ป่วยและอาคารสนับสนุน · <b>ไม่มี</b> = ไม่มีพื้นที่นั่งรอ · ระบุจำนวนได้ (ไม่เกินที่โซนจุได้) · ใช้ในแผนที่ ผังตัวอย่าง และตัวเลข "ที่นั่งเต็มกี่ %" ในหน้าคิว</>},
   floor:{title:'อยู่ที่ (ชั้นของกลุ่ม)',text:<>ชั้นที่มี<b>พื้นที่รอ</b>ของกลุ่มนี้ ห้อง/ช่อง/เตียงทั้งหมดของกลุ่มวาดบนชั้นนี้ และผู้ป่วยถูกบอกให้ไปรอที่นี่ (นำทาง, หน้าคิว, LINE)</>,pic:<PicFloor/>},
   pointKind:{title:'แสดงบนผังเป็น',text:<><b>ห้อง</b> = กล่องห้องตามผนังด้านหลังของชั้น · <b>ช่อง/โต๊ะ</b> = เคาน์เตอร์หน้าพื้นที่รอ · <b>เตียง</b> = เตียงในห้องหรือเตียงรวม · <b>ตู้คิว</b> = ตู้ออกบัตรคิว</>,pic:<PicKinds/>},
   noun:{title:'ชื่อที่ผู้ป่วยเห็น',text:<>คำนี้ + เลข = ชื่อของแต่ละห้อง/ช่องบน<b>ป้าย จอทีวี เสียงเรียกคิว และข้อความ LINE</b> เช่น “ช่องลงทะเบียน 3” · ห้อง/ช่องที่ตั้งชื่อเอง (กดดินสอที่ชิป) ใช้ชื่อนั้นแทน</>,pic:<PicCall/>},
@@ -81,63 +83,10 @@ function PicTicket() {
 // The floor as the 3D map lays it out (lib/scene-data.ts, lib/patients.ts): one waiting band per department on the
 // floor (department order), rooms along the back wall in band order, counters at the front of their band (one long
 // counter, or booths across it), beds in their room or in a row at the front. Drawn from the draft, in 2D or 3D.
-const label = (g:FGroup|undefined, p:FPoint) => p.name || `${g?.pointNoun ?? ''} ${p.number}`.trim();
-const live = (x?:{active:boolean; retiredAt?:string}) => !!x && x.active && !x.retiredAt;
-type Item = {id:string; x:number; z:number; on:boolean; hi:boolean; number:number};
-export type FloorLayout = {title:string; W:number; D:number; roomFront:number; front0:number;
-  bands:{id:string; name:string; x0:number; w:number; on:boolean; focus:boolean}[];
-  rooms:{id:string; x0:number; w:number; name:string; short:string; on:boolean; hi:boolean}[];
-  counters:(Item & {booth:boolean})[]; beds:Item[]; seats:{x:number; z:number; focus:boolean}[]; tag:string; tagAt?:{x:number; z:number}; focusKind?:string};
-export function layoutFloor(data:Data, floorId:string, focus?:string):FloorLayout|null {
-  const floor = data.floors.find(f=>f.id===floorId), b = floor && data.buildings.find(x=>x.id===floor.buildingId);
-  if (!floor || !b) return null;
-  const groupOf = new Map(data.groups.map(g=>[g.id,g])), order = new Map(data.departments.map((d,i)=>[d.id,i])), gOrder = new Map(data.groups.map((g,i)=>[g.id,i]));
-  const pts = data.points.filter(p=>!p.retiredAt && groupOf.get(p.groupId) && !groupOf.get(p.groupId)!.retiredAt);
-  const onFloor = (p:FPoint) => (p.floorId ?? groupOf.get(p.groupId)!.floorId)===floorId;
-  const depts = new Set<string>();
-  data.groups.forEach(g=>{ if (!g.retiredAt && g.pointKind!=='kiosk' && g.floorId===floorId && data.departments.some(d=>d.id===g.departmentId && !d.retiredAt)) depts.add(g.departmentId); });
-  pts.forEach(p=>{ const g = groupOf.get(p.groupId)!; if (p.floorId===floorId && g.pointKind!=='kiosk') depts.add(g.departmentId); });
-  const bandIds = [...depts].sort((x,y)=>order.get(x)!-order.get(y)!), bandOf = (deptId:string) => Math.max(0,bandIds.indexOf(deptId));
-  const W = b.map.width, D = b.map.depth, hw = W/2, hd = D/2, roomFront = -hd+D*0.42, front0 = roomFront+1.2, bandW = W/Math.max(1,bandIds.length);
-  const roomPts = pts.filter(p=>groupOf.get(p.groupId)!.pointKind==='room' && onFloor(p))
-    .sort((a,c)=>bandOf(groupOf.get(a.groupId)!.departmentId)-bandOf(groupOf.get(c.groupId)!.departmentId) || gOrder.get(a.groupId)!-gOrder.get(c.groupId)! || a.number-c.number);
-  const rw = W/Math.max(1,roomPts.length), roomIndex = new Map(roomPts.map((r,i)=>[r.id,i]));
-  const on = (p:FPoint) => live(p) && live(groupOf.get(p.groupId)), hi = (p:FPoint) => p.groupId===focus;
-  const item = (p:FPoint, x:number, z:number):Item => ({id:p.id,x,z,on:on(p),hi:hi(p),number:p.number});
-  const counters:FloorLayout['counters'] = [], beds:Item[] = [];
-  data.groups.filter(g=>!g.retiredAt && g.pointKind==='counter').forEach(g=>{ const mine = pts.filter(p=>p.groupId===g.id && onFloor(p)).sort((a,c)=>a.number-c.number); if (!mine.length) return;
-    const x0 = -hw+bandOf(g.departmentId)*bandW, booth = g.options?.arrange==='booths';
-    mine.forEach((p,i)=>counters.push({...(booth ? item(p,x0+(i+0.5)*bandW/mine.length,front0+0.95) : item(p,x0+0.5+((i+0.5)/mine.length)*0.9,front0+0.85)),booth})); });
-  const bedPts = pts.filter(p=>groupOf.get(p.groupId)!.pointKind==='bed' && onFloor(p));
-  bedPts.filter(p=>p.inRoomId && roomIndex.has(p.inRoomId)).forEach(p=>{ const mates = bedPts.filter(o=>o.inRoomId===p.inRoomId).sort((a,c)=>a.number-c.number), k = mates.indexOf(p), m = mates.length;
-    beds.push(item(p,-hw+roomIndex.get(p.inRoomId!)!*rw+rw*(m<=1?0.5:0.3+0.42*k/(m-1)),-hd+0.9)); });
-  const open = bedPts.filter(p=>!p.inRoomId || !roomIndex.has(p.inRoomId)), ward = open.filter(p=>groupOf.get(p.groupId)!.steps.includes('ward'));
-  ward.forEach((p,j)=>beds.push(item(p,-hw+0.55+j*((W-1.1)/Math.max(1,ward.length-1)),hd-0.8)));
-  open.filter(p=>!ward.includes(p)).forEach(p=>{ const mates = open.filter(o=>o.groupId===p.groupId), k = mates.indexOf(p), m = mates.length, x0 = -hw+bandOf(groupOf.get(p.groupId)!.departmentId)*bandW;
-    beds.push(item(p,x0+bandW*(m<=1?0.5:0.3+0.42*k/(m-1)),hd-0.8)); });
-  const fg = focus ? groupOf.get(focus) : undefined;
-  // Waiting chairs in rows facing the counters, as the 3D map seats them: not in wards (nurse station + open beds), not
-  // in support buildings (desks), not where beds stand out in the band (resuscitation bays); behind a row of booths.
-  const seats:FloorLayout['seats'] = [];
-  if (b.kind!=='inpatient' && b.kind!=='support') bandIds.forEach((id,i)=>{
-    const x0 = -hw+i*bandW, x1 = x0+bandW, focusHere = !!fg && fg.departmentId===id;
-    const groupsHere = data.groups.filter(g=>!g.retiredAt && g.departmentId===id);
-    if (beds.some(c=>{ const p = pts.find(x=>x.id===c.id)!; return groupsHere.some(g=>g.id===p.groupId) && !p.inRoomId; })) return;
-    const booths = groupsHere.some(g=>g.pointKind==='counter' && g.options?.arrange==='booths' && g.floorId===floorId);
-    for (let z=front0+(booths?2:1.2); z<hd-0.3; z+=0.68) for (let x=x0+0.45; x<x1-0.3; x+=0.46) seats.push({x,z,focus:focusHere});
-  });
-  const rooms = roomPts.map((p,k)=>({id:p.id,x0:-hw+k*rw,w:rw,name:label(groupOf.get(p.groupId),p),short:p.roomCode ?? String(p.number),on:on(p),hi:hi(p)}));
-  // The group being edited, called out with its name and its numbers, by the first of its rooms / counters / beds.
-  const mine = [...rooms.filter(r=>r.hi).map(r=>({x:r.x0+r.w/2,z:roomFront})),...counters.filter(c=>c.hi),...beds.filter(c=>c.hi)];
-  const nums = fg ? pts.filter(p=>p.groupId===fg.id && onFloor(p)).map(p=>p.number).sort((a,c)=>a-c) : [];
-  const tag = fg && mine.length ? `${fg.pointNoun} ${nums.length>1 ? `${nums[0]}–${nums[nums.length-1]}` : nums[0] ?? ''}`.trim() : '';
-  return {title:`${b.shortName || b.name} ${floor.name}`,W,D,roomFront,front0,rooms,counters,beds,tag,tagAt:mine[0] ? {x:Math.min(...mine.map(m=>m.x)),z:Math.max(...mine.map(m=>m.z))} : undefined,focusKind:fg?.pointKind,
-    seats,bands:bandIds.map((id,i)=>{ const d = data.departments.find(x=>x.id===id); return {id,name:d?.name ?? '',x0:-hw+i*bandW,w:bandW,on:live(d),focus:!!fg && fg.departmentId===id}; })};
-}
-
 // 2D or 3D, remembered while the page is open (3D loads only when asked for).
 const Preview3D = dynamic(()=>import('./FacilityPreview3D'),{ssr:false,loading:()=><div className="facPreview3d loading">กำลังโหลดภาพ 3 มิติ…</div>});
 let lastMode:'2d'|'3d' = '2d';
+export type { FloorLayout };
 export function FloorPreview({data,floorId,focus}:{data:Data; floorId:string; focus?:string}) {
   const [mode,setModeState] = useState(lastMode);
   const setMode = (m:'2d'|'3d') => { lastMode = m; setModeState(m); };
