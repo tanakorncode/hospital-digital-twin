@@ -72,12 +72,13 @@ function parse(text:string, clinics:Clinic[]):Row[] {
   });
   return rows;
 }
-// The demo duty roster (what the 3D map shows, made-up names): each clinic exam room's sessions, Monday–Friday.
+// The demo duty roster (what the 3D map shows, made-up names): each clinic exam room's sessions, Monday–Friday. The
+// code comes from the room's id (room numbers can repeat across clinics).
 function rosterText(clinics:Clinic[]):string {
   const hh = (h:number) => h>=24 ? '23:59' : `${String(h).padStart(2,'0')}:00`;
   const lines = [HEAD.join('\t')];
   for (const c of clinics) for (const room of c.rooms) roomShifts(room).forEach((s,k)=>{
-    lines.push([`DEMO-${room.number}-${k+1}`,doctorName(s.doctor,true),c.dept,'จ-ศ',hh(s.from),hh(s.to),String(room.number)].join('\t')); });
+    lines.push([`DEMO-${room.id.replace(/^room:/,'')}-${k+1}`.slice(0,20),doctorName(s.doctor,true),c.dept,'จ-ศ',hh(s.from),hh(s.to),String(room.number)].join('\t')); });
   return lines.join('\n');
 }
 const TEMPLATE = [HEAD,['ว.12345','นพ.สมชาย ใจดี','อายุรกรรมทั่วไป','จ-ศ','09:00','12:00','201'],['ว.12345','นพ.สมชาย ใจดี','อายุรกรรมทั่วไป','พ','13:00','16:00','201'],
