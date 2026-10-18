@@ -13,10 +13,25 @@ import { CLIP_NAMES } from './avatarClips';
 //  · for a state without a clip (or a model straight from a generator, with none), the whole figure moves: breathing,
 //    a gentle sway, a hop when someone starts, a nod while she speaks, turning towards the panel she points at, a tilt
 //    while thinking, a small bow, and now and then a glance aside so she never looks frozen.
+// Generated "idle" and "talk" clips often barely move (Meshy's: under 2°). Over a clip that quiet, a Mixamo-style
+// skeleton gets a layer of its own: breathing, looking around, and while she speaks nodding and moving her hands.
+// On the welcome screen she waves again every so often.
 // The figure is scaled to one unit tall, feet on the ground, facing the viewer (glTF's +Z). `onReady` once drawn;
 // `onSlow` if this machine cannot keep up (the kiosk then shows the 2D drawing instead).
 type Clips = Partial<Record<AvatarState, THREE.AnimationAction>>;
 const ONCE:AvatarState[] = ['greeting','pointing','thanks'];
+const QUIET = 6*Math.PI/180; // a clip whose bones turn less than this is "quiet"
+const WAVE_AGAIN = 14;       // s between waves while the welcome screen waits
+type Bones = Partial<Record<'spine'|'spine2'|'neck'|'head'|'armL'|'armR',THREE.Bone>>;
+const BONE_NAMES:Record<keyof Bones,string> = {spine:'Spine',spine2:'Spine2',neck:'Neck',head:'Head',armL:'LeftForeArm',armR:'RightForeArm'};
+// the most any bone turns in a clip
+function reach(clip:THREE.AnimationClip) { let most = 0; const q0 = new THREE.Quaternion(), q = new THREE.Quaternion();
+ for (const tr of clip.tracks) { if (!tr.name.endsWith('.quaternion')) continue; const v = tr.values; q0.fromArray(v,0);
+  for (let i=4; i<v.length; i+=4) most = Math.max(most,q0.angleTo(q.fromArray(v,i))); }
+ return most; }
+const _q = new THREE.Quaternion(), _e = new THREE.Euler();
+// turn a bone a little in its own frame, on top of what the clip set this frame
+const nudge = (b:THREE.Bone|undefined, x:number, y:number, z:number) => { if (b) b.quaternion.multiply(_q.setFromEuler(_e.set(x,y,z))); };
 
 function Figure({url,state,onReady}:{url:string; state:AvatarState; onReady?:()=>void}) {
  const gltf = useGLTF(url,false,true);
@@ -37,6 +52,10 @@ function Figure({url,state,onReady}:{url:string; state:AvatarState; onReady?:()=
    if (ONCE.includes(st)) { act.setLoop(THREE.LoopOnce,1); act.clampWhenFinished = true; } out[st] = act; } });
   return out; },[gltf.animations,mixer]);
  const animated = Object.keys(clips).length>0;
+ const quiet = useMemo(()=>new Set(Object.values(clips).filter(a=>reach(a.getClip())<QUIET)),[clips]);
+ const bones = useMemo<Bones>(()=>{ const out:Bones = {}; scene.traverse(o=>{ if (!(o as THREE.Bone).isBone) return;
+  const n = o.name.replace(/^mixamorig[:_]?/i,''); (Object.keys(BONE_NAMES) as (keyof Bones)[]).forEach(k=>{ if (n===BONE_NAMES[k] && !out[k]) out[k] = o as THREE.Bone; }); });
+  return out; },[scene]);
  const current = useRef<THREE.AnimationAction|null>(null);
  useEffect(()=>{ onReady?.(); },[onReady]);
  // the state's clip (or idle), cross-faded; a one-off goes back to idle when it ends
@@ -45,11 +64,26 @@ function Figure({url,state,onReady}:{url:string; state:AvatarState; onReady?:()=
   next.reset().setEffectiveWeight(1).fadeIn(0.35).play(); current.current?.fadeOut(0.35); current.current = next;
   const done = (e:{action:THREE.AnimationAction}) => { if (e.action===next && clips.idle && next!==clips.idle) { clips.idle.reset().fadeIn(0.35).play(); next.fadeOut(0.35); current.current = clips.idle; } };
   mixer.addEventListener('finished',done); return ()=>mixer.removeEventListener('finished',done); },[state,animated,clips,mixer]);
+ // waiting on the welcome screen: wave again now and then
+ useEffect(()=>{ const wave = clips.greeting; if (state!=='greeting' || !wave) return;
+  const t = setInterval(()=>{ if (current.current===wave) return; wave.reset().fadeIn(0.35).play(); current.current?.fadeOut(0.35); current.current = wave; },WAVE_AGAIN*1000);
+  return ()=>clearInterval(t); },[state,clips]);
  // procedural motion, eased towards each state's pose
- const since = useRef(0), glance = useRef({wait:6+Math.random()*8, left:0, yaw:0}), pose = useRef({yaw:0,tilt:0,lean:0,y:0});
+ const since = useRef(0), glance = useRef({wait:6+Math.random()*8, left:0, yaw:0}), pose = useRef({yaw:0,tilt:0,lean:0,y:0}), life = useRef({idle:0,talk:0});
  useEffect(()=>{ since.current = 0; },[state]);
  useFrame((_,dt)=>{
   const d = Math.min(dt,0.1); mixer.update(d); since.current += d; const t = performance.now()/1000, b = body.current, r = root.current; if (!b || !r) return;
+  // the layer over a quiet clip (eased in and out so it never jumps)
+  const cur = current.current, still = !!cur && quiet.has(cur), L = life.current;
+  L.talk = THREE.MathUtils.damp(L.talk,still && state==='speaking' ? 1 : 0,3,d); L.idle = THREE.MathUtils.damp(L.idle,still ? 1 : 0,3,d);
+  if (L.idle>0.001) { const k = L.idle, deg = Math.PI/180;
+   nudge(bones.spine2,(Math.sin(t*1.6)*1.4)*deg*k,0,0);
+   nudge(bones.neck,0,(Math.sin(t*0.37)*7+Math.sin(t*0.13+1)*5)*deg*k*(1-L.talk*0.5),0);
+   nudge(bones.head,(Math.sin(t*0.9)*1.5+L.talk*(2+Math.sin(t*4.2)*3.5))*deg*k,0,(Math.sin(t*0.5)*3+L.talk*Math.sin(t*1.1)*3)*deg*k);
+   if (L.talk>0.001) { const q = L.talk;
+    nudge(bones.spine,0,Math.sin(t*1.3)*3*deg*q,0);
+    nudge(bones.armR,(18+16*Math.sin(t*2.3))*deg*q,0,0);
+    nudge(bones.armL,(10+12*Math.sin(t*1.9+1.2))*deg*q,0,0); } }
   // a glance aside every 8–16 s while waiting
   const g = glance.current; if (g.left>0) g.left -= d; else if ((g.wait -= d)<0) { g.left = 1.6; g.wait = 8+Math.random()*8; g.yaw = (Math.random()<0.5?-1:1)*(0.18+Math.random()*0.12); }
   const glancing = state==='idle' && g.left>0;
@@ -63,8 +97,8 @@ function Figure({url,state,onReady}:{url:string; state:AvatarState; onReady?:()=
   else if (glancing) target.yaw = g.yaw;
   const p = pose.current, ease = (a:number,b2:number,l=6) => THREE.MathUtils.damp(a,b2,l,d);
   p.yaw = ease(p.yaw,target.yaw,4); p.tilt = ease(p.tilt,target.tilt); p.lean = ease(p.lean,target.lean); p.y = ease(p.y,target.y,18);
-  // with its own animations the model breathes and gestures itself: only turn it; without, the whole figure moves
-  const breathe = animated ? 0 : Math.sin(t*2.1)*0.007, sway = animated ? 0 : Math.sin(t*0.8)*0.018;
+  // with its own animations the model breathes and gestures itself: only a slight sway; without, the whole figure moves
+  const breathe = animated ? 0 : Math.sin(t*2.1)*0.007, sway = Math.sin(t*0.8)*(animated ? 0.008 : 0.018);
   const talk = state==='speaking' && !clips.speaking ? Math.abs(Math.sin(t*8.5))*0.008 : 0, nod = state==='speaking' && !clips.speaking ? Math.sin(t*4.2)*0.025 : 0;
   r.rotation.y = p.yaw; r.position.y = p.y+talk;
   b.rotation.set(p.lean+nod,0,p.tilt+sway); b.scale.set(1-breathe*0.5,1+breathe,1-breathe*0.5);
