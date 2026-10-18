@@ -1070,10 +1070,11 @@ kbd{margin-left:6px;padding:1px 6px;border-radius:5px;background:#ffffff33;borde
 .ovTable td{padding-top:7px;padding-bottom:7px}
 .ovQueue{font-size:14.5px}
 .ovSub{display:block;font-size:11px;color:#7a8ca0}
-.ovWait{display:inline-flex;align-items:center;gap:6px;min-width:120px;font-size:12px;color:#60738a}
+/* never wider than its column: when the time does not fit beside the bar it goes under it (no running into the next column) */
+.ovWait{display:inline-flex;flex-wrap:wrap;align-items:center;gap:2px 6px;min-width:120px;max-width:100%;font-size:12px;color:#60738a}
 .ovWait i{display:block;height:6px;max-width:60px;flex:0 0 auto;border-radius:3px;background:#2a78d6;min-width:3px}
 .ovWait b{font-size:13.5px;color:#0f2340;font-variant-numeric:tabular-nums}
-.ovWait.mid i{background:#f5a524}
+.ovWait.mid i{background:#f5a524}.ovWait.mid b{color:#b45309}
 .ovWait.long i{background:#e5484d}.ovWait.long b{color:#c92a2a}
 .ovOk{display:flex;flex-direction:column;gap:6px}
 .ovOkHead{display:flex;align-items:center;gap:8px}
@@ -1756,7 +1757,9 @@ kbd{margin-left:6px;padding:1px 6px;border-radius:5px;background:#ffffff33;borde
 .ovTable .statusPill{max-width:100%;overflow:hidden;text-overflow:ellipsis}
 .srOnly{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 /* Table beside the map: narrower fixed columns so "ห้อง / ช่อง" keeps enough room */
-.ovSplit.withMap .ovTable col.cQ{width:104px}.ovSplit.withMap .ovTable col.cWait{width:96px}.ovSplit.withMap .ovTable col.cStep{width:112px}
+.ovSplit.withMap .ovTable col.cQ{width:104px}.ovSplit.withMap .ovTable col.cWait{width:112px}.ovSplit.withMap .ovTable col.cStep{width:112px}
+/* beside the map the bar goes: the time alone says it (red = long, amber = getting long) */
+.ovSplit.withMap .ovWait i{display:none}
 .ovSplit.withMap .ovTable col.cEnd{width:104px}.ovSplit.withMap .ovTable col.cAct{width:72px}
 .ovSplit.withMap .ovTable td:nth-child(5){white-space:normal}
 
@@ -2362,18 +2365,21 @@ a.liffChoice{text-decoration:none;padding:10px 16px}
 .slotPlanGrid label.lineCheck input{width:18px;height:18px;margin:0}
 @media (max-width:720px){.rcpNewKiosk{grid-template-columns:1fr}}
 .rcpNewKiosk .wide{grid-column:auto}
-/* Checkboxes in settings and staff dialogs: larger, rounded, blue with a white tick (switches keep their own style) */
-:is(.setCard,.moveDialog,.lineForm,.bookTab) input[type=checkbox]:not(.switch input){appearance:none;-webkit-appearance:none;flex-shrink:0;width:22px;height:22px;margin:0;
+/* Every checkbox in the app: larger, rounded, blue with a white tick (the on/off switches keep their own style) */
+input[type=checkbox]:not(.switch input,.mini-switch input){appearance:none;-webkit-appearance:none;flex-shrink:0;width:22px;height:22px;margin:0;
  border:2px solid #b6c4d6;border-radius:7px;background:#fff;display:inline-grid;place-content:center;cursor:pointer;vertical-align:middle;transition:background .15s,border-color .15s,box-shadow .15s}
-:is(.setCard,.moveDialog,.lineForm,.bookTab) input[type=checkbox]:not(.switch input)::before{content:"";width:12px;height:12px;background:#fff;transform:scale(0);transition:transform .12s ease;
+input[type=checkbox]:not(.switch input,.mini-switch input)::before{content:"";width:12px;height:12px;background:#fff;transform:scale(0);transition:transform .12s ease;
  clip-path:polygon(14% 52%,0 66%,38% 100%,100% 22%,86% 8%,38% 72%)}
-:is(.setCard,.moveDialog,.lineForm,.bookTab) input[type=checkbox]:not(.switch input):checked{background:#1677ff;border-color:#1677ff}
-:is(.setCard,.moveDialog,.lineForm,.bookTab) input[type=checkbox]:not(.switch input):checked::before{transform:scale(1)}
-:is(.setCard,.moveDialog,.lineForm,.bookTab) input[type=checkbox]:not(.switch input):hover{border-color:#1677ff}
-:is(.setCard,.moveDialog,.lineForm,.bookTab) input[type=checkbox]:not(.switch input):focus-visible{outline:none;box-shadow:0 0 0 4px #1677ff33}
-:is(.setCard,.moveDialog,.lineForm,.bookTab) input[type=checkbox]:not(.switch input):disabled{opacity:.45;cursor:default}
+input[type=checkbox]:not(.switch input,.mini-switch input):checked{background:#1677ff;border-color:#1677ff}
+input[type=checkbox]:not(.switch input,.mini-switch input):checked::before{transform:scale(1)}
+input[type=checkbox]:not(.switch input,.mini-switch input):hover{border-color:#1677ff}
+input[type=checkbox]:not(.switch input,.mini-switch input):focus-visible{outline:none;box-shadow:0 0 0 4px #1677ff33}
+input[type=checkbox]:not(.switch input,.mini-switch input):disabled{opacity:.45;cursor:default}
 .slotPlanGrid label.lineCheck{gap:10px;font-size:14px;color:#0f2340;cursor:pointer}
 .slotPlanGrid label.lineCheck input{width:22px;height:22px}
+/* in a table row a little smaller, so rows keep their height */
+.dataTable input[type=checkbox]:not(.switch input,.mini-switch input){width:19px;height:19px;border-radius:6px}
+.dataTable input[type=checkbox]:not(.switch input,.mini-switch input)::before{width:10px;height:10px}
 .retireDialog{width:min(560px,100%);gap:14px;padding:20px 22px}
 .retireDialog header b{font-size:18px;color:#0f2340;display:block}.retireDialog header small{font-size:13px}
 .retireFacts{margin:0;padding:12px 14px 12px 32px;border-radius:12px;background:#f8fafc;border:1px solid #e2e8f0;display:flex;flex-direction:column;gap:6px;font-size:14px;color:#334155}
