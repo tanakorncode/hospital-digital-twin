@@ -191,8 +191,10 @@ export function ApptTab({api,rev,user,features}:{api:Api; rev:number; user?:Auth
  const on = !!features.phase2.appointments, rows = found ?? list, supervisor = canDo(user,'supervisor'), now = new Date();
  return <div className="bookTab">
   {!on && <p className="serviceNote">ระบบนัดแพทย์ยังปิดอยู่ · ผู้ดูแลระบบเปิดได้ที่ ตั้งค่า → นัดแพทย์ (ดูรายการเดิมได้ตามปกติ)</p>}
+  {/* Switched on, but no clinic takes appointments yet: say why "นัดผู้ป่วย" cannot be pressed, and what to do. */}
+  {on && !open.length && <p className="serviceNote">ยังไม่มีคลินิกที่เปิดให้นัด จึงนัดผู้ป่วยไม่ได้ · ผู้ดูแลระบบตั้งได้ที่ ตั้งค่า → นัดแพทย์: (1) กด "เปิด" ที่คลินิก (2) สร้างตารางออกตรวจของแพทย์</p>}
   <div className="bookBar">
-   <button className="btn" disabled={!on || !open.length} onClick={()=>setPicker({mode:'new'})}><CalendarPlus size={15}/> นัดผู้ป่วย</button>
+   <button className="btn" disabled={!on || !open.length} title={!on ? 'ระบบนัดแพทย์ยังปิดอยู่' : !open.length ? 'ยังไม่มีคลินิกที่เปิดให้นัด' : undefined} onClick={()=>setPicker({mode:'new'})}><CalendarPlus size={15}/> นัดผู้ป่วย</button>
    <DatePicker value={date} onChange={d=>{ setDate(d); setFound(null); }} aria-label="วันที่" className="dpFilter"/>
    <Select value={clinic} onChange={setClinic} aria-label="คลินิก" className="selFilter" options={[{value:'',label:'ทุกคลินิก'},...clinics.filter(c=>policies.some(p=>p.clinicCode===c.key)).map(c=>({value:c.key,label:clinicName(c),sub:`ชั้น ${c.level}`}))]}/>
    <form className="bookFind" onSubmit={e=>{ e.preventDefault(); void search(); }}><Search size={14}/><input value={find} onChange={e=>setFind(e.target.value)} placeholder="รหัสนัด (AP…) หรือ HN"/>
@@ -294,7 +296,8 @@ function ApptPicker({api,clinics,policies,move,onClose,onDone}:{api:Api; clinics
      {slots===null ? <p className="cmdNote">กำลังโหลด…</p> : byDoctor.length ? byDoctor.map(([doc,list])=><div key={doc} className="apptDoc"><b>{doc}</b>
       <div className="segBtns">{list.map(s=>{ const current = !!move && s.startsAt===move.startsAt && s.providerName===move.providerName;
        return <button key={s.id} className={s.id===slotId?'on':''} aria-pressed={s.id===slotId} disabled={current} onClick={()=>setSlotId(s.id)}>{timeOf(s.startsAt)} <small>{current?'(เดิม)':`ว่าง ${s.remaining}`}</small></button>; })}</div></div>)
-      : <p className="cmdNote">ไม่มีช่วงนัดที่ยังว่างในวันนี้ · ลองวันอื่น</p>}</div>
+      : days.length ? <p className="cmdNote">ไม่มีช่วงนัดที่ยังว่างในวันนี้ · ลองวันอื่น</p>
+      : <p className="cmdNote">คลินิกนี้ยังไม่มีช่วงนัดที่ว่างเลย (ยังไม่มีตารางออกตรวจของแพทย์ หรือเต็มหมดแล้ว) · ผู้ดูแลระบบสร้างตารางได้ที่ ตั้งค่า → นัดแพทย์</p>}</div>
     {error && <p className="loginError" role="alert">{error}</p>}
     <footer><button className="btn ghost" onClick={onClose}>ยกเลิก</button>
      <button className="btn" disabled={busy || (!move && !hn.trim()) || !slot} onClick={()=>void submit()}>{busy?'กำลังบันทึก…':slot?`${move?'ยืนยันเลื่อนเป็น':'ยืนยันนัด'} ${timeOf(slot.startsAt)}`:'เลือกแพทย์และเวลา'}</button></footer>
