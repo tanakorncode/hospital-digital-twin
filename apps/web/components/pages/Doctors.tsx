@@ -1,6 +1,9 @@
 'use client';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, CalendarDays, Loader2, Plus, Search, Stethoscope, UserRound } from 'lucide-react';
+import { ArrowLeft, CalendarDays, FileUp, Loader2, Plus, Stethoscope, UserRound } from 'lucide-react';
+import { SearchBox } from '../SearchBox';
+import { ClinicPicker } from '../ClinicPicker';
+import { DoctorImport } from './DoctorImport';
 import { opdClinics, type Clinic } from '../../lib/patients';
 import type { QueueSync } from '../../lib/queue';
 import { SessionPlanner, usePolicies, type Provider } from './Appointments';
@@ -22,7 +25,8 @@ export function DoctorsPane({api,rev}:{api:Api; rev:number}) {
   const [q,setQ] = useState('');
   const [open,setOpen] = useState<string|null>(null); // a doctor's code, or '' for a new one
   const [msg,setMsg] = useState<{text:string; bad?:boolean}|null>(null);
-  useEffect(()=>{ if (!msg) return; const t = setTimeout(()=>setMsg(null),6000); return ()=>clearTimeout(t); },[msg]);
+  const [importing,setImporting] = useState(false);
+  useEffect(()=>{ if (!msg) return; const t = setTimeout(()=>setMsg(null),8000); return ()=>clearTimeout(t); },[msg]);
   const load = useCallback(async ()=>{ const r = await api<{ok:boolean; providers?:Provider[]}>('appt:providers',{}); setList(r.ok ? r.providers ?? [] : []); },[api]);
   useEffect(()=>{ void load(); },[load,rev]);
   const needle = q.trim().toLowerCase();
@@ -35,11 +39,13 @@ export function DoctorsPane({api,rev}:{api:Api; rev:number}) {
   </section>;
   return <section className="setCard docPane">
     <div className="docHead"><div><h3><Stethoscope size={18}/> รายชื่อแพทย์</h3><small className="muted">แพทย์ที่ออกตรวจแบบนัด · คลิกชื่อเพื่อแก้ข้อมูลและสร้างตารางออกตรวจ</small></div>
-      <button className="btn" onClick={()=>setOpen('')}><Plus size={15}/> เพิ่มแพทย์</button></div>
+      <span className="docActs"><button className="btn ghost" onClick={()=>setImporting(true)} disabled={!ready.length} title={ready.length ? 'นำเข้าแพทย์และตารางจาก Excel / CSV' : 'เปิดคลินิกให้นัดที่ ตั้งค่า → นัดแพทย์ ก่อน'}><FileUp size={15}/> นำเข้า</button>
+        <button className="btn" onClick={()=>setOpen('')}><Plus size={15}/> เพิ่มแพทย์</button></span></div>
+    {importing && <DoctorImport api={api} clinics={ready} onClose={()=>setImporting(false)} onDone={text=>{ setImporting(false); setMsg({text}); void load(); }}/>}
     {msg && <p className={'setToast'+(msg.bad?' bad':'')} role="status">{msg.text}</p>}
-    <label className="docSearch"><Search size={15}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="ค้นหาชื่อ รหัส หรือคลินิก" aria-label="ค้นหาแพทย์"/></label>
+    <SearchBox value={q} onChange={setQ} placeholder="ค้นหาชื่อ รหัส หรือคลินิก" label="ค้นหาแพทย์"/>
     {list===null ? <p className="cmdNote"><Loader2 size={14} className="spin"/> กำลังโหลด…</p>
-      : !list.length ? <div className="docEmpty"><UserRound size={28}/><b>ยังไม่มีรายชื่อแพทย์</b><span>กด "เพิ่มแพทย์" เพื่อเริ่ม แล้วสร้างตารางออกตรวจจากหน้าของแพทย์แต่ละคน</span></div>
+      : !list.length ? <div className="docEmpty"><UserRound size={28}/><b>ยังไม่มีรายชื่อแพทย์</b><span>กด "เพิ่มแพทย์" ทีละคน หรือ "นำเข้า" จาก Excel / CSV (มีตารางเวรตัวอย่างให้เริ่มได้ทันที)</span></div>
       : <div className="tableWrap"><table className="dataTable docTable"><thead><tr><th>แพทย์</th><th>คลินิก</th><th>ตารางที่จะถึง</th><th>สถานะ</th></tr></thead>
         <tbody>{shown.map(p=><tr key={p.code} className={p.active?'':'muted'} onClick={()=>setOpen(p.code)} tabIndex={0} onKeyDown={e=>{ if (e.key==='Enter') setOpen(p.code); }}>
           <td><b>{p.name}</b><small className="muted"> {p.code}</small></td>
@@ -78,8 +84,7 @@ function DoctorPage({api,clinics,ready,doc,onSaved,onError,reload}:{api:Api; cli
       <label>ชื่อแพทย์<input value={name} maxLength={60} placeholder="เช่น นพ.สมชาย ใจดี" onChange={e=>setName(e.target.value)} autoFocus={!doc}/></label>
       <label><span>รหัสแพทย์ <em>{doc ? '(เปลี่ยนไม่ได้)' : '(เลข ว. หรือรหัสใน HIS)'}</em></span><input value={code} maxLength={20} disabled={!!doc} placeholder="เช่น ว.12345" onChange={e=>setCode(e.target.value)}/></label>
       <label className="wide">หมายเหตุ <input value={note} maxLength={200} placeholder="เช่น สาขาเฉพาะทาง วันลาประจำ" onChange={e=>setNote(e.target.value)}/></label>
-      <div className="wide"><span className="docLabel">คลินิกที่ออกตรวจ</span><div className="docClinics">{clinics.map(c=><button key={c.key} type="button" className={mine.includes(c.key)?'on':''} aria-pressed={mine.includes(c.key)}
-        onClick={()=>setMine(m=>m.includes(c.key) ? m.filter(x=>x!==c.key) : [...m,c.key])}><b>{c.letter}</b>{c.dept}</button>)}</div></div>
+      <div className="wide"><span className="docLabel">คลินิกที่ออกตรวจ</span><ClinicPicker clinics={clinics} value={mine} onChange={setMine}/></div>
     </div>
     <div className="docSave">{!active && doc && <small className="muted">ปิดใช้งาน: ตารางที่สร้างไว้ยังอยู่ แต่สร้างตารางใหม่ไม่ได้</small>}
       {missing && <span className="pickHint">{missing}</span>}

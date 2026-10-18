@@ -761,6 +761,18 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
     if (!userOf(client)) return SIGN_IN;
     return { ok: true, providers: this.appts.providers() };
   }
+  // Doctors and weekly hours from a spreadsheet (or the demo roster); dryRun: what it would make.
+  @SubscribeMessage('appt:import')
+  importAppt(@ConnectedSocket() client: Socket, @MessageBody() body: Record<string, unknown>) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (!may(me, 'admin')) return DENIED;
+    return attempt(() => {
+      const r = this.appts.importSchedules(body ?? {});
+      if (!body?.dryRun) { this.audit.record({ ...actor(me), action: 'appointment.import', targetType: 'provider', meta: { doctors: r.doctors, added: r.added, sessions: r.sessions, conflicts: r.conflicts.length } }); this.apptChanged(); }
+      return { ok: true, result: r };
+    });
+  }
   @SubscribeMessage('appt:provider:sessions')
   apptProviderSessions(@ConnectedSocket() client: Socket, @MessageBody() body: { code?: unknown }) {
     if (!userOf(client)) return SIGN_IN;

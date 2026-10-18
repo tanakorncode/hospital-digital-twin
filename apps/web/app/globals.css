@@ -2424,11 +2424,11 @@ a.liffChoice{text-decoration:none;padding:10px 16px}
 /* ---- One field style: text / number / date / time inputs, textareas, Select and DatePicker share height, border, type ---- */
 .sel{font-weight:400;min-height:40px}
 .sel-lg{font-weight:800}
-:is(.setCard,.moveDialog,.bookTab,.lineForm) :is(input:not([type]),input[type=text],input[type=number],input[type=password],input[type=search],input[type=email],input[type=tel],input[type=time],textarea):not(:is(.tblSearch,.bookFind,.selSearch,.miniSearch,.facSearch) *){
+:is(.setCard,.moveDialog,.bookTab,.lineForm) :is(input:not([type]),input[type=text],input[type=number],input[type=password],input[type=search],input[type=email],input[type=tel],input[type=time],textarea):not(:is(.tblSearch,.bookFind,.selSearch,.miniSearch,.facSearch,.searchBox,.clinicField) *):not(.bare){
  box-sizing:border-box;min-height:40px;padding:8px 12px;border:1.5px solid #cfdbea;border-radius:10px;background:#fff;color:#0f2340;font:inherit;font-size:14px;font-weight:400;transition:border-color .15s,box-shadow .15s}
 :is(.setCard,.moveDialog,.bookTab,.lineForm) textarea{min-height:96px;line-height:1.5}
-:is(.setCard,.moveDialog,.bookTab,.lineForm) :is(input:not([type]),input[type=text],input[type=number],input[type=password],input[type=search],input[type=email],input[type=tel],input[type=time],textarea):not(:is(.tblSearch,.bookFind,.selSearch,.miniSearch,.facSearch) *):hover{border-color:#9db8dd}
-:is(.setCard,.moveDialog,.bookTab,.lineForm) :is(input:not([type]),input[type=text],input[type=number],input[type=password],input[type=search],input[type=email],input[type=tel],input[type=time],textarea):not(:is(.tblSearch,.bookFind,.selSearch,.miniSearch,.facSearch) *):focus{outline:none;border-color:#1677ff;box-shadow:0 0 0 3px #1677ff24}
+:is(.setCard,.moveDialog,.bookTab,.lineForm) :is(input:not([type]),input[type=text],input[type=number],input[type=password],input[type=search],input[type=email],input[type=tel],input[type=time],textarea):not(:is(.tblSearch,.bookFind,.selSearch,.miniSearch,.facSearch,.searchBox,.clinicField) *):not(.bare):hover{border-color:#9db8dd}
+:is(.setCard,.moveDialog,.bookTab,.lineForm) :is(input:not([type]),input[type=text],input[type=number],input[type=password],input[type=search],input[type=email],input[type=tel],input[type=time],textarea):not(:is(.tblSearch,.bookFind,.selSearch,.miniSearch,.facSearch,.searchBox,.clinicField) *):not(.bare):focus{outline:none;border-color:#1677ff;box-shadow:0 0 0 3px #1677ff24}
 :is(.setCard,.moveDialog,.bookTab,.lineForm) ::placeholder{color:#94a3b8}
 .tblSearch,.bookFind{min-height:40px}
 .dpFilter{width:auto;min-width:220px}
@@ -2663,6 +2663,31 @@ a.liffChoice{text-decoration:none;padding:10px 16px}
 .facLibActs{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;align-items:center}
 .facLibActs .btn{height:30px}
 .pickHint{margin-right:auto;align-self:center;color:#b45309;font-size:12.5px;font-weight:600}
+/* The one search field (components/SearchBox.tsx) and borderless inputs: a field inside a box of its own is .bare, so
+   the cards' rule above — a border on every input — never draws a box inside the box */
+/* !important on purpose: whatever a container's rule says, a .bare field never draws its own box */
+input.bare{height:auto!important;padding:0!important;border:0!important;border-radius:0!important;outline:0!important;box-shadow:none!important;background:transparent!important;font:inherit;color:inherit;min-width:0}
+input.bare[type=search]::-webkit-search-cancel-button{display:none}
+.searchBox{display:flex;align-items:center;gap:8px;max-width:420px;height:40px;padding:0 10px 0 12px;border:1px solid #d5e0ec;border-radius:10px;background:#fff;color:#64748b}
+.searchBox:focus-within{border-color:#1677ff;box-shadow:0 0 0 3px #1677ff1f}
+.searchBox input{flex:1;font-size:14px;color:#0f2340}
+.searchClear{display:grid;place-items:center;width:24px;height:24px;border:0;border-radius:6px;background:transparent;color:#94a3b8;cursor:pointer}.searchClear:hover{background:#f1f5f9;color:#475569}
+/* Several clinics out of many (components/ClinicPicker.tsx) */
+.clinicPick{position:relative;display:flex;flex-direction:column;gap:6px}
+.clinicChips{display:flex;flex-wrap:wrap;gap:6px}
+.clinicChip{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 4px 0 6px;border-radius:999px;background:#eef5ff;border:1px solid #bfd6fb;color:#1d4ed8;font-size:13px;font-weight:600}
+.clinicChip b{display:grid;place-items:center;width:20px;height:20px;border-radius:6px;background:#1677ff;color:#fff;font-size:11px}
+.clinicChip button{display:grid;place-items:center;width:22px;height:22px;border:0;border-radius:50%;background:transparent;color:#1d4ed8;cursor:pointer}.clinicChip button:hover{background:#dbeafe}
+.clinicField{display:flex;align-items:center;gap:8px;height:40px;padding:0 10px 0 12px;border:1px solid #d5e0ec;border-radius:10px;background:#fff;color:#64748b;cursor:text}
+.clinicField.open,.clinicField:focus-within{border-color:#1677ff;box-shadow:0 0 0 3px #1677ff1f}
+.clinicField input{flex:1;font-size:14px;color:#0f2340}
+.clinicList{position:absolute;z-index:30;left:0;right:0;top:100%;margin:4px 0 0;padding:4px;list-style:none;max-height:280px;overflow:auto;border:1px solid #d5e0ec;border-radius:12px;background:#fff;box-shadow:0 14px 30px #0b1d3326}
+.clinicList li{display:grid;grid-template-columns:20px 26px 1fr auto;align-items:center;gap:6px;padding:7px 8px;border-radius:8px;font-size:13.5px;color:#334155;cursor:pointer}
+.clinicList li.hi{background:#f1f6ff}.clinicList li.on{color:#1d4ed8;font-weight:600}
+.clinicList li b{display:grid;place-items:center;width:22px;height:22px;border-radius:6px;background:#eef2f7;font-size:11px}.clinicList li.on b{background:#1677ff;color:#fff}
+.clinicList li small{color:#94a3b8;font-weight:500}
+.clinicTick{display:grid;place-items:center;width:18px;height:18px;border:1.5px solid #cbd5e1;border-radius:5px;color:#fff}.clinicList li.on .clinicTick{background:#1677ff;border-color:#1677ff}
+.clinicList li.clinicNone{display:block;cursor:default}
 /* Booking / appointment window: check the HN first */
 @keyframes spin{to{transform:rotate(360deg)}}
 .spin{animation:spin .8s linear infinite;vertical-align:-2px}
@@ -2689,7 +2714,7 @@ a.liffChoice{text-decoration:none;padding:10px 16px}
 .schedRow.slim{grid-template-columns:repeat(auto-fit,minmax(180px,240px))}
 .schedRow label{display:flex;flex-direction:column;gap:4px;font-size:12.5px;font-weight:600;color:#4d6074;min-width:0}
 .schedRow label em{font-style:normal;font-weight:500;color:#94a3b8}
-.schedForm input[type=text],.schedForm input:not([type]),.schedForm input[type=number],.schedForm input[type=time]{height:40px;padding:0 10px;border:1px solid #d5e0ec;border-radius:10px;background:#fff;font:inherit;font-size:14px;color:#0f2340;min-width:0}
+:is(.schedForm input[type=text],.schedForm input:not([type]),.schedForm input[type=number],.schedForm input[type=time]):not(.bare){height:40px;padding:0 10px;border:1px solid #d5e0ec;border-radius:10px;background:#fff;font:inherit;font-size:14px;color:#0f2340;min-width:0}
 .schedUnit{display:flex;align-items:center;gap:8px;font-weight:500;color:#64748b}.schedUnit input{width:90px}
 .schedBlocks{display:flex;flex-direction:column;gap:6px}
 .schedBlock{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:6px 8px;border-radius:12px;background:#fff;border:1px solid #edf1f6}
@@ -2716,7 +2741,6 @@ a.liffChoice{text-decoration:none;padding:10px 16px}
 .docHead{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .docHead h3{display:flex;align-items:center;gap:8px;margin:0;font-size:17px;color:#0f2340}
 .docBack{align-self:flex-start;display:inline-flex;align-items:center;gap:4px;font-weight:600}
-.docSearch{display:flex;align-items:center;gap:8px;max-width:420px;height:40px;padding:0 12px;border:1px solid #d5e0ec;border-radius:10px;background:#fff;color:#64748b}
 .docSearch input{flex:1;min-width:0;height:auto;padding:0;border:0;outline:0;box-shadow:none;font:inherit;font-size:14px;background:transparent}
 .docSearch:focus-within{border-color:#1677ff;box-shadow:0 0 0 3px #1677ff1f}
 .docMore{align-self:flex-start;font-weight:600}
@@ -2727,8 +2751,8 @@ a.liffChoice{text-decoration:none;padding:10px 16px}
 .docForm{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}
 .docForm label{display:flex;flex-direction:column;gap:4px;font-size:12.5px;font-weight:600;color:#4d6074}
 .docForm label em{font-style:normal;font-weight:500;color:#94a3b8}
-.docForm input{height:40px;padding:0 10px;border:1px solid #d5e0ec;border-radius:10px;background:#fff;font:inherit;font-size:14px;color:#0f2340}
-.docForm input:disabled{background:#f1f5f9;color:#64748b}
+.docForm input:not(.bare){height:40px;padding:0 10px;border:1px solid #d5e0ec;border-radius:10px;background:#fff;font:inherit;font-size:14px;color:#0f2340}
+.docForm input:not(.bare):disabled{background:#f1f5f9;color:#64748b}
 .docForm .wide{grid-column:1/-1}
 .docLabel{display:block;margin-bottom:6px;font-size:12.5px;font-weight:600;color:#4d6074}
 .docClinics{display:flex;flex-wrap:wrap;gap:6px}
@@ -2742,3 +2766,17 @@ a.liffChoice{text-decoration:none;padding:10px 16px}
 .docDay b{color:#0f2340;font-size:13px}.docDay .off{color:#94a3b8;text-decoration:line-through}
 .docPointer{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 14px;border-radius:14px;background:#eef5ff;border:1px solid #cfe0fb}
 .docPointer>div{display:flex;flex-direction:column;gap:2px}.docPointer b{color:#0f2340}.docPointer small{color:#475569}
+.docActs{display:flex;gap:8px;flex-wrap:wrap}
+/* Settings → รายชื่อแพทย์ → นำเข้า */
+.docImport{max-width:1100px}
+.impTools{display:flex;gap:8px;flex-wrap:wrap}
+.impText{width:100%;min-height:150px;padding:10px 12px;border:1px solid #d5e0ec;border-radius:12px;font:13px/1.5 ui-monospace,Menlo,monospace;color:#0f2340;resize:vertical}
+.impText:focus{outline:none;border-color:#1677ff;box-shadow:0 0 0 3px #1677ff1f}
+.impPreview{display:flex;flex-direction:column;gap:6px}
+.impCount{font-size:13px}
+.impTable{font-size:12.5px}.impTable tr.bad{background:#fff7ed}
+.impPreview .tableWrap{max-height:260px;overflow:auto}
+.impOpts{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px;color:#475569}
+.impOpts .dp{width:200px;min-width:0;flex:none}.impSel{display:inline-block;width:130px;flex:none}.impSel>*{min-width:0!important;width:100%}.impOpts input[type=number]{width:72px;height:40px}
+.impResult{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border-radius:12px;background:#ecfdf5;color:#065f46;font-size:13px}
+.impResult>svg{flex:none;color:#059669}.impResult>div{display:flex;flex-direction:column;gap:3px}

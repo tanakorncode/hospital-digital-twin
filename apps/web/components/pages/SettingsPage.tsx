@@ -222,7 +222,7 @@ function GroupsPane({settings,commit,focus}:{settings:QueueSettings;commit:Commi
   <PaneHead icon="groups" title="ปรับรายแผนก / กลุ่มบริการ" scope={g.name}>ใช้เมื่อแผนกใดต้องต่างจากค่าทั้งโรงพยาบาล เช่น ให้ซักประวัติศัลยกรรมย้ายคิวเองได้</PaneHead>
   <div className="grpLayout">
    <aside className="grpList">
-    <label className="grpSearch"><Search size={14}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="ค้นหาแผนก ห้อง หรือช่อง"/></label>
+    <label className="grpSearch"><Search size={14}/><input className="bare" value={q} onChange={e=>setQ(e.target.value)} placeholder="ค้นหาแผนก ห้อง หรือช่อง"/></label>
     <label className="switch small"><input type="checkbox" checked={only} onChange={e=>setOnly(e.target.checked)}/><span/><small>เฉพาะที่ตั้งเอง ({groups.filter(isCustom).length})</small></label>
     <div className="grpScroll">{sections.map(sec=><div key={sec}><h5>{sec}</h5>
      {shown.filter(gg=>gg.section===sec).map(gg=><button key={gg.id} className={(gg.id===sel?'on ':'')+(isCustom(gg)?'custom':'')} onClick={()=>setSel(gg.id)}>

@@ -263,3 +263,35 @@ test('the list of doctors: add, rename (sessions to come follow), switch off (no
   assert.deepEqual(ss.map((x) => x.clinicCode), [MED, EYE]);
   assert.ok(ss[0].startsAt < ss[1].startsAt && ss[0].capacity === 8);
 });
+
+test('doctors and their weekly hours come in from a spreadsheet: checked first, then all or nothing', () => {
+  const { api, admin, staff } = setup();
+  type I = R & { result?: { doctors: number; added: number; sessions: number; slots: number; conflicts: { code: string; day: string }[] } };
+  const rows = [
+    { code: 'D101', name: 'นพ.หนึ่ง', clinic: MED, weekdays: [1, 2], start: '09:00', end: '12:00' },
+    { code: 'D101', name: 'นพ.หนึ่ง', clinic: MED, weekdays: [3], start: '13:00', end: '15:00' },
+    { code: 'D102', name: 'พญ.สอง', clinic: EYE, weekdays: [1], start: '09:00', end: '11:00' },
+    { code: 'D103', name: 'นพ.สาม (ยังไม่มีตาราง)', clinic: EYE },
+  ];
+  const opts = { from: '2026-11-09', to: '2026-11-15', minutes: 30, capacity: 2 };
+  assert.equal((api.gateway.importAppt(staff, { rows, ...opts }) as R).code, 'FORBIDDEN');
+  const dry = api.gateway.importAppt(admin, { rows, ...opts, dryRun: true }) as I;
+  assert.equal(dry.ok, true, dry.reason);
+  // Mon + Tue mornings (6 slots each) and Wed afternoon (4) for D101; Mon 9–11 (4) for D102.
+  assert.deepEqual([dry.result!.doctors, dry.result!.added, dry.result!.sessions, dry.result!.slots], [3, 3, 4, 6 + 6 + 4 + 4]);
+  assert.equal((api.gateway.apptProviders(staff) as { providers: { code: string }[] }).providers.some((p) => p.code === 'D101'), false, 'a dry run keeps nothing');
+  const real = api.gateway.importAppt(admin, { rows, ...opts }) as I;
+  assert.deepEqual([real.result!.sessions, real.result!.slots], [4, 20]);
+  const list = (api.gateway.apptProviders(staff) as { providers: { code: string; clinics: string[]; upcoming: number }[] }).providers;
+  assert.deepEqual(list.filter((p) => p.code.startsWith('D1')).sort((a, b) => a.code.localeCompare(b.code)).map((p) => [p.code, p.clinics, p.upcoming]), [['D101', [MED], 3], ['D102', [EYE], 1], ['D103', [EYE], 0]]);
+  assert.ok(api.audit.list().some((e) => e.action === 'appointment.import'));
+  // Again: the same sessions are skipped, nothing doubled.
+  const again = api.gateway.importAppt(admin, { rows, ...opts }) as I & { result?: { skipped: number } };
+  assert.deepEqual([again.result!.sessions, again.result!.skipped], [0, 4]);
+  // One bad row: nothing at all, and it says which.
+  const bad = api.gateway.importAppt(admin, { rows: [...rows, { code: 'D104', name: 'X', clinic: 'nope' }], ...opts }) as I;
+  assert.equal(bad.code, 'VALIDATION_ERROR'); assert.match(bad.reason!, /แถวที่ 5/);
+  const wrongTime = api.gateway.importAppt(admin, { rows: [{ code: 'D105', name: 'Y', clinic: MED, weekdays: [1], start: '12:00', end: '09:00' }], ...opts }) as I;
+  assert.match(wrongTime.reason!, /Y \(D105\)/);
+  assert.equal((api.gateway.apptProviders(staff) as { providers: { code: string }[] }).providers.some((p) => p.code === 'D105'), false, 'rolled back');
+});

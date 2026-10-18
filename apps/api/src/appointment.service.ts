@@ -17,6 +17,7 @@ export type ApptPolicy = { clinicCode: string; displayName: string; enabled: boo
 export type Session = { id: string; providerCode: string; providerName: string; clinicCode: string; startsAt: string; endsAt: string; status: 'OPEN' | 'CLOSED' | 'CANCELLED'; capacity: number; reserved: number; roomId?: string };
 export type ApptSlot = { id: string; scheduleId: string; providerCode: string; providerName: string; clinicCode: string; startsAt: string; endsAt: string; capacity: number; reserved: number; remaining: number; status: 'OPEN' | 'CLOSED' | 'CANCELLED' };
 export type ApptStatus = 'CONFIRMED' | 'CANCELLED' | 'CHECKED_IN' | 'COMPLETED' | 'NO_SHOW' | 'EXPIRED';
+export type ImportResult = { doctors: number; added: number; sessions: number; slots: number; skipped: number; conflicts: { code: string; name: string; day: string }[] };
 export type Provider = { code: string; name: string; clinics: string[]; note?: string; active: boolean; upcoming: number; nextAt?: string };
 export type Appointment = { id: string; code: string; clinicCode: string; clinicName: string; providerCode: string; providerName: string; startsAt: string; endsAt: string;
   status: ApptStatus; channel: 'STAFF' | 'LINE'; hn: string; createdAt: string; roomId?: string; cancellationReason?: string; noShowReason?: string; visitId?: string;
@@ -204,6 +205,44 @@ export class AppointmentService implements OnModuleInit, OnModuleDestroy {
       clinicCode: r.clinic_code, startsAt: r.starts_at, endsAt: r.ends_at, status: r.status as Session['status'], capacity: r.cap, reserved: r.res, ...(r.room_id ? { roomId: r.room_id } : {}) }));
   }
 
+  // Doctors and their weekly hours in one go (Settings → รายชื่อแพทย์ → นำเข้า: pasted from a spreadsheet, or the
+  // demo roster). rows: a doctor, a clinic, and — optionally — weekdays + from / to (and a room) for the weekly hours.
+  // Every doctor is added (or updated, keeping clinics they had); the rows of one doctor + clinic + room become one
+  // schedule over `from`…`to` in slots of `minutes`, `capacity` each. All or nothing. dryRun: work it all out, keep nothing.
+  importSchedules(input: Record<string, unknown>): ImportResult {
+    const rows = input.rows;
+    if (!Array.isArray(rows) || !rows.length || rows.length > 2000) throw bad('ไม่มีข้อมูลให้นำเข้า (หรือเกิน 2,000 แถว)');
+    const DRY = Symbol('dry'), out: ImportResult = { doctors: 0, added: 0, sessions: 0, slots: 0, skipped: 0, conflicts: [] };
+    const work = () => {
+      const docs = new Map<string, { name: string; clinics: Set<string> }>(), groups = new Map<string, { code: string; name: string; clinic: string; room?: string; blocks: unknown[] }>();
+      rows.forEach((r, i) => {
+        const row = (r ?? {}) as Record<string, unknown>, at = `แถวที่ ${i + 1}`;
+        if (typeof row.code !== 'string' || !PROVIDER_RE.test(row.code.trim())) throw bad(`${at}: รหัสแพทย์ไม่ถูกต้อง`);
+        if (typeof row.name !== 'string' || !row.name.trim() || row.name.trim().length > 60) throw bad(`${at}: ระบุชื่อแพทย์`);
+        if (typeof row.clinic !== 'string' || !this.policy(row.clinic)) throw bad(`${at}: คลินิกนี้ยังไม่เปิดให้นัด (หรือไม่มีในผัง)`);
+        const code = row.code.trim(), d = docs.get(code) ?? { name: row.name.trim(), clinics: new Set<string>() };
+        d.clinics.add(row.clinic); docs.set(code, d);
+        if (row.weekdays === undefined && row.start === undefined) return; // just the doctor
+        const room = typeof row.roomId === 'string' && row.roomId ? row.roomId : undefined, key = `${code}|${row.clinic}|${room ?? ''}`;
+        const g = groups.get(key) ?? { code, name: d.name, clinic: row.clinic, room, blocks: [] };
+        g.blocks.push({ weekdays: row.weekdays, start: row.start, end: row.end }); groups.set(key, g);
+      });
+      for (const [code, d] of docs) {
+        const cur = this.store.db.prepare('SELECT clinics_json FROM providers WHERE code = ?').get(code) as { clinics_json: string } | undefined;
+        this.saveProvider({ code, name: d.name, clinics: [...new Set([...(cur ? JSON.parse(cur.clinics_json) as string[] : []), ...d.clinics])] });
+        out.doctors++; if (!cur) out.added++;
+      }
+      for (const g of groups.values()) {
+        let r;
+        try { r = this.createSessions({ clinicCode: g.clinic, providerCode: g.code, providerName: g.name, from: input.from, to: input.to, minutes: input.minutes, capacity: input.capacity, roomId: g.room, blocks: g.blocks }); }
+        catch (e) { if (e instanceof AppError) throw new AppError(e.code, `${g.name} (${g.code}): ${e.reason}`); throw e; }
+        out.sessions += r.sessions; out.slots += r.slots; out.skipped += r.skipped;
+        for (const day of r.conflicts) out.conflicts.push({ code: g.code, name: g.name, day });
+      }
+    };
+    try { this.store.tx(() => { work(); if (input.dryRun) throw DRY; }); } catch (e) { if (e !== DRY) throw e; }
+    return out;
+  }
   // One doctor's sessions still to come, every clinic (the doctor's page in Settings → รายชื่อแพทย์).
   providerSessions(code: unknown, limit = 120): Session[] {
     if (typeof code !== 'string' || !PROVIDER_RE.test(code)) throw bad('รหัสแพทย์ไม่ถูกต้อง');
