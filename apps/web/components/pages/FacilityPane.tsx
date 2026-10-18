@@ -463,8 +463,7 @@ function ImpactDialog({impact,data,onClose,onPublish,onShow}:{impact:Impact|null
   const byKind = new Map<string,Change[]>(); for (const c of impact?.changes ?? []) byKind.set(c.kind,[...(byKind.get(c.kind) ?? []),c]);
   const where = (c:Change) => c.kind==='points' ? (()=>{ const p = data.points.find(x=>x.id===c.id) ?? pub.points.find(x=>x.id===c.id), g = p && (data.groups.find(x=>x.id===p.groupId) ?? pub.groups.find(x=>x.id===p.groupId)); return g ? ` · ${g.name}` : ''; })() : '';
   return <Dialog wide title="ผลกระทบก่อนเผยแพร่" detail="เผยแพร่แล้วทุกหน้าจอ (แผนที่ คิว จอทีวี จอง/นัด ตัวจำลอง) ใช้ผังใหม่ทันที · ย้อนเวอร์ชันได้จากประวัติ" onClose={onClose}
-    footer={<><label className="facNoteField"><span>บันทึกสั้น ๆ (ไม่บังคับ)</span><input value={note} onChange={e=>setNote(e.target.value)} maxLength={200} placeholder="เช่น เปิดคลินิกโรคไต ชั้น 4"/></label>
-      <button className="btn ghost" onClick={onClose}>กลับไปแก้</button>
+    footer={<><button className="btn ghost" onClick={onClose}>กลับไปแก้</button>
       <button className="btn" disabled={!impact || errors.length>0 || !impact.changes.length || busy} onClick={async ()=>{ setBusy(true); await onPublish(note); setBusy(false); }}>{busy ? 'กำลังเผยแพร่…' : 'เผยแพร่'}</button></>}>
     {!impact ? <p className="muted">กำลังตรวจร่าง…</p> : <>
       {errors.length>0 && <div className="facBlock bad"><b>ต้องแก้ก่อนเผยแพร่ ({errors.length})</b><ul>{errors.map((i,k)=><li key={k}>{i.message}{i.at && <button className="linkBtn dark" onClick={()=>onShow(i.at!)}>ไปแก้</button>}</li>)}</ul></div>}
@@ -472,7 +471,8 @@ function ImpactDialog({impact,data,onClose,onPublish,onShow}:{impact:Impact|null
       <div className="facBlock"><b>สิ่งที่จะเปลี่ยน ({impact.changes.length})</b>
         {[...byKind].map(([k,list])=><div key={k} className="facChanges"><h5>{KIND_TEXT[k] ?? k}</h5><ul>{list.slice(0,60).map(c=><li key={c.id}><em className={'chg '+c.change}>{CHANGE_TEXT[c.change]}</em> {label(c)}<small className="muted">{where(c)}</small></li>)}
           {list.length>60 && <li className="muted">และอีก {list.length-60} รายการ</li>}</ul></div>)}
-        {!impact.changes.length && <p className="muted">ร่างนี้เหมือนผังที่เผยแพร่อยู่</p>}</div></>}
+        {!impact.changes.length && <p className="muted">ร่างนี้เหมือนผังที่เผยแพร่อยู่</p>}</div>
+      <label className="facNoteField"><span>บันทึกสั้น ๆ (ไม่บังคับ)</span><input value={note} onChange={e=>setNote(e.target.value)} maxLength={200} placeholder="เช่น เปิดคลินิกโรคไต ชั้น 4"/></label></>}
   </Dialog>;
 }
 
