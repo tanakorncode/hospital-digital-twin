@@ -1064,9 +1064,12 @@ kbd{margin-left:6px;padding:1px 6px;border-radius:5px;background:#ffffff33;borde
 .ovTools .viewSwitch.inline{margin-left:0}
 .ovTools .viewSwitch button{white-space:nowrap}
 .ovTools>.linkBtn{margin-left:auto;display:inline-flex;align-items:center;gap:3px}
-.ovMore{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:8px 12px;border-radius:10px;background:#f7f9fc;font-size:13px}
+.ovMore{display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;padding:8px 12px;border-radius:10px;background:#f7f9fc;font-size:13px}
 .ovMore select{margin-left:4px}
 .ovMore .viewsBar{margin:0}
+/* the view options sit in one line: inputs, selects and the save button all 40px tall (the shared field style) */
+.ovMore .viewsBar input{height:40px;min-width:180px}
+.ovMore .btn{min-height:40px;border-radius:10px;padding:0 16px}
 .ovTable td{padding-top:7px;padding-bottom:7px}
 .ovQueue{font-size:14.5px}
 .ovSub{display:block;font-size:11px;color:#7a8ca0}
@@ -2459,12 +2462,12 @@ input[type=checkbox]:not(.switch input,.mini-switch input):disabled{opacity:.45;
 /* ---- One field style: text / number / date / time inputs, textareas, Select and DatePicker share height, border, type ---- */
 .sel{font-weight:400;min-height:40px}
 .sel-lg{font-weight:800}
-:is(.setCard,.moveDialog,.bookTab,.lineForm) :is(input:not([type]),input[type=text],input[type=number],input[type=password],input[type=search],input[type=email],input[type=tel],input[type=time],textarea):not(:is(.tblSearch,.bookFind,.selSearch,.miniSearch,.facSearch,.searchBox,.clinicField) *):not(.bare){
+:is(.setCard,.moveDialog,.bookTab,.lineForm,.ovMore) :is(input:not([type]),input[type=text],input[type=number],input[type=password],input[type=search],input[type=email],input[type=tel],input[type=time],textarea):not(:is(.tblSearch,.bookFind,.selSearch,.miniSearch,.facSearch,.searchBox,.clinicField) *):not(.bare){
  box-sizing:border-box;min-height:40px;padding:8px 12px;border:1.5px solid #cfdbea;border-radius:10px;background:#fff;color:#0f2340;font:inherit;font-size:14px;font-weight:400;transition:border-color .15s,box-shadow .15s}
-:is(.setCard,.moveDialog,.bookTab,.lineForm) textarea{min-height:96px;line-height:1.5}
-:is(.setCard,.moveDialog,.bookTab,.lineForm) :is(input:not([type]),input[type=text],input[type=number],input[type=password],input[type=search],input[type=email],input[type=tel],input[type=time],textarea):not(:is(.tblSearch,.bookFind,.selSearch,.miniSearch,.facSearch,.searchBox,.clinicField) *):not(.bare):hover{border-color:#9db8dd}
-:is(.setCard,.moveDialog,.bookTab,.lineForm) :is(input:not([type]),input[type=text],input[type=number],input[type=password],input[type=search],input[type=email],input[type=tel],input[type=time],textarea):not(:is(.tblSearch,.bookFind,.selSearch,.miniSearch,.facSearch,.searchBox,.clinicField) *):not(.bare):focus{outline:none;border-color:#1677ff;box-shadow:0 0 0 3px #1677ff24}
-:is(.setCard,.moveDialog,.bookTab,.lineForm) ::placeholder{color:#94a3b8}
+:is(.setCard,.moveDialog,.bookTab,.lineForm,.ovMore) textarea{min-height:96px;line-height:1.5}
+:is(.setCard,.moveDialog,.bookTab,.lineForm,.ovMore) :is(input:not([type]),input[type=text],input[type=number],input[type=password],input[type=search],input[type=email],input[type=tel],input[type=time],textarea):not(:is(.tblSearch,.bookFind,.selSearch,.miniSearch,.facSearch,.searchBox,.clinicField) *):not(.bare):hover{border-color:#9db8dd}
+:is(.setCard,.moveDialog,.bookTab,.lineForm,.ovMore) :is(input:not([type]),input[type=text],input[type=number],input[type=password],input[type=search],input[type=email],input[type=tel],input[type=time],textarea):not(:is(.tblSearch,.bookFind,.selSearch,.miniSearch,.facSearch,.searchBox,.clinicField) *):not(.bare):focus{outline:none;border-color:#1677ff;box-shadow:0 0 0 3px #1677ff24}
+:is(.setCard,.moveDialog,.bookTab,.lineForm,.ovMore) ::placeholder{color:#94a3b8}
 .tblSearch,.bookFind{min-height:40px}
 .dpFilter{width:auto;min-width:220px}
 .rcpEdit .span3{grid-column:span 3}
