@@ -155,7 +155,7 @@ export function SessionPlanner({api,clinics,say,fixed,onMade}:{api:Api; clinics:
     <small className="muted">{b.slots ? `${b.slots} ช่วงนัด` : ''}</small>
     {blocks.length>1 && <button type="button" className="iconBtn" aria-label={`ลบช่วงที่ ${n+1}`} title="ลบช่วงนี้" onClick={()=>setBlocks(bs=>bs.filter(x=>x.id!==b.id))}><X size={15}/></button>}
    </div>)}
-    {blocks.length<14 && <button type="button" className="linkBtn schedAdd" onClick={()=>setBlocks(bs=>[...bs,{id:++blockSeq,days:[],start:'13:00',end:'16:00'}])}><Plus size={14}/> เพิ่มช่วงเวลาออกตรวจ</button>}</div>
+    {blocks.length<14 && <button type="button" className="linkBtn dark schedAdd" onClick={()=>setBlocks(bs=>[...bs,{id:++blockSeq,days:[],start:'13:00',end:'16:00'}])}><Plus size={14}/> เพิ่มช่วงเวลาออกตรวจ</button>}</div>
    <div className="schedRow slim">
     <label><span>แบ่งเป็นช่วงนัด ช่วงละ <InfoTip title="ช่วงนัด คืออะไร">เวลาออกตรวจจะถูกแบ่งเป็นช่วงสั้นๆ ให้ผู้ป่วยเลือกเวลานัด
      เช่น 09:00–12:00 ช่วงละ {minutes} นาที → ผู้ป่วยเลือกได้ {Array.from({length:Math.min(3,Math.floor(180/minutes))},(_,k)=>hhmm(540+k*minutes)).join(', ')} … ({Math.floor(180/minutes)} ช่วง) ·

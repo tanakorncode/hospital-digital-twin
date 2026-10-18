@@ -33,7 +33,7 @@ export function DoctorsPane({api,rev}:{api:Api; rev:number}) {
   const shown = (list ?? []).filter(p=>!needle || p.name.toLowerCase().includes(needle) || p.code.toLowerCase().includes(needle) || p.clinics.some(c=>clinicLabel(clinics,c).toLowerCase().includes(needle)));
   const doc = open ? list?.find(p=>p.code===open) : undefined;
   if (open!==null && (open==='' || doc)) return <section className="setCard docPane">
-    <button className="linkBtn docBack" onClick={()=>setOpen(null)}><ArrowLeft size={15}/> รายชื่อแพทย์</button>
+    <button className="linkBtn dark docBack" onClick={()=>setOpen(null)}><ArrowLeft size={15}/> รายชื่อแพทย์</button>
     {msg && <p className={'setToast'+(msg.bad?' bad':'')} role="status">{msg.text}</p>}
     <DoctorPage key={open} api={api} clinics={clinics} ready={ready} doc={doc} onSaved={(p,text)=>{ setMsg({text}); void load(); setOpen(p.code); }} onError={text=>setMsg({text,bad:true})} reload={load}/>
   </section>;
@@ -94,7 +94,7 @@ function DoctorPage({api,clinics,ready,doc,onSaved,onError,reload}:{api:Api; cli
       {sessions===null ? <p className="cmdNote"><Loader2 size={14} className="spin"/> กำลังโหลด…</p> : !sessions.length ? <p className="docNone">ยังไม่มีตารางออกตรวจ — สร้างได้ด้านล่าง</p>
         : <><div className="docDays">{Object.entries(byDay).slice(0,all ? 60 : 6).map(([d,list])=><div key={d} className="docDay"><b>{dayOf(d)}</b>{list.map(s=><span key={s.id} className={s.status!=='OPEN'?'off':''}>
           {timeOf(s.startsAt)}–{timeOf(s.endsAt)} · {clinicLabel(clinics,s.clinicCode)} · นัด {s.reserved}/{s.capacity}{s.status==='CLOSED' ? ' · ปิดรับ' : s.status==='CANCELLED' ? ' · ยกเลิก' : ''}</span>)}</div>)}
-          </div>{Object.keys(byDay).length>6 && <button className="linkBtn docMore" onClick={()=>setAll(x=>!x)}>{all ? 'ย่อ' : `ดูทั้งหมด (${Object.keys(byDay).length} วัน)`}</button>}</>}
+          </div>{Object.keys(byDay).length>6 && <button className="linkBtn dark docMore" onClick={()=>setAll(x=>!x)}>{all ? 'ย่อ' : `ดูทั้งหมด (${Object.keys(byDay).length} วัน)`}</button>}</>}
       {!doc.active ? <p className="serviceNote">แพทย์ท่านนี้ปิดใช้งานอยู่ — เปิดใช้งานแล้วบันทึก จึงจะสร้างตารางใหม่ได้</p>
         : !ready.length ? <p className="serviceNote">ยังไม่มีคลินิกที่เปิดให้นัด — เปิดคลินิกที่ ตั้งค่า → นัดแพทย์ ก่อน แล้วจึงสร้างตารางออกตรวจ</p>
         : <SessionPlanner api={api} clinics={ready} fixed={doc} say={()=>{}} onMade={()=>{ void loadSessions(); void reload(); }}/>}
