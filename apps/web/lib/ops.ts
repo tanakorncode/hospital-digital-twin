@@ -2,7 +2,7 @@
 // Everything here is computed from data existing systems already record; nothing needs extra entry.
 import { CLEANING_MIN, DEFAULT_CAPACITY, LONG_WAIT, erBedSpots, erResusSpots, labStationSpots, opdClinics, servicePlace, xrayRoomSpots, fmtMin, generatePatients, patientAt, stepText, triageLevels, wardBeds,
   type Capacity, type Patient, type PatientState, type StepKind, type Triage, type WardBed } from './patients';
-import { opdLastArrivalMin, opdOpenMin, buildings, buildingStats, counterSpot, doctorName, floorRooms, isDoctorRoom, kiosks, kioskStatusLabel, roomDutyAt, roomSpot, type Spot } from './scene-data';
+import { opdLastArrivalMin, opdOpenMin, buildings, buildingStats, counterSpot, doctorName, floorRooms, isDoctorRoom, roomArea, kiosks, kioskStatusLabel, roomDutyAt, roomSpot, type Spot } from './scene-data';
 
 const present = (patients:Patient[], minute:number) => patients.map(p=>patientAt(p,minute)).filter((s):s is PatientState=>!!s);
 const isWaiting = (s:PatientState) => s.status==='waiting' || s.status==='long' || s.status==='missed';
@@ -99,12 +99,11 @@ export function capacityBoard(patients:Patient[], minute:number):CapFloor[] {
   const clinicRooms = new Set(opdClinics().flatMap(c=>c.rooms.map(r=>r.id)));
   for (const {buildingId,level} of [...roomFloors.values()].sort((a,b)=>a.buildingId===b.buildingId ? a.level-b.level : 0)) {
     const b = buildings.find(x=>x.id===buildingId); if (!b) continue;
-    const all = floorRooms(buildingId,level), rw = b.width/all.length, depts = deptsOf(buildingId,level);
+    const all = floorRooms(buildingId,level), depts = deptsOf(buildingId,level);
     const units = all.filter(r=>isDoctorRoom(r) && clinicRooms.has(r.id)).map<Unit>(room=>{
       const at = roomSpot(room.id), occ = byPos.get(posKey(at)), duty = roomDutyAt(room.id,minute/60);
       const state:UnitState = occ ? 'busy' : duty?.status==='active' ? 'free' : duty?.status==='break' ? 'break' : 'closed';
-      const x0 = b.x-b.width/2+room.index*rw, z0 = b.z-b.depth/2, d = b.depth*0.42;
-      return {id:room.id,name:room.name,kind:'room',dept:depts[room.deptIndex] ?? '',state,at,mat:{x:x0+rw/2,z:z0+d/2,w:rw-0.15,d:d-0.15},patient:occ,
+      return {id:room.id,name:room.name,kind:'room',dept:depts[room.deptIndex] ?? '',state,at,mat:roomArea(room),patient:occ,
         doctor:duty?.current && duty.status!=='vacant' ? doctorName(duty.current.doctor,true) : undefined,
         note:occ ? occ.p.queue : state==='free' ? 'ว่าง' : state==='break' ? 'พัก' : 'ไม่มีแพทย์'};
     });
@@ -140,10 +139,9 @@ export function capacityBoard(patients:Patient[], minute:number):CapFloor[] {
   }
   const xray = servicePlace('xray'), xrooms = xrayRoomSpots(), dx = xray && buildings.find(b=>b.id===xray.buildingId);
   if (xray && dx && xrooms.length) {
-    const rw = dx.width/floorRooms(xray.buildingId,xray.level).length, d = dx.depth*0.42;
-    const xr = xrooms.map<Unit>(u=>{ const occ = byPos.get(posKey(u.spot)), x0 = dx.x-dx.width/2+u.room!.index*rw;
+    const xr = xrooms.map<Unit>(u=>{ const occ = byPos.get(posKey(u.spot)), room = u.room;
       return {id:u.id,name:u.name,kind:'station',dept:xray.name,state:occ?'busy':'free',at:u.spot,
-        mat:{x:x0+rw/2,z:dx.z-dx.depth/2+d/2,w:rw-0.15,d:d-0.15},patient:occ,note:occ?occ.p.queue:'ว่าง'}; });
+        mat:room ? roomArea(room) : bedMat(u.spot),patient:occ,note:occ?occ.p.queue:'ว่าง'}; });
     out.push(floor('xray',xray.buildingId,xray.level,'ห้องเอกซเรย์',xr,waitingWhere(s=>s.step.kind==='xray'),'รอเอกซเรย์'));
   }
   return out;

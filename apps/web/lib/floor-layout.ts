@@ -12,13 +12,36 @@ import type { Facility, FGroup, FPoint, FRoomKind } from './facility';
 type Data = Pick<Facility,'buildings'|'floors'|'departments'|'groups'|'points'>;
 export type PlanRoomKind = 'exam'|'scan'|'treatment'|'ward'|'office';
 export type Spot2 = {x:number; z:number};
-export type PlanBand = {deptId:string; name:string; index:number; x0:number; x1:number; seats:Spot2[]};
-export type PlanRoom = {point:FPoint; group:FGroup; deptId:string; index:number; count:number; x0:number; w:number; kind:PlanRoomKind};
+// A department's waiting band: its area (x0…x1 × z0…z1), counters along its top edge (z0), chairs facing them.
+export type PlanBand = {deptId:string; name:string; index:number; x0:number; x1:number; z0:number; z1:number; seats:Spot2[]};
+// door: the wall the door is in — 's' towards the front (+z, rooms along the back wall), 'n' towards the back, 'e' / 'w'.
+export type Door = 'n'|'s'|'e'|'w';
+export type PlanRoom = {point:FPoint; group:FGroup; deptId:string; index:number; count:number; x0:number; x1:number; z0:number; z1:number; w:number; door:Door; kind:PlanRoomKind};
 export type PlanCounter = {point:FPoint; group:FGroup; index:number; count:number; booth:boolean; at:Spot2};
 export type PlanBed = {point:FPoint; group:FGroup; room?:PlanRoom; ward:boolean; at:Spot2};
+// corridor: the band between the rooms and the waiting areas (z from … to), when the floor is laid out automatically.
 export type FloorPlan = {floorId:string; buildingId:string; level:number; buildingKind:string; cx:number; cz:number; W:number; D:number; roomFront:number; front0:number;
-  bands:PlanBand[]; rooms:PlanRoom[]; counters:PlanCounter[]; beds:PlanBed[]};
+  corridor:[number,number]|null; bands:PlanBand[]; rooms:PlanRoom[]; counters:PlanCounter[]; beds:PlanBed[]};
 
+// Inside a room, from where its door is: `across` along the door wall (from the left, looking out of the door), `deep`
+// from the back wall towards the door. yaw turns things drawn for a front-door room (door 's') to face this room's door.
+export function roomFrame(r:{x0:number; x1:number; z0:number; z1:number; door:Door}) {
+  const side = r.door==='s' || r.door==='n', across = side ? r.x1-r.x0 : r.z1-r.z0, deep = side ? r.z1-r.z0 : r.x1-r.x0;
+  const yaw = r.door==='s' ? 0 : r.door==='n' ? Math.PI : r.door==='e' ? Math.PI/2 : -Math.PI/2;
+  return {cx:(r.x0+r.x1)/2,cz:(r.z0+r.z1)/2,across,deep,yaw};
+}
+export function roomPoint(r:{x0:number; x1:number; z0:number; z1:number; door:Door}, a:number, d:number):Spot2 {
+  const f = roomFrame(r), lx = a-f.across/2, lz = d-f.deep/2, c = Math.cos(f.yaw), s = Math.sin(f.yaw);
+  return {x:f.cx+lx*c+lz*s,z:f.cz-lx*s+lz*c};
+}
+
+// A room's walls as segments (building-local): the back wall, both sides, and the door wall with its doorway (`gap` wide,
+// at its left looking out). The doorway itself is returned as `door`.
+export const DOORWAY = 0.8;
+export function roomWalls(r:{x0:number; x1:number; z0:number; z1:number; door:Door}, gap = DOORWAY) {
+  const f = roomFrame(r), W = f.across, D = f.deep, seg = (a0:number, d0:number, a1:number, d1:number) => { const p = roomPoint(r,a0,d0), q = roomPoint(r,a1,d1); return {x0:p.x,z0:p.z,x1:q.x,z1:q.z}; };
+  return {walls:[seg(0,0,W,0),seg(0,0,0,D),seg(W,0,W,D),seg(Math.min(gap,W),D,W,D)],door:seg(0,D,Math.min(gap,W),D)};
+}
 // Fixed proportions of a floor (the same in every building).
 export const ROOM_DEPTH = 0.42, CORRIDOR = 1.2, SEAT_DX = 0.46, SEAT_DZ = 0.68;
 export const floorFrame = (W:number, D:number) => { const roomFront = -D/2+D*ROOM_DEPTH; return {roomFront,front0:roomFront+CORRIDOR}; };
@@ -51,7 +74,8 @@ export function planFloor(data:Data, floorId:string):FloorPlan|null {
   const rw = W/Math.max(1,roomPts.length);
   const roomKind = (p:FPoint, g:FGroup):PlanRoomKind => { const k:FRoomKind|undefined = p.roomKind;
     return k==='lab' ? 'office' : k ?? (g.steps.includes('exam') ? 'exam' : kind==='er' ? 'treatment' : kind==='inpatient' ? 'ward' : 'office'); };
-  const rooms:PlanRoom[] = roomPts.map((p,k)=>{ const g = group.get(p.groupId)!; return {point:p,group:g,deptId:g.departmentId,index:k,count:roomPts.length,x0:-hw+k*rw,w:rw,kind:roomKind(p,g)}; });
+  const rooms:PlanRoom[] = roomPts.map((p,k)=>{ const g = group.get(p.groupId)!, x0 = -hw+k*rw;
+    return {point:p,group:g,deptId:g.departmentId,index:k,count:roomPts.length,x0,x1:x0+rw,z0:-hd,z1:roomFront,w:rw,door:'s',kind:roomKind(p,g)}; });
   const roomOf = new Map(rooms.map(r=>[r.point.id,r]));
   // Counters / booths, in each group's own order
   const counters:PlanCounter[] = [];
@@ -65,7 +89,7 @@ export function planFloor(data:Data, floorId:string):FloorPlan|null {
   const open = bedPts.filter(p=>!p.inRoomId || !roomOf.has(p.inRoomId)).sort((a,c)=>bandIndex(group.get(a.groupId)!.departmentId)-bandIndex(group.get(c.groupId)!.departmentId) || a.number-c.number);
   const beds:PlanBed[] = [];
   inRoom.forEach(p=>{ const room = roomOf.get(p.inRoomId!)!, mates = inRoom.filter(o=>o.inRoomId===p.inRoomId), k = mates.indexOf(p);
-    beds.push({point:p,group:group.get(p.groupId)!,room,ward:group.get(p.groupId)!.steps.includes('ward'),at:{x:room.x0+room.w*bedRow(k,mates.length),z:-hd+0.9}}); });
+    beds.push({point:p,group:group.get(p.groupId)!,room,ward:group.get(p.groupId)!.steps.includes('ward'),at:roomPoint(room,(room.door==='s'||room.door==='n' ? room.x1-room.x0 : room.z1-room.z0)*bedRow(k,mates.length),0.9)}); });
   const wardRow = open.filter(p=>group.get(p.groupId)!.steps.includes('ward'));
   wardRow.forEach((p,j)=>beds.push({point:p,group:group.get(p.groupId)!,ward:true,at:{x:-hw+0.55+j*((W-1.1)/Math.max(1,wardRow.length-1)),z:hd-0.8}}));
   open.filter(p=>!wardRow.includes(p)).forEach(p=>{ const g = group.get(p.groupId)!, mates = open.filter(o=>o.groupId===p.groupId), k = mates.indexOf(p);
@@ -80,9 +104,9 @@ export function planFloor(data:Data, floorId:string):FloorPlan|null {
     const set = mine.filter(g=>g.options?.seats!==undefined);
     const auto = kind!=='inpatient' && kind!=='support' && !beds.some(bd=>!bd.room && !bd.ward && bd.group.departmentId===id);
     const seats = set.length ? grid.slice(0,set.reduce((n,g)=>n+(g.options!.seats ?? 0),0)) : auto ? grid : [];
-    return {deptId:id,name:dept.get(id)!.name,index:i,x0,x1,seats};
+    return {deptId:id,name:dept.get(id)!.name,index:i,x0,x1,z0:front0,z1:hd,seats};
   });
-  return {floorId,buildingId:b.id,level:floor.level,buildingKind:kind,cx:b.map.x,cz:b.map.z,W,D,roomFront,front0,bands,rooms,counters,beds};
+  return {floorId,buildingId:b.id,level:floor.level,buildingKind:kind,cx:b.map.x,cz:b.map.z,W,D,roomFront,front0,corridor:[roomFront,front0],bands,rooms,counters,beds};
 }
 // The most chairs a band of this floor can hold (the number the settings page caps a group's seats at).
 export function seatCapacity(plan:FloorPlan, deptId:string) {

@@ -1,4 +1,4 @@
-import { CORRIDOR, SEAT_DX, SEAT_DZ, counterAt, floorFrame, planFloor, type FloorPlan } from './floor-layout';
+import { CORRIDOR, SEAT_DX, SEAT_DZ, counterAt, floorFrame, planFloor, roomFrame, roomPoint, type Door, type FloorPlan } from './floor-layout';
 import { facility, facilityRevision, fBuildings, fFloors, fGroup, fPoint, fPoints, floorAt, isActive, onFacility, pointLabel,
   type FBuilding, type FPoint } from './facility';
 
@@ -231,7 +231,9 @@ export const fmtHour = (h:number) => `${String(Math.floor(h)).padStart(2,'0')}:$
 // A room's id is how records name it — the same rule as the API's roomRef: `opd-201` for the point `room:opd-201`,
 // else the point's own id (a room added in Settings, the x-ray rooms `counter:xray:1`).
 export type RoomKind = 'exam'|'scan'|'treatment'|'ward'|'office';
-export type Room = {id:string; buildingId:string; level:number; index:number; count:number; number:number; name:string; kind:RoomKind; dept:string; deptIndex:number; pointId:string};
+// x0…x1 × z0…z1: where the room is on its floor (building-local) · door: the wall its door is in ('s' = towards the front).
+export type Room = {id:string; buildingId:string; level:number; index:number; count:number; number:number; name:string; kind:RoomKind; dept:string; deptIndex:number; pointId:string;
+  x0:number; x1:number; z0:number; z1:number; door:Door};
 const roomsByFloor = new Map<string,Room[]>(), roomById = new Map<string,Room>();
 const roomIdOf = (p:FPoint) => p.id.startsWith('room:') ? p.id.slice(5) : p.id;
 function rebuildRooms() {
@@ -241,7 +243,8 @@ function rebuildRooms() {
     const bandOfDept = new Map(plan.bands.map((x,i)=>[x.deptId,i]));
     const rooms = plan.rooms.map((r):Room=>{ const p = r.point, deptIndex = bandOfDept.get(r.deptId) ?? 0;
       const number = /^\d+$/.test(p.roomCode ?? '') ? Number(p.roomCode) : p.number;
-      return {id:roomIdOf(p),buildingId:b.id,level:fl.level,index:r.index,count:r.count,number,name:pointLabel(p),kind:r.kind,dept:plan.bands[deptIndex]?.name ?? '',deptIndex,pointId:p.id};
+      return {id:roomIdOf(p),buildingId:b.id,level:fl.level,index:r.index,count:r.count,number,name:pointLabel(p),kind:r.kind,dept:plan.bands[deptIndex]?.name ?? '',deptIndex,pointId:p.id,
+        x0:r.x0,x1:r.x1,z0:r.z0,z1:r.z1,door:r.door};
     });
     roomsByFloor.set(`${b.id}:${fl.level}`,rooms);
     for (const r of rooms) { roomById.set(r.id,r); roomById.set(r.pointId,r); }
@@ -249,6 +252,9 @@ function rebuildRooms() {
 }
 export const floorRooms = (buildingId:string, level:number):Room[] => roomsByFloor.get(`${buildingId}:${level}`) ?? [];
 export const findRoom = (id:string) => roomById.get(id);
+// A room's floor area on the map (world coordinates, centre and size), a little inside its walls — for marks drawn on it.
+export const roomArea = (room:Room, inset = 0.15) => { const b = buildings.find(x=>x.id===room.buildingId)!;
+  return {x:b.x+(room.x0+room.x1)/2,z:b.z+(room.z0+room.z1)/2,w:room.x1-room.x0-inset,d:room.z1-room.z0-inset}; };
 export const isDoctorRoom = (r:Room) => r.kind==='exam' || r.kind==='treatment';
 
 // ---- Doctor duty roster (demo) ---------------------------------------------------------------------------------
@@ -317,10 +323,11 @@ export const FLOOR_H = 0.8;
 export type Spot = {x:number; y:number; z:number};
 const bld = (id:string) => buildings.find(b=>b.id===id)!;
 export const floorY = (level:number) => (level-1)*FLOOR_H+0.11;
+// A department's waiting area on a floor (world x, building-local z), from the floor's layout.
 function bandOf(id:string, level:number, deptIndex:number) {
-  const b = bld(id), n = buildingStats[id]?.floors.find(f=>f.level===level)?.depts.length ?? 1, w = b.width/n;
-  const x0 = b.x-b.width/2+deptIndex*w;
-  return {b,x0,x1:x0+w,front0:floorFrame(b.width,b.depth).front0};
+  const b = bld(id), band = floorPlan(id,level)?.bands[deptIndex];
+  if (!band) { const {front0} = floorFrame(b.width,b.depth); return {b,x0:b.x-b.width/2,x1:b.x+b.width/2,z0:front0,z1:b.depth/2}; }
+  return {b,x0:b.x+band.x0,x1:b.x+band.x1,z0:band.z0,z1:band.z1};
 }
 // Waiting chairs in a department's band, as the 3D floor plan draws them (lib/floor-layout.ts) · without a
 // department: how many a plain band of the floor holds.
@@ -335,24 +342,28 @@ export function waitingSeats(id:string, level:number, deptId?:string) {
 }
 // The floor area of one department: its band of rooms at the back and its waiting area in front.
 export function deptArea(id:string, level:number, deptIndex:number) {
-  const {b,x0,x1} = bandOf(id,level,deptIndex);
+  const plan = floorPlan(id,level), band = plan?.bands[deptIndex], {b,x0,x1} = bandOf(id,level,deptIndex);
+  if (!plan?.corridor && band) { // laid out by hand: the waiting area and the department's rooms
+    const rects = [band,...plan!.rooms.filter(r=>r.deptId===band.deptId)];
+    const rx0 = Math.min(...rects.map(r=>r.x0)), rx1 = Math.max(...rects.map(r=>r.x1)), rz0 = Math.min(...rects.map(r=>r.z0)), rz1 = Math.max(...rects.map(r=>r.z1));
+    return {x:b.x+(rx0+rx1)/2,z:b.z+(rz0+rz1)/2,w:rx1-rx0+1.2,d:rz1-rz0+1.2};
+  }
   return {x:(x0+x1)/2,z:b.z,w:x1-x0+1.2,d:b.depth+0.6};
 }
 // u, v in [0,1) spread people across the department's waiting area.
 export function waitingSpot(id:string, level:number, deptIndex:number, u:number, v:number):Spot {
-  const {b,x0,x1,front0} = bandOf(id,level,deptIndex);
-  return {x:x0+0.5+u*(x1-x0-0.9),y:floorY(level),z:b.z+front0+1.1+v*Math.max(0.2,b.depth/2-front0-1.5)};
+  const {b,x0,x1,z0,z1} = bandOf(id,level,deptIndex);
+  return {x:x0+0.5+u*(x1-x0-0.9),y:floorY(level),z:b.z+z0+1.1+v*Math.max(0.2,z1-z0-1.5)};
 }
 export function counterSpot(id:string, level:number, deptIndex:number, u:number):Spot {
-  const {b,x0,front0} = bandOf(id,level,deptIndex), at = counterAt(x0,front0,u);
+  const {b,x0,z0} = bandOf(id,level,deptIndex), at = counterAt(x0,z0,u);
   return {x:at.x,y:floorY(level),z:b.z+at.z};
 }
 // Where a patient stands while being seen in a room: across the desk, or beside the bed.
 export function roomSpot(roomId:string):Spot {
-  const room = findRoom(roomId)!, b = bld(room.buildingId), w = b.width/room.count, x0 = b.x-b.width/2+room.index*w;
-  return room.kind==='treatment' || room.kind==='ward'
-    ? {x:x0+w*0.3+0.38,y:floorY(room.level),z:b.z-b.depth/2+1.3}
-    : {x:x0+w*0.32,y:floorY(room.level),z:b.z-b.depth/2+b.depth*0.42-0.22};
+  const room = findRoom(roomId)!, b = bld(room.buildingId), f = roomFrame(room);
+  const at = room.kind==='treatment' || room.kind==='ward' ? roomPoint(room,f.across*0.3+0.38,1.3) : roomPoint(room,f.across*0.32,f.deep-0.22);
+  return {x:b.x+at.x,y:floorY(room.level),z:b.z+at.z};
 }
 
 // ---- Queue-ticket kiosks (demo) -------------------------------------------------------------------------

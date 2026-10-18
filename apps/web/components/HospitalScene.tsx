@@ -6,7 +6,8 @@ import * as THREE from 'three';
 import { screenData, type ScreenData } from '../lib/queue-screen';
 import { BedDouble, DoorOpen, FlaskConical, Plus, Settings, SquareParking, Ticket, type LucideIcon } from 'lucide-react';
 import { bandBeds, bandBooths, fmtMin, patientAt, statusColor as patientColor, stepText, wardBeds, type Patient, type PatientState, type StepKind } from '../lib/patients';
-import { REF_HOUR, entranceSpot, floorBands, floorPlan, isOff, layoutRevision, plazas, kioskY, kiosks, type KioskStatus, buildingDensityAt, doctorName, findRoom, floorDutyAt, floorRooms, type DutyStatus, buildings, buildingStats, demoFlows, densityColor, fillerBuildings, floorCountAt, floorDepartments, floorPresence, isRealMode, kindPresence, peakFloorCount, parkingLots, personTypes, roads, type BuildingKind, type PersonType, type BuildingSpec, type Department, type Rect } from '../lib/scene-data';
+import { DOORWAY, roomFrame, roomPoint } from '../lib/floor-layout';
+import { REF_HOUR, entranceSpot, floorBands, floorPlan, isOff, layoutRevision, plazas, kioskY, kiosks, type KioskStatus, buildingDensityAt, doctorName, findRoom, floorDutyAt, floorRooms, type DutyStatus, buildings, buildingStats, demoFlows, densityColor, fillerBuildings, floorCountAt, floorDepartments, floorPresence, isRealMode, kindPresence, peakFloorCount, parkingLots, personTypes, roads, type BuildingKind, type PersonType, type BuildingSpec, type Department, type Rect, type Room } from '../lib/scene-data';
 import { buildingShort, facility } from '../lib/facility';
 
 export type SceneMode = '2d'|'3d';
@@ -238,10 +239,11 @@ type Zone = {x0:number;x1:number;z0:number;z1:number;dept:Department};
 type Sign = {text:string;pos:V3;kind:SignKind;roomId?:string};
 // Placed = a position plus the yaw it faces (0 = +z, toward the default camera).
 type Placed = {p:V3;rot:number};
-type Plan = {level:number;rooms:{id:string;x0:number;x1:number;z0:number;z1:number}[];walls:{p:V3;s:V3}[];chairs:V3[];beds:V3[];desks:V3[];counters:V3[];machines:V3[];plants:V3[];people:Person[];zones:Zone[];signs:Sign[];corridor:[number,number];y:number;
+type V4 = [number,number,number,number];
+type Plan = {level:number;rooms:{id:string;x0:number;x1:number;z0:number;z1:number}[];walls:{p:V3;s:V3}[];chairs:(V3|V4)[];beds:(V3|V4)[];desks:(V3|V4)[];counters:V3[];machines:V3[];plants:V3[];people:Person[];zones:Zone[];signs:Sign[];corridor:[number,number];y:number;
  monitors:Placed[];poles:V3[];bags:V3[];vitals:Placed[];screens:Placed[];wheelchairs:Placed[]};
-// Back-wall room k of n, in building-local coordinates (rooms take the back 42% of the depth).
-const roomRect = (b:BuildingSpec,k:number,n:number) => { const w = b.width/n, x0 = -b.width/2+k*w; return {x0,x1:x0+w,z0:-b.depth/2,z1:-b.depth/2+b.depth*0.42}; };
+// Where a room is on its floor (building-local), from the floor's layout.
+const roomRect = (room:Room) => ({x0:room.x0,x1:room.x1,z0:room.z0,z1:room.z1});
 const counterName:Record<BuildingKind,string> = {opd:'จุดซักประวัติ',er:'จุดคัดแยก',diagnostics:'จุดรับบริการ',inpatient:'เคาน์เตอร์พยาบาล',support:'ธุรการ'};
 // Procedural floor plan in building-local coordinates: rooms along the back wall, a corridor,
 // then one open zone per department at the front. Furniture depends on the building type.
@@ -256,59 +258,68 @@ function planLayout(b:BuildingSpec,level:number):Plan {
  const person = (x:number,z:number,mix:Mix=floorMix[b.kind]) => { p.people.push(makePerson(r,x,y,z,pickType(r,mix))); };
  const staffAt = (x:number,z:number,type:PersonType,dutyRoom?:string) => { p.people.push({...makePerson(r,x,y,z,type),presence:0,dutyRoom}); }; // on duty all day
  p.walls.push({p:[0,wy,-hd],s:[b.width,wallH,0.12]},{p:[0,y+0.15,hd],s:[b.width,0.3,0.12]},{p:[-hw,wy,0],s:[0.12,wallH,b.depth]},{p:[hw,wy,0],s:[0.12,wallH,b.depth]});
- const roomFront = -hd+b.depth*0.42, front0 = roomFront+1.2;
- p.corridor = [roomFront,front0];
- const rooms = floorRooms(b.id,level), n = rooms.length, roomW = b.width/n;
- for (let k=0; k<n; k++) {
-  const x0 = -hw+k*roomW, cx = x0+roomW/2;
-  if (k>0) p.walls.push({p:[x0,wy,(roomFront-hd)/2],s:[0.08,wallH,roomFront+hd]});
-  p.walls.push({p:[x0+0.8+(roomW-0.8)/2,wy,roomFront],s:[roomW-0.8,wallH,0.08]});
+ // The floor's layout (lib/floor-layout.ts): room and waiting-area rectangles, the corridor when laid out automatically.
+ const plan = floorPlan(b.id,level), roomFront = plan?.roomFront ?? -hd+b.depth*0.42, front0 = plan?.front0 ?? roomFront+1.2;
+ p.corridor = plan?.corridor ?? [0,0];
+ const rooms = floorRooms(b.id,level), walled = new Set<string>();
+ rooms.forEach((room,k)=>{
+  // Furniture is placed from the door: a = along the door wall, d = in from the back wall; yaw turns it to face the door.
+  const f = roomFrame(room), W = f.across, D = f.deep, yaw = f.yaw;
+  const at = (a:number, d:number) => { const q = roomPoint(room,a,d); return [q.x,q.z] as [number,number]; };
+  const put = (a:number, h:number, d:number):V4 => { const [x,z] = at(a,d); return [x,y+h,z,yaw]; };
+  // A wall along the building's outside wall, or one the room next door already put up, is not drawn twice.
+  const wall = (a0:number, a1:number, d0:number, d1:number) => { const [xa,za] = at(a0,d0), [xb,zb] = at(a1,d1), e = 1e-6;
+   if ((Math.abs(xa-xb)<e && Math.abs(Math.abs(xa)-hw)<e) || (Math.abs(za-zb)<e && Math.abs(Math.abs(za)-hd)<e)) return;
+   const key = [Math.min(xa,xb),Math.min(za,zb),Math.max(xa,xb),Math.max(za,zb)].map(v=>v.toFixed(3)).join(); if (walled.has(key)) return; walled.add(key);
+   p.walls.push({p:[(xa+xb)/2,wy,(za+zb)/2],s:[Math.max(0.08,Math.abs(xb-xa)),wallH,Math.max(0.08,Math.abs(zb-za))]}); };
+  wall(0,W,0,0); wall(0,0,0,D); wall(W,W,0,D); wall(DOORWAY,W,D,D); // back, sides, and the door wall with its doorway at the left
   if (b.kind==='inpatient' || b.kind==='er') {
-   if (b.kind==='er') p.beds.push([x0+roomW*0.3,y+0.11,-hd+0.9],[x0+roomW*0.72,y+0.11,-hd+0.9]); // ward beds come from wardBeds() below
-   iv(x0+roomW*0.51,-hd+0.6);
-   if (b.kind==='er') { staffAt(cx,roomFront-0.5,k%2?'doctor':'staff',k%2?rooms[k].id:undefined); p.poles.push([x0+roomW*0.72+0.4,y,-hd+0.6]); p.vitals.push({p:[x0+roomW*0.72+0.4,y,-hd+0.6],rot:0}); }
+   if (b.kind==='er') p.beds.push(put(W*0.3,0.11,0.9),put(W*0.72,0.11,0.9)); // ward beds come from wardBeds() below
+   const [ix,iz] = at(W*0.51,0.6); iv(ix,iz);
+   if (b.kind==='er') { const [sx,sz] = at(W/2,D-0.5); staffAt(sx,sz,k%2?'doctor':'staff',k%2?room.id:undefined); const [vx,vz] = at(W*0.72+0.4,0.6); p.poles.push([vx,y,vz]); p.vitals.push({p:[vx,y,vz],rot:yaw}); }
   }
-  else if (rooms[k].kind==='scan') { p.machines.push([cx,y+0.42,-hd+0.8]); p.beds.push([cx,y+0.11,-hd+1.3]); staffAt(x0+0.35,roomFront-0.45,'staff'); }
-  else if (rooms[k].kind==='office') { p.desks.push([x0+roomW*0.3,y+0.15,-hd+1],[x0+roomW*0.7,y+0.15,-hd+1]); p.chairs.push([x0+roomW*0.3,y+0.07,-hd+1.45],[x0+roomW*0.7,y+0.07,-hd+1.45]); p.monitors.push({p:[x0+roomW*0.3,y+0.3,-hd+0.92],rot:0},{p:[x0+roomW*0.7,y+0.3,-hd+0.92],rot:0}); }
+  else if (room.kind==='scan') { const [mx,mz] = at(W/2,0.8); p.machines.push([mx,y+0.42,mz]); p.beds.push(put(W/2,0.11,1.3)); const [sx,sz] = at(0.35,D-0.45); staffAt(sx,sz,'staff'); }
+  else if (room.kind==='office') { p.desks.push(put(W*0.3,0.15,1),put(W*0.7,0.15,1)); p.chairs.push(put(W*0.3,0.07,1.45),put(W*0.7,0.07,1.45));
+   const [m1x,m1z] = at(W*0.3,0.92), [m2x,m2z] = at(W*0.7,0.92); p.monitors.push({p:[m1x,y+0.3,m1z],rot:yaw},{p:[m2x,y+0.3,m2z],rot:yaw}); }
   else {
-   p.beds.push([x0+roomW*0.68,y+0.11,-hd+1]); p.desks.push([x0+roomW*0.3,y+0.15,roomFront-0.6]); p.chairs.push([x0+roomW*0.3,y+0.07,roomFront-1.05]); staffAt(x0+roomW*0.3,roomFront-1.05,'doctor',rooms[k].id);
-   p.monitors.push({p:[x0+roomW*0.3+0.15,y+0.3,roomFront-0.62],rot:Math.PI}); iv(x0+roomW*0.68+0.42,-hd+0.6);
+   p.beds.push(put(W*0.68,0.11,1)); p.desks.push(put(W*0.3,0.15,D-0.6)); p.chairs.push(put(W*0.3,0.07,D-1.05)); const [dx,dz] = at(W*0.3,D-1.05); staffAt(dx,dz,'doctor',room.id);
+   const [mx,mz] = at(W*0.3+0.15,D-0.62); p.monitors.push({p:[mx,y+0.3,mz],rot:Math.PI+yaw}); const [ix,iz] = at(W*0.68+0.42,0.6); iv(ix,iz);
   }
-  p.signs.push({text:rooms[k].name,pos:[cx,y+0.62,(roomFront-hd)/2],kind:'room',roomId:rooms[k].id});
-  p.rooms.push({id:rooms[k].id,...roomRect(b,k,n)});
-  if (r()<0.75) person(x0+0.4+r()*(roomW-0.8),-hd+0.6+r()*(roomFront+hd-1),b.kind==='support'||rooms[k].kind==='scan'||rooms[k].kind==='office'?floorMix.support:{...floorMix[b.kind],staff:1,doctor:0}); // no relatives in imaging / lab rooms
- }
- const bandW = b.width/zoneDepts.length, bandIds = floorBands(b.id,level);
+  p.signs.push({text:room.name,pos:[f.cx,y+0.62,f.cz],kind:'room',roomId:room.id});
+  p.rooms.push({id:room.id,...roomRect(room)});
+  if (r()<0.75) { const [px,pz] = at(0.4+r()*(W-0.8),0.6+r()*(D-1)); person(px,pz,b.kind==='support'||room.kind==='scan'||room.kind==='office'?floorMix.support:{...floorMix[b.kind],staff:1,doctor:0}); } // no relatives in imaging / lab rooms
+ });
+ const bandIds = floorBands(b.id,level);
  zoneDepts.forEach((dept,i)=>{
   // What the facility puts in this band: booths (blood draw) or beds out in the open (resuscitation bays).
   const booths = bandIds[i] ? bandBooths(b.id,level,bandIds[i].deptId) : [], openBeds = bandIds[i] ? bandBeds(b.id,level,bandIds[i].deptId) : [];
-  const bx0 = -hw+i*bandW, bx1 = bx0+bandW;
-  p.zones.push({x0:bx0,x1:bx1,z0:-hd,z1:hd,dept});
-  if (i>0) p.walls.push({p:[bx0,wy,(front0+0.9+hd)/2],s:[0.08,wallH,hd-front0-0.9]});
+  const band = plan?.bands[i], bx0 = band?.x0 ?? -hw, bx1 = band?.x1 ?? hw, az0 = band?.z0 ?? front0, az1 = band?.z1 ?? hd, bandW = bx1-bx0;
+  p.zones.push({x0:bx0,x1:bx1,z0:plan?.corridor ? -hd : az0,z1:az1,dept});
+  if (i>0 && plan?.corridor) p.walls.push({p:[bx0,wy,(az0+0.9+az1)/2],s:[0.08,wallH,az1-az0-0.9]});
   if (b.kind==='inpatient') {
-   p.counters.push([(bx0+bx1)/2,y+0.16,front0+0.45]);
-   p.monitors.push({p:[(bx0+bx1)/2-0.4,y+0.36,front0+0.42],rot:Math.PI});
-   p.signs.push({text:counterName[b.kind],pos:[(bx0+bx1)/2,y+0.5,front0+0.45],kind:'counter'},{text:'เตียงรวม',pos:[bx0+bandW*0.78,y+0.45,hd-0.8],kind:'area'});
+   p.counters.push([(bx0+bx1)/2,y+0.16,az0+0.45]);
+   p.monitors.push({p:[(bx0+bx1)/2-0.4,y+0.36,az0+0.42],rot:Math.PI});
+   p.signs.push({text:counterName[b.kind],pos:[(bx0+bx1)/2,y+0.5,az0+0.45],kind:'counter'},{text:'เตียงรวม',pos:[bx0+bandW*0.78,y+0.45,az1-0.8],kind:'area'});
   } else if (b.kind==='support') {
-   for (let x=bx0+0.7; x<bx1-0.5; x+=1.1) for (let z=front0+0.6; z<hd-0.4; z+=1) { p.desks.push([x,y+0.15,z]); p.chairs.push([x,y+0.07,z+0.42]); p.monitors.push({p:[x,y+0.3,z-0.08],rot:0}); }
-   p.signs.push({text:'พื้นที่ทำงาน',pos:[(bx0+bx1)/2,y+0.5,(front0+hd)/2],kind:'area'});
+   for (let x=bx0+0.7; x<bx1-0.5; x+=1.1) for (let z=az0+0.6; z<az1-0.4; z+=1) { p.desks.push([x,y+0.15,z]); p.chairs.push([x,y+0.07,z+0.42]); p.monitors.push({p:[x,y+0.3,z-0.08],rot:0}); }
+   p.signs.push({text:'พื้นที่ทำงาน',pos:[(bx0+bx1)/2,y+0.5,(az0+az1)/2],kind:'area'});
   } else if (booths.length) {
    // Booths (blood draw): a desk, a chair and a computer per booth (waiting chairs behind come from the layout).
    booths.forEach(st=>{ const x = st.spot.x-b.x, z = st.spot.z-b.z;
     p.desks.push([x,y+0.15,z-0.45]); p.chairs.push([x,y+0.07,z]); p.monitors.push({p:[x+0.22,y+0.3,z-0.5],rot:0}); staffAt(x,z-0.85,'staff');
     p.signs.push({text:st.name,pos:[x,y+0.62,z-0.45],kind:'counter'}); });
   } else {
-   p.counters.push([bx0+0.95,y+0.16,front0+0.45]);
-   p.monitors.push({p:[bx0+0.6,y+0.36,front0+0.42],rot:Math.PI});
-   p.poles.push([bx1-0.35,y,front0+0.75]); p.screens.push({p:[bx1-0.35,y,front0+0.75],rot:0});
+   p.counters.push([bx0+0.95,y+0.16,az0+0.45]);
+   p.monitors.push({p:[bx0+0.6,y+0.36,az0+0.42],rot:Math.PI});
+   p.poles.push([bx1-0.35,y,az0+0.75]); p.screens.push({p:[bx1-0.35,y,az0+0.75],rot:0});
    // Beds out in the band (the ER's resuscitation bays); waiting chairs come from the layout below.
    const resus = openBeds.length>0;
    openBeds.forEach(r=>{ p.beds.push([r.spot.x-b.x,y+0.11,r.spot.z-b.z]); p.vitals.push({p:[r.spot.x-b.x+0.42,y,r.spot.z-b.z-0.35],rot:0}); p.poles.push([r.spot.x-b.x+0.42,y,r.spot.z-b.z-0.35]); });
-   p.signs.push({text:counterName[b.kind],pos:[bx0+0.95,y+0.5,front0+0.45],kind:'counter'},{text:resus?openBeds[0].name:'พื้นที่รอ',pos:[(bx0+bx1)/2+0.4,y+0.45,(front0+1.2+hd)/2],kind:'area'});
+   p.signs.push({text:counterName[b.kind],pos:[bx0+0.95,y+0.5,az0+0.45],kind:'counter'},{text:resus?openBeds[0].name:'พื้นที่รอ',pos:[(bx0+bx1)/2+0.4,y+0.45,(az0+1.2+az1)/2],kind:'area'});
   }
  });
  // Waiting chairs, band by band, as the floor's layout seats them (lib/floor-layout.ts — the settings preview shows the same).
- floorPlan(b.id,level)?.bands.forEach(bd=>bd.seats.forEach(st=>p.chairs.push([st.x,y+0.07,st.z])));
+ plan?.bands.forEach(bd=>bd.seats.forEach(st=>p.chairs.push([st.x,y+0.07,st.z])));
  const crowd = Math.min(30,Math.max(4,Math.round(count/14))); // relatives and staff only; patients are tracked
  for (let i=0; i<crowd; i++) {
   if (r()<0.25) person(-hw+0.4+r()*(b.width-0.8),roomFront+0.2+r()*0.8);
@@ -361,10 +372,12 @@ function Equipment({L}:{L:Plan}) {
  </group>;
 }
 
-function BoxSet({items,size,color,offset=[0,0,0],cast=true}:{items:V3[];size:V3;color:string;offset?:V3;cast?:boolean}) {
+// Boxes at points; a 4th number turns the box (and its offset) about the vertical axis — furniture in a room whose
+// door is not at the front.
+function BoxSet({items,size,color,offset=[0,0,0],cast=true}:{items:(V3|V4)[];size:V3;color:string;offset?:V3;cast?:boolean}) {
  if (!items.length) return null;
  return <Instances key={items.length} limit={items.length} castShadow={cast} receiveShadow><boxGeometry args={size}/><meshStandardMaterial color={color}/>
-  {items.map((p,i)=><Instance key={i} position={[p[0]+offset[0],p[1]+offset[1],p[2]+offset[2]]}/>)}
+  {items.map((p,i)=>{ const yaw = p[3] ?? 0; return <Instance key={i} position={yaw ? loc([p[0],p[1],p[2]],yaw,offset[0],offset[1],offset[2]) : [p[0]+offset[0],p[1]+offset[1],p[2]+offset[2]]} rotation={[0,yaw,0]}/>; })}
  </Instances>;
 }
 
@@ -1097,7 +1110,7 @@ export default function HospitalScene({view='campus',selectedBuilding,onSelectBu
  const level = focusB ? THREE.MathUtils.clamp(activeFloor,1,focusB.floors) : 1;
  const fit = focusB ? 12/Math.max(focusB.width,focusB.depth*1.3) : 1;
  const room = selectedRoom ? findRoom(selectedRoom) : undefined;
- const roomFocus = focusB && room && view!=='building' && room.buildingId===focusB.id && room.level===level ? roomRect(focusB,room.index,room.count) : null;
+ const roomFocus = focusB && room && view!=='building' && room.buildingId===focusB.id && room.level===level ? roomRect(room) : null;
  // A selected room pulls the camera in close; otherwise frame the building or the floor.
  // A selected patient (when visible in this view) takes priority, then a selected room.
  const minute = rawHour*60, vis:Vis = {view,focusId:focusB?.id??null,level};

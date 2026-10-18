@@ -12,7 +12,7 @@ import { LONG_WAIT, NO_SHOW, fmtDur, fmtMin, maskHN, opdClinics, servicePlace, p
 import { erBoard, serviceNote } from '../../lib/ops';
 import { DEFAULT_POLICY, SYSTEM_BY, actionText, openReports, groupName, moveNote, sameZone, allStations, everyStation, announce, capFor, healthText, modeText, rulesFor, scopeName, suggestionText, type AssistView, type Suggestion, groupOf, openStations, priorityOf, stationById, stationDoctor, stationQueue, stepGroup, type PriorityPolicy, type QueueCommand, type QueueEvent, type QueueSettings, type SettingsPatch, type Station, type AuthUser, type QueueSync, useTicket, canDo, isLive } from '../../lib/queue';
 
-import { DEFAULT_HOURS, bandIndex, buildings, floorRooms, layoutRevision, placeName, waitingSeats, deptArea } from '../../lib/scene-data';
+import { DEFAULT_HOURS, bandIndex, buildings, floorRooms, layoutRevision, roomArea, placeName, waitingSeats, deptArea } from '../../lib/scene-data';
 import { buildingShort, erDepartment, fGroup, pointsOf } from '../../lib/facility';
 import { counterZones } from '../../lib/queue-screen';
 import FloorPlanSvg from '../FloorPlanSvg';
@@ -570,9 +570,8 @@ function floorStationMarks(floor:string, here:Station[], labelOf:(id:string,list
  const [buildingId,lv] = floor.split(':'), level = Number(lv);
  // Counters side by side (one long counter, several points) are shown as one group on the plan.
  const grouped = (s:Station) => { const g = fGroup(s.group); return !!g && g.pointKind==='counter' && g.options?.arrange!=='booths' && pointsOf(g.id).length>1; };
- const b = buildings.find(x=>x.id===buildingId)!, rooms = floorRooms(buildingId,level), rw = b.width/Math.max(1,rooms.length), dz = b.depth*0.42;
- const roomMat = (roomId?:string, name?:string) => { const r = rooms.find(x=>x.id===roomId || x.name===name); if (!r) return undefined;
-  const x0 = b.x-b.width/2+r.index*rw, z0 = b.z-b.depth/2; return {x:x0+rw/2,z:z0+dz/2,w:rw-0.15,d:dz-0.15}; };
+ const rooms = floorRooms(buildingId,level);
+ const roomMat = (roomId?:string, name?:string) => { const r = rooms.find(x=>x.id===roomId || x.name===name); return r ? roomArea(r) : undefined; };
  const marks = new Map<string,{list:Station[]}>();
  here.forEach(s=>{ const id = grouped(s) ? `grp:${s.group}` : s.id, m = marks.get(id); if (m) m.list.push(s); else marks.set(id,{list:[s]}); });
  const units:FloorUnit[] = [...marks.entries()].map(([id,m])=>{

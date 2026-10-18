@@ -4,6 +4,7 @@ import dynamic from 'next/dynamic';
 import { Info } from 'lucide-react';
 import type { Facility } from '../../lib/facility';
 import { layoutFloor, type FloorLayout } from '../../lib/floor-preview';
+import { roomWalls } from '../../lib/floor-layout';
 
 // Help for the facility settings: an (i) after a field's label that explains, with a small picture, where the value
 // shows up — and a live floor plan drawn from the draft, so a change is seen on the map before it is published.
@@ -100,7 +101,7 @@ export function FloorPreview({data,floorId,focus}:{data:Data; floorId:string; fo
   </figure>;
 }
 function Plan2D({L}:{L:FloorLayout}) {
-  const {W,D,roomFront,front0} = L, hw = W/2, hd = D/2;
+  const {W,D,corridor} = L, hw = W/2, hd = D/2;
   const S = 540/W, sx = (x:number) => (x+hw)*S+10, sz = (z:number) => (z+hd)*S+10, svgH = D*S+20;
   const fs = 10, fits = (t:string, w:number) => t.length*fs*0.56 <= w*S-6;
   const roomText = (r:FloorLayout['rooms'][number]) => fits(r.name,r.w) ? r.name : fits(r.short,r.w) || r.w*S>=14 ? r.short : '';
@@ -109,13 +110,15 @@ function Plan2D({L}:{L:FloorLayout}) {
   return <svg viewBox={`0 0 560 ${svgH}`} width="100%" role="img" aria-label={`ผังชั้นตัวอย่าง ${L.title}`}>
     <defs><pattern id="facOff" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#f1f5f9"/><line x1="0" y1="0" x2="0" y2="6" stroke="#cbd5e1" strokeWidth="2"/></pattern></defs>
     <rect x="10" y="10" width={W*S} height={D*S} rx="6" fill="#fbfcfe" stroke={C.wall} strokeWidth="1.5"/>
-    {L.bands.map(bd=><g key={bd.id}><rect x={sx(bd.x0)} y={sz(front0)} width={bd.w*S} height={(hd-front0)*S} fill={bd.focus?'#eef5ff':bd.on?C.band:'url(#facOff)'} stroke="#e2e8f0"/>
-      <text x={sx(bd.x0+bd.w/2)} y={sz(hd)-8} fontSize="11" textAnchor="middle" fill={bd.focus?C.hi:'#64748b'} fontWeight="700">{bd.name}{bd.on?'':' (ปิด)'}</text></g>)}
+    {L.bands.map(bd=><g key={bd.id}><rect x={sx(bd.x0)} y={sz(bd.z0)} width={bd.w*S} height={bd.d*S} fill={bd.focus?'#eef5ff':bd.on?C.band:'url(#facOff)'} stroke="#e2e8f0"/>
+      <text x={sx(bd.x0+bd.w/2)} y={sz(bd.z0+bd.d)-8} fontSize="11" textAnchor="middle" fill={bd.focus?C.hi:'#64748b'} fontWeight="700">{bd.name}{bd.on?'':' (ปิด)'}</text></g>)}
     {L.seats.map((c,i)=><rect key={i} x={sx(c.x)-3.5} y={sz(c.z)-3} width="7" height="6" rx="1.5" fill={c.focus?'#bfdbfe':'#d5dde7'}/>)}
-    <rect x="10" y={sz(roomFront)} width={W*S} height={1.2*S} fill="#f8fafc"/>
-    <text x={sx(0)} y={sz(roomFront+0.6)+4} fontSize="9" textAnchor="middle" fill="#94a3b8">ทางเดิน</text>
-    {L.rooms.map(r=><g key={r.id}><rect x={sx(r.x0)+1} y={sz(-hd)+1} width={r.w*S-2} height={(roomFront+hd)*S-2} rx="3" fill={!r.on?'url(#facOff)':r.hi?C.hiFill:C.room} stroke={r.hi?C.hi:C.wall} strokeWidth={r.hi?2:1}/>
-      <text x={sx(r.x0+r.w/2)} y={sz((roomFront-hd)/2)+4} fontSize={fs} textAnchor="middle" fill={r.hi?C.hi:r.on?C.text:'#94a3b8'} fontWeight={r.hi?700:500}>{roomText(r)}</text></g>)}
+    {corridor && <><rect x="10" y={sz(corridor[0])} width={W*S} height={(corridor[1]-corridor[0])*S} fill="#f8fafc"/>
+      <text x={sx(0)} y={sz((corridor[0]+corridor[1])/2)+4} fontSize="9" textAnchor="middle" fill="#94a3b8">ทางเดิน</text></>}
+    {L.rooms.map(r=>{ const dr = roomWalls({x0:r.x0,x1:r.x0+r.w,z0:r.z0,z1:r.z0+r.d,door:r.door}).door;
+      return <g key={r.id}><rect x={sx(r.x0)+1} y={sz(r.z0)+1} width={r.w*S-2} height={r.d*S-2} rx="3" fill={!r.on?'url(#facOff)':r.hi?C.hiFill:C.room} stroke={r.hi?C.hi:C.wall} strokeWidth={r.hi?2:1}/>
+      <line x1={sx(dr.x0)} y1={sz(dr.z0)} x2={sx(dr.x1)} y2={sz(dr.z1)} stroke="#fbfcfe" strokeWidth="3"/>
+      <text x={sx(r.x0+r.w/2)} y={sz(r.z0+r.d/2)+4} fontSize={fs} textAnchor="middle" fill={r.hi?C.hi:r.on?C.text:'#94a3b8'} fontWeight={r.hi?700:500}>{roomText(r)}</text></g>; })}
     {L.counters.map(c=><g key={c.id}><rect x={sx(c.x)-7} y={sz(c.z)-9} width="14" height="7" rx="2" fill={!c.on?C.off:c.hi?C.hi:'#64748b'}/><circle cx={sx(c.x)} cy={sz(c.z)+4} r="4" fill={!c.on?C.off:c.hi?C.hi:'#94a3b8'}/>
       {c.booth && <text x={sx(c.x)} y={sz(c.z)+18} fontSize="9" textAnchor="middle" fill={c.hi?C.hi:C.text}>{c.number}</text>}</g>)}
     {L.beds.map(c=><rect key={c.id} x={sx(c.x)-6} y={sz(c.z)-10} width="12" height="20" rx="2" fill={!c.on?C.off:c.hi?C.hiFill:'#fff'} stroke={c.hi?C.hi:C.wall} strokeWidth={c.hi?2:1}/>)}
