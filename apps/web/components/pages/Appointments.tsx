@@ -95,7 +95,7 @@ export function SessionPlanner({api,clinics,say,fixed,onMade}:{api:Api; clinics:
  const [minutes,setMinutes] = useState(15);
  const [capacity,setCapacity] = useState(2);
  const [from,setFrom] = useState(()=>addDays(today(),1));
- const [to,setTo] = useState(()=>addDays(today(),27));
+ const [to,setTo] = useState(()=>addDays(today(),28)); // = "4 สัปดาห์" from tomorrow
  const [busy,setBusy] = useState(false);
  const [done,setDone] = useState<{text:string; bad?:boolean}|null>(null);
  const rooms = clinics.find(c=>c.key===clinic)?.rooms ?? [];
@@ -122,7 +122,7 @@ export function SessionPlanner({api,clinics,say,fixed,onMade}:{api:Api; clinics:
  const badBlock = plan.findIndex(b=>!b.days.length || toMin(b.end)<=toMin(b.start) || !b.slots);
  const missing = !pName ? 'กรอกชื่อแพทย์' : !pCode ? 'กรอกรหัสแพทย์' : !/^[A-Za-z0-9ก-๙._-]{1,20}$/.test(pCode) ? 'รหัสแพทย์ใช้ตัวอักษร ตัวเลข . _ - ไม่เกิน 20 ตัว (ไม่มีช่องว่าง)'
   : badBlock>=0 ? `ช่วงที่ ${badBlock+1}: ${!plan[badBlock].days.length ? 'เลือกวัน' : toMin(plan[badBlock].end)<=toMin(plan[badBlock].start) ? 'เวลาเลิกต้องหลังเวลาเริ่ม' : 'สั้นกว่าหนึ่งช่วงนัด'}`
-  : overlap || (to<from ? 'วันที่สิ้นสุดต้องไม่ก่อนวันเริ่ม' : dates.length>184 ? 'สร้างได้ครั้งละไม่เกิน 6 เดือน' : !workDays ? 'ช่วงวันที่นี้ไม่มีวันที่ตรงกับวันออกตรวจ' : '');
+  : overlap || (!to ? 'เลือกวันที่สิ้นสุด หรือกดระยะเวลา (4 สัปดาห์ / 3 เดือน / 6 เดือน)' : to<from ? 'วันที่สิ้นสุดต้องไม่ก่อนวันเริ่ม' : dates.length>184 ? 'สร้างได้ครั้งละไม่เกิน 6 เดือน' : !workDays ? 'ช่วงวันที่นี้ไม่มีวันที่ตรงกับวันออกตรวจ' : '');
  const make = async () => {
   setBusy(true); setDone(null);
   const r = await api<{ok:boolean; reason?:string; sessions?:number; slots?:number; skipped?:number; conflicts?:string[]}>('appt:sessions:create',
@@ -166,8 +166,9 @@ export function SessionPlanner({api,clinics,say,fixed,onMade}:{api:Api; clinics:
    </div></section>
   <section className="schedStep"><h5><b className="schedNum">3</b>ใช้ตารางนี้ช่วงวันที่</h5>
    <div className="schedDates">
-    <DatePicker value={from} min={today()} onChange={setFrom} aria-label="ตั้งแต่วันที่"/><span>ถึง</span><DatePicker value={to} min={from} onChange={setTo} aria-label="ถึงวันที่"/>
-    <span className="facViews sm schedRange" role="group" aria-label="ระยะเวลา">{ranges.map(([t,n])=><button key={t} type="button" className={to===addDays(from,n)?'on':''} onClick={()=>setTo(addDays(from,n))}>{t}</button>)}</span>
+    <DatePicker value={from} min={today()} onChange={setFrom} aria-label="ตั้งแต่วันที่"/><span>ถึง</span><DatePicker value={to} min={from} onChange={setTo} clearable placeholder="เลือกวันสิ้นสุด" aria-label="ถึงวันที่"/>
+    <span className="facViews sm schedRange" role="group" aria-label="ระยะเวลา">{ranges.map(([t,n])=>{ const on = !!to && to===addDays(from,n); // a shortcut for the end date: pressed again, it is taken off
+     return <button key={t} type="button" className={on?'on':''} aria-pressed={on} title={on ? 'กดอีกครั้งเพื่อยกเลิก' : `ถึง ${dayOf(addDays(from,n))}`} onClick={()=>setTo(on ? '' : addDays(from,n))}>{t}</button>; })}</span>
    </div></section>
   <div className={'schedSum'+(missing?' wait':'')}>
    {missing ? <span className="pickHint">{missing}</span> : <div>
