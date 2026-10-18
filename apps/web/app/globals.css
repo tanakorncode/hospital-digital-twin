@@ -2839,3 +2839,7 @@ input.bare[type=search]::-webkit-search-cancel-button{display:none}
 .schedWeekHead:hover{background:#f1f6ff}
 .schedWeekHead em{font-style:normal;font-size:12px;font-weight:700}
 .schedRows{gap:6px}
+.schedCalDay.preview{background:#dbeafe;border-color:#93c5fd}
+.schedCalDay.anchor{box-shadow:0 0 0 3px #1677ff55}
+.schedCalHint{flex:1;text-align:center}
+.schedCalNav{flex-wrap:wrap}
