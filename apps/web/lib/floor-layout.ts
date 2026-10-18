@@ -7,7 +7,10 @@
 //   front     ─┴ one waiting band per department on the floor: its counters at the front of the band (one long
 //                counter, or booths across it), chairs facing them, beds out in the band (resuscitation bays)
 // Open-ward beds stand in one row along the front wall; beds in a room sit side by side by its back wall.
-import type { Facility, FGroup, FPoint, FRoomKind } from './facility';
+// A floor's own layout (floor.layout) changes this: other proportions (the rooms' depth, the order and widths of rooms and
+// waiting bands), or — mode 'manual' — every room and waiting area where it was put, with no corridor; anything not
+// placed yet stands where the automatic layout would put it. Counters, chairs and beds follow their waiting area.
+import type { Facility, FDoor, FFloorLayout, FGroup, FPoint, FRect, FRoomKind } from './facility';
 
 type Data = Pick<Facility,'buildings'|'floors'|'departments'|'groups'|'points'>;
 export type PlanRoomKind = 'exam'|'scan'|'treatment'|'ward'|'office';
@@ -15,13 +18,14 @@ export type Spot2 = {x:number; z:number};
 // A department's waiting band: its area (x0…x1 × z0…z1), counters along its top edge (z0), chairs facing them.
 export type PlanBand = {deptId:string; name:string; index:number; x0:number; x1:number; z0:number; z1:number; seats:Spot2[]};
 // door: the wall the door is in — 's' towards the front (+z, rooms along the back wall), 'n' towards the back, 'e' / 'w'.
-export type Door = 'n'|'s'|'e'|'w';
+export type Door = FDoor;
 export type PlanRoom = {point:FPoint; group:FGroup; deptId:string; index:number; count:number; x0:number; x1:number; z0:number; z1:number; w:number; door:Door; kind:PlanRoomKind};
 export type PlanCounter = {point:FPoint; group:FGroup; index:number; count:number; booth:boolean; at:Spot2};
 export type PlanBed = {point:FPoint; group:FGroup; room?:PlanRoom; ward:boolean; at:Spot2};
 // corridor: the band between the rooms and the waiting areas (z from … to), when the floor is laid out automatically.
+// manual: rooms and areas placed by hand. background: the floor-plan picture under the plan, if any.
 export type FloorPlan = {floorId:string; buildingId:string; level:number; buildingKind:string; cx:number; cz:number; W:number; D:number; roomFront:number; front0:number;
-  corridor:[number,number]|null; bands:PlanBand[]; rooms:PlanRoom[]; counters:PlanCounter[]; beds:PlanBed[]};
+  corridor:[number,number]|null; manual:boolean; background?:FFloorLayout['background']; bands:PlanBand[]; rooms:PlanRoom[]; counters:PlanCounter[]; beds:PlanBed[]};
 
 // Inside a room, from where its door is: `across` along the door wall (from the left, looking out of the door), `deep`
 // from the back wall towards the door. yaw turns things drawn for a front-door room (door 's') to face this room's door.
@@ -44,7 +48,16 @@ export function roomWalls(r:{x0:number; x1:number; z0:number; z1:number; door:Do
 }
 // Fixed proportions of a floor (the same in every building).
 export const ROOM_DEPTH = 0.42, CORRIDOR = 1.2, SEAT_DX = 0.46, SEAT_DZ = 0.68;
-export const floorFrame = (W:number, D:number) => { const roomFront = -D/2+D*ROOM_DEPTH; return {roomFront,front0:roomFront+CORRIDOR}; };
+export const floorFrame = (W:number, D:number, depth = ROOM_DEPTH) => { const roomFront = -D/2+D*depth; return {roomFront,front0:roomFront+CORRIDOR}; };
+// Ids in their usual order, with those named in `first` moved to the front in that order.
+const ordered = (ids:string[], first?:string[]) => { const f = (first ?? []).filter(x=>ids.includes(x)); return [...new Set(f)].concat(ids.filter(x=>!f.includes(x))); };
+// Spans side by side across [lo, hi], each as wide as its weight (1 = an equal share).
+const spans = (ids:string[], lo:number, hi:number, weights?:Record<string,number>):[number,number][] => {
+  const w = ids.map(id=>Math.min(10,Math.max(0.2,weights?.[id] ?? 1)));
+  if (w.every(x=>x===1)) { const step = (hi-lo)/Math.max(1,ids.length); return ids.map((_,k)=>[lo+k*step,lo+k*step+step]); }
+  const total = w.reduce((a,b)=>a+b,0); let at = lo;
+  return w.map(x=>{ const a = at; at += (hi-lo)*x/total; return [a,at] as [number,number]; });
+};
 // Where a patient stands at the u-th place (0…1) of a band's long counter, and at booth i of n across a band.
 export const counterAt = (bandX0:number, front0:number, u:number):Spot2 => ({x:bandX0+0.5+u*0.9,z:front0+0.85});
 export const boothAt = (bandX0:number, bandW:number, front0:number, i:number, n:number):Spot2 => ({x:bandX0+(i+0.5)*bandW/n,z:front0+0.95});
@@ -65,53 +78,64 @@ export function planFloor(data:Data, floorId:string):FloorPlan|null {
   const ids = new Set<string>();
   for (const g of group.values()) if (g.pointKind!=='kiosk' && g.floorId===floorId) ids.add(g.departmentId);
   for (const p of here) { const g = group.get(p.groupId)!; if (g.pointKind!=='kiosk' && p.floorId) ids.add(g.departmentId); }
-  const bandIds = [...ids].sort((x,y)=>order.get(x)!-order.get(y)!);
-  const W = b.map.width, D = b.map.depth, hw = W/2, hd = D/2, {roomFront,front0} = floorFrame(W,D), bandW = W/Math.max(1,bandIds.length);
-  const bandIndex = (deptId:string) => Math.max(0,bandIds.indexOf(deptId)), bandX0 = (deptId:string) => -hw+bandIndex(deptId)*bandW;
+  const L:FFloorLayout = floor.layout ?? {}, manual = L.mode==='manual';
+  const bandIds = ordered([...ids].sort((x,y)=>order.get(x)!-order.get(y)!),L.bandOrder);
+  const W = b.map.width, D = b.map.depth, hw = W/2, hd = D/2, {roomFront,front0} = floorFrame(W,D,Math.min(0.7,Math.max(0.2,L.roomDepth ?? ROOM_DEPTH)));
+  // Waiting areas: bands across the front (automatic), or where they were put.
+  const bandSpan = spans(bandIds,-hw,hw,L.bandWeights);
+  const area = new Map<string,FRect>(bandIds.map((id,i)=>[id,(manual && L.areas?.[id]) || {x0:bandSpan[i][0],x1:bandSpan[i][1],z0:front0,z1:hd}]));
+  const bandIndex = (deptId:string) => Math.max(0,bandIds.indexOf(deptId)), areaOf = (deptId:string) => area.get(deptId) ?? {x0:-hw,x1:hw,z0:front0,z1:hd};
   // Rooms
   const roomPts = here.filter(p=>group.get(p.groupId)!.pointKind==='room')
     .sort((a,c)=>bandIndex(group.get(a.groupId)!.departmentId)-bandIndex(group.get(c.groupId)!.departmentId) || gOrder.get(a.groupId)!-gOrder.get(c.groupId)! || a.number-c.number);
-  const rw = W/Math.max(1,roomPts.length);
+  const roomIds = ordered(roomPts.map(p=>p.id),L.roomOrder), byId = new Map(roomPts.map(p=>[p.id,p]));
+  const roomSpan = spans(roomIds,-hw,hw,L.roomWeights);
   const roomKind = (p:FPoint, g:FGroup):PlanRoomKind => { const k:FRoomKind|undefined = p.roomKind;
     return k==='lab' ? 'office' : k ?? (g.steps.includes('exam') ? 'exam' : kind==='er' ? 'treatment' : kind==='inpatient' ? 'ward' : 'office'); };
-  const rooms:PlanRoom[] = roomPts.map((p,k)=>{ const g = group.get(p.groupId)!, x0 = -hw+k*rw;
-    return {point:p,group:g,deptId:g.departmentId,index:k,count:roomPts.length,x0,x1:x0+rw,z0:-hd,z1:roomFront,w:rw,door:'s',kind:roomKind(p,g)}; });
+  const rooms:PlanRoom[] = roomIds.map((id,k)=>{ const p = byId.get(id)!, g = group.get(p.groupId)!, placed = manual ? L.rooms?.[id] : undefined;
+    const r = placed ?? {x0:roomSpan[k][0],x1:roomSpan[k][1],z0:-hd,z1:roomFront,door:'s' as Door};
+    return {point:p,group:g,deptId:g.departmentId,index:k,count:roomIds.length,x0:r.x0,x1:r.x1,z0:r.z0,z1:r.z1,w:r.x1-r.x0,door:r.door,kind:roomKind(p,g)}; });
   const roomOf = new Map(rooms.map(r=>[r.point.id,r]));
-  // Counters / booths, in each group's own order
+  // Counters / booths along the top of their waiting area, in each group's own order
   const counters:PlanCounter[] = [];
   for (const g of [...group.values()].filter(x=>x.pointKind==='counter' && x.floorId===floorId)) {
-    const mine = here.filter(p=>p.groupId===g.id).sort((a,c)=>a.number-c.number), booth = g.options?.arrange==='booths', x0 = bandX0(g.departmentId);
-    mine.forEach((p,i)=>counters.push({point:p,group:g,index:i,count:mine.length,booth,at:booth ? boothAt(x0,bandW,front0,i,mine.length) : counterAt(x0,front0,(i+0.5)/mine.length)}));
+    const mine = here.filter(p=>p.groupId===g.id).sort((a,c)=>a.number-c.number), booth = g.options?.arrange==='booths', a = areaOf(g.departmentId);
+    mine.forEach((p,i)=>counters.push({point:p,group:g,index:i,count:mine.length,booth,at:booth ? boothAt(a.x0,a.x1-a.x0,a.z0,i,mine.length) : counterAt(a.x0,a.z0,(i+0.5)/mine.length)}));
   }
-  // Beds: in their room; the open ward in one row along the front; other open beds across their band
+  // Beds: in their room; the open ward in one row along the front (along the back of its own area, by hand); other open
+  // beds across their area
   const bedPts = here.filter(p=>group.get(p.groupId)!.pointKind==='bed');
   const inRoom = bedPts.filter(p=>p.inRoomId && roomOf.has(p.inRoomId)).sort((a,c)=>roomOf.get(a.inRoomId!)!.index-roomOf.get(c.inRoomId!)!.index || a.number-c.number);
   const open = bedPts.filter(p=>!p.inRoomId || !roomOf.has(p.inRoomId)).sort((a,c)=>bandIndex(group.get(a.groupId)!.departmentId)-bandIndex(group.get(c.groupId)!.departmentId) || a.number-c.number);
   const beds:PlanBed[] = [];
   inRoom.forEach(p=>{ const room = roomOf.get(p.inRoomId!)!, mates = inRoom.filter(o=>o.inRoomId===p.inRoomId), k = mates.indexOf(p);
-    beds.push({point:p,group:group.get(p.groupId)!,room,ward:group.get(p.groupId)!.steps.includes('ward'),at:roomPoint(room,(room.door==='s'||room.door==='n' ? room.x1-room.x0 : room.z1-room.z0)*bedRow(k,mates.length),0.9)}); });
+    beds.push({point:p,group:group.get(p.groupId)!,room,ward:group.get(p.groupId)!.steps.includes('ward'),at:roomPoint(room,roomFrame(room).across*bedRow(k,mates.length),0.9)}); });
   const wardRow = open.filter(p=>group.get(p.groupId)!.steps.includes('ward'));
-  wardRow.forEach((p,j)=>beds.push({point:p,group:group.get(p.groupId)!,ward:true,at:{x:-hw+0.55+j*((W-1.1)/Math.max(1,wardRow.length-1)),z:hd-0.8}}));
-  open.filter(p=>!wardRow.includes(p)).forEach(p=>{ const g = group.get(p.groupId)!, mates = open.filter(o=>o.groupId===p.groupId), k = mates.indexOf(p);
-    beds.push({point:p,group:g,ward:false,at:{x:bandX0(g.departmentId)+bandW*bedRow(k,mates.length),z:hd-0.8}}); });
-  // Waiting chairs per band: a number set on the band's groups wins (0 = none); otherwise rows facing the counters,
-  // except in wards (nurse station and open beds), support buildings (desks) and bands with beds out in them.
+  if (!manual) wardRow.forEach((p,j)=>beds.push({point:p,group:group.get(p.groupId)!,ward:true,at:{x:-hw+0.55+j*((W-1.1)/Math.max(1,wardRow.length-1)),z:hd-0.8}}));
+  else for (const id of bandIds) { const row = wardRow.filter(p=>group.get(p.groupId)!.departmentId===id), a = areaOf(id), w = a.x1-a.x0;
+    row.forEach((p,j)=>beds.push({point:p,group:group.get(p.groupId)!,ward:true,at:{x:row.length>1 ? a.x0+0.55+j*((w-1.1)/(row.length-1)) : (a.x0+a.x1)/2,z:a.z1-0.8}})); }
+  open.filter(p=>!wardRow.includes(p)).forEach(p=>{ const g = group.get(p.groupId)!, mates = open.filter(o=>o.groupId===p.groupId), k = mates.indexOf(p), a = areaOf(g.departmentId);
+    beds.push({point:p,group:g,ward:false,at:{x:a.x0+(a.x1-a.x0)*bedRow(k,mates.length),z:a.z1-0.8}}); });
+  // Waiting chairs per area: a number set on the area's groups wins (0 = none); otherwise rows facing the counters,
+  // except in wards (nurse station and open beds), support buildings (desks) and areas with beds out in them.
   const bands:PlanBand[] = bandIds.map((id,i)=>{
-    const x0 = -hw+i*bandW, x1 = x0+bandW, mine = [...group.values()].filter(g=>g.departmentId===id && g.floorId===floorId);
-    const booths = mine.some(g=>g.pointKind==='counter' && g.options?.arrange==='booths');
-    const z0 = front0+(booths ? 2 : CORRIDOR), grid:Spot2[] = [];
-    for (let z=z0; z<hd-0.3; z+=SEAT_DZ) for (let x=x0+0.45; x<x1-0.3; x+=SEAT_DX) grid.push({x,z});
-    const set = mine.filter(g=>g.options?.seats!==undefined);
+    const a = areaOf(id), mine = [...group.values()].filter(g=>g.departmentId===id && g.floorId===floorId);
+    const set = mine.filter(g=>g.options?.seats!==undefined), grid = seatGrid(a,mine.some(g=>g.pointKind==='counter' && g.options?.arrange==='booths'));
     const auto = kind!=='inpatient' && kind!=='support' && !beds.some(bd=>!bd.room && !bd.ward && bd.group.departmentId===id);
     const seats = set.length ? grid.slice(0,set.reduce((n,g)=>n+(g.options!.seats ?? 0),0)) : auto ? grid : [];
-    return {deptId:id,name:dept.get(id)!.name,index:i,x0,x1,z0:front0,z1:hd,seats};
+    return {deptId:id,name:dept.get(id)!.name,index:i,x0:a.x0,x1:a.x1,z0:a.z0,z1:a.z1,seats};
   });
-  return {floorId,buildingId:b.id,level:floor.level,buildingKind:kind,cx:b.map.x,cz:b.map.z,W,D,roomFront,front0,corridor:[roomFront,front0],bands,rooms,counters,beds};
+  return {floorId,buildingId:b.id,level:floor.level,buildingKind:kind,cx:b.map.x,cz:b.map.z,W,D,roomFront,front0,corridor:manual ? null : [roomFront,front0],manual,
+    background:L.background,bands,rooms,counters,beds};
 }
 // The most chairs a band of this floor can hold (the number the settings page caps a group's seats at).
 export function seatCapacity(plan:FloorPlan, deptId:string) {
   const band = plan.bands.find(x=>x.deptId===deptId); if (!band) return 0;
-  const booths = plan.counters.some(c=>c.booth && c.group.departmentId===deptId), z0 = plan.front0+(booths ? 2 : CORRIDOR);
-  let n = 0; for (let z=z0; z<plan.D/2-0.3; z+=SEAT_DZ) for (let x=band.x0+0.45; x<band.x1-0.3; x+=SEAT_DX) n++;
-  return n;
+  return seatGrid(band,plan.counters.some(c=>c.booth && c.group.departmentId===deptId)).length;
+}
+// Chair spots in a waiting area: rows from in front of its counters (further back behind booths) to its far edge.
+function seatGrid(a:FRect, booths:boolean):Spot2[] {
+  const grid:Spot2[] = [];
+  for (let z=a.z0+(booths ? 2 : CORRIDOR); z<a.z1-0.3; z+=SEAT_DZ) for (let x=a.x0+0.45; x<a.x1-0.3; x+=SEAT_DX) grid.push({x,z});
+  return grid;
 }

@@ -12,6 +12,8 @@ export function apiBase():string {
   if (typeof window!=='undefined' && ['localhost','127.0.0.1','[::1]'].includes(window.location.hostname)) return 'http://localhost:4000';
   return '';
 }
+// A floor-plan picture uploaded in Settings (served by the API, cached for good).
+export const facilityImageUrl = (id:string) => `${apiBase()}/api/v1/facility/images/${encodeURIComponent(id)}`;
 export function apiSocket():{url:string; opts:{transports:string[]; path?:string}} {
   const env = process.env.NEXT_PUBLIC_API_URL;
   // "same-origin": deployed behind one reverse proxy that sends /socket.io/ to the API (deploy/Caddyfile).

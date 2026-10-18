@@ -2611,3 +2611,25 @@ a.liffChoice{text-decoration:none;padding:10px 16px}
 .facSite figcaption{margin-top:6px;font-size:11.5px;color:#64748b}
 .facSiteB rect:focus{outline:none}
 .facSiteB rect:focus-visible{stroke:#1677ff;stroke-width:.5}
+
+/* Settings → ผังโรงพยาบาล → a floor: its layout, edited on the plan */
+.facFloorEd .facPreviewHead .facViews{margin-left:0}
+.facFloorEd .facPreviewHead .facViews:first-of-type{margin-left:auto}
+.facEdTools{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 8px;font-size:12.5px}
+.facEdTools .btn{height:32px}
+.facEdSep{flex:1}
+.facEdRange{display:inline-flex;align-items:center;gap:6px;color:#475569}
+.facEdRange input{width:120px;accent-color:#1677ff}
+.facEdRange b{min-width:34px;color:#0f2340}
+.facEdSvg{display:block;border-radius:10px;background:#f8fafc;max-height:560px}
+/* the browser's focus ring is drawn in plan units here (huge): show focus with the outline stroke instead */
+.facEdSvg [role=button]:focus,.facSite svg [role=button]:focus{outline:none}
+.facEdSvg [role=button]:focus-visible{stroke:#1677ff;stroke-width:.14}
+.facEdSvg text{paint-order:stroke;stroke:#fbfcfe;stroke-width:.12;stroke-linejoin:round}
+.facEdSplit{fill:#1677ff;opacity:.18;cursor:ew-resize}
+.facEdSplit:hover{opacity:.55}
+.facEdSel{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;padding:8px 10px;border-radius:10px;background:#f1f6ff;font-size:12.5px}
+.facEdSel b{color:#0f2340}
+.facEdSel .btn{height:30px}
+.facEdDoor{display:inline-flex;align-items:center;gap:4px;margin-left:6px}
+.facEdDoor .btn.on{background:#1677ff;color:#fff;border-color:#1677ff}

@@ -5,6 +5,7 @@ import { Info } from 'lucide-react';
 import type { Facility } from '../../lib/facility';
 import { layoutFloor, type FloorLayout } from '../../lib/floor-preview';
 import { roomWalls } from '../../lib/floor-layout';
+import { facilityImageUrl } from '../../lib/api-url';
 
 // Help for the facility settings: an (i) after a field's label that explains, with a small picture, where the value
 // shows up — and a live floor plan drawn from the draft, so a change is seen on the map before it is published.
@@ -110,6 +111,8 @@ function Plan2D({L}:{L:FloorLayout}) {
   return <svg viewBox={`0 0 560 ${svgH}`} width="100%" role="img" aria-label={`ผังชั้นตัวอย่าง ${L.title}`}>
     <defs><pattern id="facOff" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#f1f5f9"/><line x1="0" y1="0" x2="0" y2="6" stroke="#cbd5e1" strokeWidth="2"/></pattern></defs>
     <rect x="10" y="10" width={W*S} height={D*S} rx="6" fill="#fbfcfe" stroke={C.wall} strokeWidth="1.5"/>
+    {L.background && <image href={facilityImageUrl(L.background.imageId)} x={sx(L.background.x0)} y={sz(L.background.z0)} width={(L.background.x1-L.background.x0)*S} height={(L.background.z1-L.background.z0)*S}
+      preserveAspectRatio="none" opacity={L.background.opacity*0.8}/>}
     {L.bands.map(bd=><g key={bd.id}><rect x={sx(bd.x0)} y={sz(bd.z0)} width={bd.w*S} height={bd.d*S} fill={bd.focus?'#eef5ff':bd.on?C.band:'url(#facOff)'} stroke="#e2e8f0"/>
       <text x={sx(bd.x0+bd.w/2)} y={sz(bd.z0+bd.d)-8} fontSize="11" textAnchor="middle" fill={bd.focus?C.hi:'#64748b'} fontWeight="700">{bd.name}{bd.on?'':' (ปิด)'}</text></g>)}
     {L.seats.map((c,i)=><rect key={i} x={sx(c.x)-3.5} y={sz(c.z)-3} width="7" height="6" rx="1.5" fill={c.focus?'#bfdbfe':'#d5dde7'}/>)}

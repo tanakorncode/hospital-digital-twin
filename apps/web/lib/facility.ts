@@ -10,7 +10,12 @@ export type DepartmentType = 'clinic'|'ward'|'emergency'|'diagnostic'|'service'|
 export type PointKind = 'room'|'counter'|'bed'|'kiosk';
 export type FRoomKind = 'exam'|'scan'|'treatment'|'ward'|'office'|'lab';
 export type FBuilding = {id:string; name:string; shortName:string; kind:BuildingKind; map:{x:number; z:number; width:number; depth:number; color:string}; active:boolean; retiredAt?:string};
-export type FFloor = {id:string; buildingId:string; level:number; name:string; description:string; active:boolean; retiredAt?:string};
+// layout: how the floor is set out (lib/floor-layout.ts; apps/api/src/facility-model.ts FloorLayout) — nothing = automatic.
+export type FRect = {x0:number; z0:number; x1:number; z1:number};
+export type FDoor = 'n'|'s'|'e'|'w';
+export type FFloorLayout = {mode?:'auto'|'manual'; roomDepth?:number; bandOrder?:string[]; bandWeights?:Record<string,number>; roomOrder?:string[];
+  roomWeights?:Record<string,number>; rooms?:Record<string,FRect & {door:FDoor}>; areas?:Record<string,FRect>; background?:FRect & {imageId:string; opacity:number}};
+export type FFloor = {id:string; buildingId:string; level:number; name:string; description:string; layout?:FFloorLayout; active:boolean; retiredAt?:string};
 export type FDepartment = {id:string; name:string; shortName?:string; type:DepartmentType; queuePrefix?:string; features:{booking:boolean; appointments:boolean; walkIn:boolean};
   firstGroupId?:string; active:boolean; retiredAt?:string};
 // seats: waiting chairs for this group's patients (0 = none; not set = as the building type usually has).

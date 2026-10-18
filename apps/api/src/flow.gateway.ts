@@ -66,7 +66,8 @@ function attempt<T>(fn: () => T) {
   try { return fn(); } catch (err) { if (err instanceof AppError) { metrics.refused('socket', err.code); return err.toJSON(); } throw err; }
 }
 
-@WebSocketGateway({ namespace: '/hospital', cors: { origin: allowOrigin } })
+// maxHttpBufferSize: room for a floor-plan picture (facility:image:upload, sent as binary).
+@WebSocketGateway({ namespace: '/hospital', cors: { origin: allowOrigin }, maxHttpBufferSize: 3_000_000 })
 export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
   @WebSocketServer() server!: Server;
   private unsubscribe?: () => void;
@@ -458,6 +459,18 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
     if (!may(me, 'admin')) return DENIED;
     const ids = Array.isArray(body?.ids) ? body.ids.filter((x): x is string => typeof x === 'string').slice(0, 300) : [];
     return { ok: true, usage: Object.fromEntries(ids.map((id) => [id, this.facility.usage(id)]).filter(([, u]) => (u as unknown[]).length)) };
+  }
+  // A floor-plan picture (bytes as binary); returns its id for a floor's layout background.
+  @SubscribeMessage('facility:image:upload')
+  facilityImageUpload(@ConnectedSocket() client: Socket, @MessageBody() body: { name?: unknown; bytes?: unknown }) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (!may(me, 'admin')) return DENIED;
+    return attempt(() => {
+      const img = this.facility.addImage(`user:${me.id}`, body?.name, body?.bytes);
+      this.audit.record({ ...actor(me), action: 'facility.image', targetType: 'facility', targetId: img.id, meta: { mime: img.mime, width: img.width, height: img.height } });
+      return { ok: true, image: img };
+    });
   }
   @SubscribeMessage('facility:rollback')
   facilityRollback(@ConnectedSocket() client: Socket, @MessageBody() body: { version?: unknown }) {

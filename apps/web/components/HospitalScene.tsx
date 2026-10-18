@@ -7,6 +7,7 @@ import { screenData, type ScreenData } from '../lib/queue-screen';
 import { BedDouble, DoorOpen, FlaskConical, Plus, Settings, SquareParking, Ticket, type LucideIcon } from 'lucide-react';
 import { bandBeds, bandBooths, fmtMin, patientAt, statusColor as patientColor, stepText, wardBeds, type Patient, type PatientState, type StepKind } from '../lib/patients';
 import { DOORWAY, roomFrame, roomPoint } from '../lib/floor-layout';
+import { FloorPicture } from './FloorPicture';
 import { REF_HOUR, entranceSpot, floorBands, floorPlan, isOff, layoutRevision, plazas, kioskY, kiosks, type KioskStatus, buildingDensityAt, doctorName, findRoom, floorDutyAt, floorRooms, type DutyStatus, buildings, buildingStats, demoFlows, densityColor, fillerBuildings, floorCountAt, floorDepartments, floorPresence, isRealMode, kindPresence, peakFloorCount, parkingLots, personTypes, roads, type BuildingKind, type PersonType, type BuildingSpec, type Department, type Rect, type Room } from '../lib/scene-data';
 import { buildingShort, facility } from '../lib/facility';
 
@@ -240,7 +241,7 @@ type Sign = {text:string;pos:V3;kind:SignKind;roomId?:string};
 // Placed = a position plus the yaw it faces (0 = +z, toward the default camera).
 type Placed = {p:V3;rot:number};
 type V4 = [number,number,number,number];
-type Plan = {level:number;rooms:{id:string;x0:number;x1:number;z0:number;z1:number}[];walls:{p:V3;s:V3}[];chairs:(V3|V4)[];beds:(V3|V4)[];desks:(V3|V4)[];counters:V3[];machines:V3[];plants:V3[];people:Person[];zones:Zone[];signs:Sign[];corridor:[number,number];y:number;
+type Plan = {level:number;rooms:{id:string;x0:number;x1:number;z0:number;z1:number}[];walls:{p:V3;s:V3}[];chairs:(V3|V4)[];beds:(V3|V4)[];desks:(V3|V4)[];counters:V3[];machines:V3[];plants:V3[];people:Person[];zones:Zone[];signs:Sign[];corridor:[number,number]|null;bg?:{imageId:string; x0:number; z0:number; x1:number; z1:number; opacity:number};y:number;
  monitors:Placed[];poles:V3[];bags:V3[];vitals:Placed[];screens:Placed[];wheelchairs:Placed[]};
 // Where a room is on its floor (building-local), from the floor's layout.
 const roomRect = (room:Room) => ({x0:room.x0,x1:room.x1,z0:room.z0,z1:room.z1});
@@ -253,14 +254,14 @@ function planLayout(b:BuildingSpec,level:number):Plan {
  const count = peakFloorCount(b.id,level) || 20; // sized for the busiest hour; quieter hours hide some
  const r = seeded(level*97+Math.round(b.width*13+b.depth*7));
  const y = (level-1)*floorH+0.11, hw = b.width/2, hd = b.depth/2, wallH = 0.5, wy = y+wallH/2;
- const p:Plan = {level,rooms:[],walls:[],chairs:[],beds:[],desks:[],counters:[],machines:[],plants:[],people:[],zones:[],signs:[],corridor:[0,0],y,monitors:[],poles:[],bags:[],vitals:[],screens:[],wheelchairs:[]};
+ const p:Plan = {level,rooms:[],walls:[],chairs:[],beds:[],desks:[],counters:[],machines:[],plants:[],people:[],zones:[],signs:[],corridor:null,y,monitors:[],poles:[],bags:[],vitals:[],screens:[],wheelchairs:[]};
  const iv = (x:number,z:number) => { p.poles.push([x,y,z]); p.bags.push([x,y,z]); }; // drip stand with a saline bag
  const person = (x:number,z:number,mix:Mix=floorMix[b.kind]) => { p.people.push(makePerson(r,x,y,z,pickType(r,mix))); };
  const staffAt = (x:number,z:number,type:PersonType,dutyRoom?:string) => { p.people.push({...makePerson(r,x,y,z,type),presence:0,dutyRoom}); }; // on duty all day
  p.walls.push({p:[0,wy,-hd],s:[b.width,wallH,0.12]},{p:[0,y+0.15,hd],s:[b.width,0.3,0.12]},{p:[-hw,wy,0],s:[0.12,wallH,b.depth]},{p:[hw,wy,0],s:[0.12,wallH,b.depth]});
  // The floor's layout (lib/floor-layout.ts): room and waiting-area rectangles, the corridor when laid out automatically.
  const plan = floorPlan(b.id,level), roomFront = plan?.roomFront ?? -hd+b.depth*0.42, front0 = plan?.front0 ?? roomFront+1.2;
- p.corridor = plan?.corridor ?? [0,0];
+ p.corridor = plan ? plan.corridor : [roomFront,front0]; p.bg = plan?.background;
  const rooms = floorRooms(b.id,level), walled = new Set<string>();
  rooms.forEach((room,k)=>{
   // Furniture is placed from the door: a = along the door wall, d = in from the back wall; yaw turns it to face the door.
@@ -322,16 +323,17 @@ function planLayout(b:BuildingSpec,level:number):Plan {
  plan?.bands.forEach(bd=>bd.seats.forEach(st=>p.chairs.push([st.x,y+0.07,st.z])));
  const crowd = Math.min(30,Math.max(4,Math.round(count/14))); // relatives and staff only; patients are tracked
  for (let i=0; i<crowd; i++) {
-  if (r()<0.25) person(-hw+0.4+r()*(b.width-0.8),roomFront+0.2+r()*0.8);
+  if (!p.corridor && plan?.bands.length) { const a = plan.bands[Math.floor(r()*plan.bands.length)]; person(a.x0+0.4+r()*Math.max(0.1,a.x1-a.x0-0.8),a.z0+0.3+r()*Math.max(0.1,a.z1-a.z0-0.6)); } // laid out by hand: in the waiting areas
+  else if (r()<0.25) person(-hw+0.4+r()*(b.width-0.8),roomFront+0.2+r()*0.8);
   else person(-hw+0.4+r()*(b.width-0.8),front0+0.3+r()*(hd-front0-0.6));
  }
- p.plants.push([-hw+0.35,y+0.24,hd-0.35],[hw-0.35,y+0.24,front0+0.3]);
+ if (p.corridor) p.plants.push([-hw+0.35,y+0.24,hd-0.35],[hw-0.35,y+0.24,front0+0.3]);
  // Ward beds sit exactly where the bed board and the patients' positions put them.
  if (b.kind==='inpatient') wardBeds().filter(w=>w.level===level).forEach((w,i)=>{
   p.beds.push([w.spot.x-b.x,y+0.11,w.spot.z-b.z]);
   if (w.bed.includes('W') && i%2===0) iv(w.spot.x-b.x+0.42,w.spot.z-b.z-0.35);
  });
- if (b.kind!=='support') p.wheelchairs.push({p:[hw-0.45,y,(roomFront+front0)/2],rot:-Math.PI/2});
+ if (b.kind!=='support' && p.corridor) p.wheelchairs.push({p:[hw-0.45,y,(roomFront+front0)/2],rot:-Math.PI/2});
  return p;
 }
 
@@ -507,11 +509,12 @@ function FloorPlan({b,level,tint,hidden,hour,selectedRoom,selectedDept,onPickPer
  const depts = floorDepartments(b.id,level,hour);
  const dutyKey = floorDutyAt(b.id,level,hour).filter(d=>d.status==='active').map(d=>d.room.id).join(',');
  const onDuty = useMemo(()=>new Set(dutyKey.split(',')),[dutyKey]);
- const y = L.y, [c0,c1] = L.corridor;
+ const y = L.y, [c0,c1] = L.corridor ?? [0,0];
  return <group>
   <Box p={[0,y-0.06,0]} s={[b.width,0.1,b.depth]} color="#dde3e8"/>
   <Box p={[0,y-0.005,0]} s={[b.width-0.2,0.01,b.depth-0.2]} color="#f2eee6" cast={false}/>
-  <Box p={[0,y,(c0+c1)/2]} s={[b.width-0.3,0.01,c1-c0]} color="#d9e6f2" cast={false}/>
+  {L.bg && <FloorPicture bg={L.bg} y={y+0.004}/>}
+  {L.corridor && <Box p={[0,y,(c0+c1)/2]} s={[b.width-0.3,0.01,c1-c0]} color="#d9e6f2" cast={false}/>}
   {tint!=='none' && L.zones.map((z,i)=><mesh key={i} rotation-x={-Math.PI/2} position={[(z.x0+z.x1)/2,y+0.012,(z.z0+z.z1)/2]}>
    <planeGeometry args={[z.x1-z.x0-0.16,z.z1-z.z0-0.16]}/><meshBasicMaterial color={tint==='density'?densityColor(depts[i]?.queue??0):z.dept.color} transparent opacity={tint==='density'?0.45:0.32} depthWrite={false}/>
   </mesh>)}
@@ -550,7 +553,7 @@ function DensityBand({w,d,color}:{w:number;d:number;color:string}) {
 
 // Departments, exam rooms switched off in Settings: a grey floor, so the plan shows what is not in use today.
 function ClosedAreas({L,rev}:{L:Plan;rev:number}) {
- const rects = useMemo(()=>[...L.zones.filter(z=>z.dept.name && isOff(`dept:${z.dept.name}`)).map(z=>({x0:z.x0,x1:z.x1,z0:L.corridor[1],z1:z.z1})),
+ const rects = useMemo(()=>[...L.zones.filter(z=>z.dept.name && isOff(`dept:${z.dept.name}`)).map(z=>({x0:z.x0,x1:z.x1,z0:L.corridor?.[1] ?? z.z0,z1:z.z1})),
   ...L.rooms.filter(r=>isOff(`room:${r.id}`) || isOff(`dept:${findRoom(r.id)?.dept}`))],[L,rev]); // eslint-disable-line react-hooks/exhaustive-deps
  return <>{rects.map((r,i)=><mesh key={i} rotation-x={-Math.PI/2} position={[(r.x0+r.x1)/2,L.y+0.016,(r.z0+r.z1)/2]}>
   <planeGeometry args={[r.x1-r.x0-0.14,r.z1-r.z0-0.14]}/><meshBasicMaterial color="#64748b" transparent opacity={0.38} depthWrite={false}/></mesh>)}</>;
@@ -830,10 +833,10 @@ const signLabels = (b:BuildingSpec,plan:Plan,minZoom:number,hour:number) => {
   return {id:`sign-${b.id}-${i}`,pos:[b.x+sg.pos[0],sg.pos[1],b.z+sg.pos[2]],text:d?`${sg.text} · ${who}`:sg.text,variant:sg.kind,minZoom,room:d?sg.roomId:undefined,tone:d?.status};
  });
 };
-// Department signs hang above the corridor, like overhead hospital signage.
+// Department signs hang above the corridor (by hand: over the front of the waiting area), like overhead hospital signage.
 // dot: density colour when density is on, status colour in the department view, otherwise the zone colour.
 const deptLabels = (b:BuildingSpec,plan:Plan,view:SceneView,density:boolean,hour:number,minZoom?:number) => { const now = floorDepartments(b.id,plan.level,hour); return plan.zones.filter(z=>z.dept.name).map<LabelSpec>((z,i)=>({
- id:`zone-${b.id}-${i}`,pos:[b.x+(z.x0+z.x1)/2,plan.y+1.05,b.z+(plan.corridor[0]+plan.corridor[1])/2],
+ id:`zone-${b.id}-${i}`,pos:[b.x+(z.x0+z.x1)/2,plan.y+1.05,b.z+(plan.corridor ? (plan.corridor[0]+plan.corridor[1])/2 : z.z0-0.3)],
  text:isOff(`dept:${z.dept.name}`)?`${z.dept.name} · งดให้บริการ`:density||view==='department'?`${z.dept.name} · ${now[i]?.queue??0} คน`:z.dept.name,variant:'zone',minZoom,
  dot:density?densityColor(now[i]?.queue??0):view==='department'?statusColor(now[i]?.status??'normal'):z.dept.color,
 })); };
@@ -1203,7 +1206,7 @@ function QueueScreens({b,level,patients,minute}:{b:BuildingSpec;level:number;pat
  const m = Math.floor(minute);
  // Everyone's state once per minute, shared by all the screens on the floor.
  const zones = useMemo(()=>{ const now = patients.map(p=>patientAt(p,m)).filter((x):x is PatientState=>!!x);
-  return L.zones.map((z,i)=>({i,x:b.x+z.x1-0.35,z:b.z+L.corridor[1]+0.75,data:screenData(level,i,now,m,b.id)})).filter(z=>z.data); },[L,b,level,patients,m]);
+  return L.zones.map((z,i)=>({i,x:b.x+z.x1-0.35,z:b.z+(L.corridor?.[1] ?? z.z0)+0.75,data:screenData(level,i,now,m,b.id)})).filter(z=>z.data); },[L,b,level,patients,m]);
  return <>{zones.map(z=><QueueScreen key={`${level}-${z.i}`} pos={[z.x,L.y+0.8,z.z+0.0205]} data={z.data!}/>)}</>;
 }
 function QueueScreen({pos,data}:{pos:V3;data:ScreenData}) {

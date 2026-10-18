@@ -19,7 +19,20 @@ export type StepKind = (typeof STEP_KINDS)[number];
 export type MapBox = { x: number; z: number; width: number; depth: number; color: string };
 export type Building = { id: string; name: string; shortName: string; kind: BuildingKind; map: MapBox; active: boolean; retiredAt?: string };
 // level: 1, 2 … (the hospital has no basement; the map draws floors from 1 up) · name is what signs show ("ชั้น 2", editable).
-export type Floor = { id: string; buildingId: string; level: number; name: string; description: string; active: boolean; retiredAt?: string };
+export type Floor = { id: string; buildingId: string; level: number; name: string; description: string; layout?: FloorLayout; active: boolean; retiredAt?: string };
+// How a floor is set out (apps/web/lib/floor-layout.ts draws it; nothing set = automatic). Coordinates are metres-ish
+// map units from the building's centre: x across (−width/2 … width/2), z from the back wall (−depth/2) to the front.
+//   automatic: rooms along the back wall, a corridor, one waiting area per department at the front —
+//     roomDepth: share of the depth the rooms take · bandOrder / roomOrder: left → right (department / point ids; the
+//     rest follow in their usual order) · bandWeights / roomWeights: relative widths (1 = the usual share)
+//   manual: every room and waiting area where it was put (rooms: point id → rectangle + the wall its door is in;
+//     areas: department id → rectangle); anything not placed yet stands where the automatic layout puts it.
+//   background: a floor-plan picture (facility image id) laid under the plan, stretched over x0…x1 × z0…z1.
+export type FloorRect = { x0: number; z0: number; x1: number; z1: number };
+export type DoorSide = 'n' | 's' | 'e' | 'w';
+export type FloorLayout = { mode?: 'auto' | 'manual'; roomDepth?: number; bandOrder?: string[]; bandWeights?: Record<string, number>; roomOrder?: string[];
+  roomWeights?: Record<string, number>; rooms?: Record<string, FloorRect & { door: DoorSide }>; areas?: Record<string, FloorRect>;
+  background?: FloorRect & { imageId: string; opacity: number } };
 export type Features = { booking: boolean; appointments: boolean; walkIn: boolean };
 // queuePrefix: the letter(s) of the department's queue numbers (unique). firstGroupId: where a patient waits after
 // registering / checking in (the department's first step).
@@ -113,6 +126,28 @@ const isBool = (v: unknown): v is boolean => typeof v === 'boolean';
 const isRetired = (v: unknown) => v === undefined || (typeof v === 'string' && v.length <= 40);
 const isColor = (v: unknown) => typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v);
 const isRect = (r: unknown) => Array.isArray(r) && r.length === 4 && r.every((n) => isNum(n, -500, 500));
+const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+const LAYOUT_KEYS = ['mode', 'roomDepth', 'bandOrder', 'bandWeights', 'roomOrder', 'roomWeights', 'rooms', 'areas', 'background'];
+// A floor's layout: its shape, and every rectangle inside the building (min 0.8 across). Unknown ids are left alone —
+// a department or room taken out of the draft must not make the floor unpublishable; the layout just skips it.
+function layoutProblem(l: unknown, w: number, d: number): string | undefined {
+  if (!isObj(l) || Object.keys(l).some((k) => !LAYOUT_KEYS.includes(k))) return 'การจัดผังชั้นไม่ถูกต้อง';
+  const ids = (v: unknown) => v === undefined || (Array.isArray(v) && v.length <= 400 && v.every((x) => typeof x === 'string' && ID_RE.test(x)));
+  const weights = (v: unknown) => v === undefined || (isObj(v) && Object.keys(v).length <= 400 && Object.entries(v).every(([k, n]) => ID_RE.test(k) && isNum(n, 0.2, 10)));
+  const e = 1e-6, inside = (r: unknown) => isObj(r) && isNum(r.x0) && isNum(r.x1) && isNum(r.z0) && isNum(r.z1)
+    && r.x1 - r.x0 >= 0.8 - e && r.z1 - r.z0 >= 0.8 - e && r.x0 >= -w / 2 - e && r.x1 <= w / 2 + e && r.z0 >= -d / 2 - e && r.z1 <= d / 2 + e;
+  const rects = (v: unknown, door: boolean) => v === undefined || (isObj(v) && Object.keys(v).length <= 400
+    && Object.entries(v).every(([k, r]) => ID_RE.test(k) && inside(r) && (!door || ['n', 's', 'e', 'w'].includes((r as { door?: string }).door ?? ''))));
+  if (l.mode !== undefined && l.mode !== 'auto' && l.mode !== 'manual') return 'การจัดผังชั้นไม่ถูกต้อง';
+  if (l.roomDepth !== undefined && !isNum(l.roomDepth, 0.2, 0.7)) return 'ความลึกของแถวห้องต้องอยู่ระหว่าง 20–70% ของความลึกอาคาร';
+  if (!ids(l.bandOrder) || !ids(l.roomOrder) || !weights(l.bandWeights) || !weights(l.roomWeights)) return 'ลำดับ/สัดส่วนความกว้างในผังชั้นไม่ถูกต้อง';
+  if (!rects(l.rooms, true) || !rects(l.areas, false)) return 'ห้องหรือพื้นที่รอต้องอยู่ในอาคาร และกว้างอย่างน้อย 0.8';
+  const bg = l.background;
+  if (bg !== undefined && !(isObj(bg) && typeof bg.imageId === 'string' && ID_RE.test(bg.imageId) && isNum(bg.opacity, 0.1, 1)
+    && isNum(bg.x0, -500, 500) && isNum(bg.x1, -500, 500) && isNum(bg.z0, -500, 500) && isNum(bg.z1, -500, 500) && (bg.x1 as number) > (bg.x0 as number) && (bg.z1 as number) > (bg.z0 as number)))
+    return 'ภาพผังพื้นหลังไม่ถูกต้อง';
+  return undefined;
+}
 
 // Shape and consistency of a whole facility (what a publish would make current). Never throws on bad input.
 export function validateFacility(input: unknown): { data?: FacilityData; issues: Issue[] } {
@@ -153,6 +188,8 @@ export function validateFacility(input: unknown): { data?: FacilityData; issues:
     if (levels.has(`${f.buildingId}:${f.level}`)) err(`อาคารเดียวกันมีชั้น ${f.level} ซ้ำ`, f.id);
     levels.add(`${f.buildingId}:${f.level}`);
     if (!isStr(f.name, LIMITS.name) || !isStr(f.description ?? '', 120, true)) err('ระบุชื่อชั้น', f.id);
+    const bm = d.buildings.find((b) => b.id === f.buildingId)?.map;
+    if (f.layout !== undefined && bm) { const problem = layoutProblem(f.layout, bm.width, bm.depth); if (problem) err(problem, f.id); }
     if (!isBool(f.active) || !isRetired(f.retiredAt)) err('สถานะชั้นไม่ถูกต้อง', f.id);
   }
   const prefixes = new Map<string, string>(), deptNames = new Set<string>();
@@ -222,6 +259,14 @@ export function validateFacility(input: unknown): { data?: FacilityData; issues:
   // Things in use must stand somewhere in use; an open department needs its groups' minimum of open points.
   const ix = indexFacility(data);
   for (const g of data.groups) if (usable(g) && departmentInUse(ix, g.departmentId) && !floorInUse(ix, g.floorId)) warn(`"${g.name}" อยู่บนชั้นหรืออาคารที่ปิดอยู่`, g.id);
+  // Rooms placed by hand on top of each other.
+  for (const f of data.floors) {
+    const placed = Object.entries(f.layout?.mode === 'manual' ? f.layout.rooms ?? {} : {}).filter(([id]) => ix.point.has(id) && !ix.point.get(id)!.retiredAt);
+    for (let i = 0; i < placed.length; i++) for (let j = i + 1; j < placed.length; j++) {
+      const [ia, a] = placed[i], [, c] = placed[j];
+      if (Math.min(a.x1, c.x1) - Math.max(a.x0, c.x0) > 0.05 && Math.min(a.z1, c.z1) - Math.max(a.z0, c.z0) > 0.05) { warn(`มีห้องวางทับกันบน${f.name}`, ia); break; }
+    }
+  }
   // Buildings drawn on top of each other on the map.
   const blds = data.buildings.filter((b) => !b.retiredAt);
   for (let i = 0; i < blds.length; i++) for (let j = i + 1; j < blds.length; j++) {

@@ -291,3 +291,59 @@ test('the ground around the buildings is part of the facility: changing it is a 
   assert.equal(api.facility.current().site.roads.length, 7);
   assert.ok(api.facility.current().site.flows?.length, 'walking routes come with the sample');
 });
+
+test('a floor can be laid out: proportions, rooms and waiting areas placed by hand, a floor-plan picture under it', () => {
+  const { api, admin, data } = setup();
+  const d = data(), floor = d.floors.find((f) => f.id === 'opd-2')!, b = d.buildings.find((x) => x.id === floor.buildingId)!.map;
+  // Automatic, with other proportions.
+  floor.layout = { roomDepth: 0.5, bandOrder: ['opd-2-2'], bandWeights: { 'opd-2-0': 2 }, roomWeights: { 'room:opd-201': 1.5 } };
+  assert.deepEqual(validateFacility(d).issues, []);
+  // By hand: rooms with their door side, areas; ids no longer in the facility are left alone, not refused.
+  floor.layout = { mode: 'manual', rooms: { 'room:opd-201': { x0: -b.width / 2, z0: -b.depth / 2, x1: -b.width / 2 + 3, z1: -b.depth / 2 + 3, door: 'e' }, 'gone:1': { x0: 0, z0: 0, x1: 1, z1: 1, door: 's' } },
+    areas: { 'opd-2-0': { x0: -2, z0: 0, x1: 2, z1: b.depth / 2 } } };
+  assert.deepEqual(validateFacility(d).issues, []);
+  // Out of the building, too small, a bad door, a weight out of range: refused.
+  const bad = (layout: unknown, what: string) => { const x = clone(d); x.floors.find((f) => f.id === 'opd-2')!.layout = layout as never;
+    assert.ok(validateFacility(x).issues.some((i) => i.level === 'error' && i.at === 'opd-2'), what); };
+  bad({ mode: 'manual', rooms: { 'room:opd-201': { x0: -b.width, z0: 0, x1: 0, z1: 2, door: 's' } } }, 'outside the building');
+  bad({ mode: 'manual', areas: { 'opd-2-0': { x0: 0, z0: 0, x1: 0.3, z1: 2 } } }, 'too small');
+  bad({ mode: 'manual', rooms: { 'room:opd-201': { x0: 0, z0: 0, x1: 2, z1: 2, door: 'up' } } }, 'door side');
+  bad({ bandWeights: { 'opd-2-0': 50 } }, 'weight');
+  bad({ roomDepth: 0.95 }, 'room depth');
+  bad({ colour: 'red' }, 'unknown setting');
+  // Rooms on top of each other: a warning, not a refusal.
+  const x = clone(d), lay = x.floors.find((f) => f.id === 'opd-2')!.layout!;
+  lay.rooms!['room:opd-202'] = { ...lay.rooms!['room:opd-201'], door: 's' };
+  assert.ok(validateFacility(x).issues.some((i) => i.level === 'warning' && i.message.includes('ทับกัน')));
+  // Published and read back from the tables; changing it is a change to the floor.
+  const impact = (api.gateway.facilityImpact(admin, { data: d }) as R).impact!;
+  assert.deepEqual(impact.changes.map((c) => `${c.id}:${c.change}`), ['opd-2:changed']);
+  assert.equal((api.gateway.facilityPublish(admin, { data: d }) as R).ok, true);
+  const reread = new FacilityService(api.db);
+  assert.deepEqual(reread.current().floors.find((f) => f.id === 'opd-2')!.layout, floor.layout);
+  assert.equal(reread.current().floors.find((f) => f.id === 'opd-3')!.layout, undefined, 'other floors stay automatic');
+});
+
+test('floor-plan pictures: administrators upload PNG / JPEG / WebP, anyone can fetch them by id', () => {
+  const { api, admin } = setup();
+  api.gateway.saveUser(admin, { username: 'staff.p', name: 'P', role: 'staff', password: 'password-1' });
+  const staff = signIn(api, 'staff.p', 'password-1');
+  // A 3 × 2 PNG header (enough to read its size).
+  const png = new Uint8Array(64); png.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 0, 3, 0, 0, 0, 2]);
+  assert.equal((api.gateway.facilityImageUpload(staff, { name: 'plan.png', bytes: png }) as R).code, 'FORBIDDEN');
+  const r = api.gateway.facilityImageUpload(admin, { name: 'plan.png', bytes: Buffer.from(png) }) as R & { image?: { id: string; mime: string; width: number; height: number } };
+  assert.equal(r.ok, true, r.reason);
+  assert.deepEqual({ mime: r.image!.mime, width: r.image!.width, height: r.image!.height }, { mime: 'image/png', width: 3, height: 2 });
+  assert.ok(api.audit.list().some((e) => e.action === 'facility.image' && e.targetId === r.image!.id));
+  // Not a picture, an SVG, too big: refused.
+  const svg = new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>');
+  assert.equal((api.gateway.facilityImageUpload(admin, { name: 'x.svg', bytes: svg }) as R).code, 'VALIDATION_ERROR');
+  assert.equal((api.gateway.facilityImageUpload(admin, { name: 'big.png', bytes: new Uint8Array(3_000_000) }) as R).code, 'VALIDATION_ERROR');
+  // Served with its type, cached for good.
+  const headers: Record<string, string> = {}; let body: Uint8Array | undefined;
+  new FacilityController(api.facility).image(r.image!.id, { setHeader: (k, v) => { headers[k] = v; }, end: (b) => { body = b; } });
+  assert.equal(headers['Content-Type'], 'image/png');
+  assert.match(headers['Cache-Control'], /immutable/);
+  assert.deepEqual([...body!], [...png]);
+  assert.throws(() => new FacilityController(api.facility).image('img_nope00', { setHeader: () => {}, end: () => {} }), /ไม่พบภาพ/);
+});

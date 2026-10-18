@@ -1,8 +1,10 @@
+import { randomBytes } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { DbService } from './db.service';
 import { AppError } from './errors';
 import { indexFacility, pointInUse, departmentInUse, roomRef, stationLabel, usable, validateFacility, type Department, type Facility, type FacilityData, type FacilityIndex, type Issue,
   type ServicePoint } from './facility-model';
+import { IMAGE_MAX_BYTES, imageInfo, type ImageInfo } from './facility-images';
 import { setFacilityNames } from './facility-names';
 import { sampleFacility } from './facility-template';
 import type { Layout, QueueSettings } from './queue.service';
@@ -40,6 +42,26 @@ export class FacilityService {
       // fields, fixed ids) reaches installations that have not edited their facility yet.
       this.syncFromLayout(this.store.getKv<QueueSettings>('queue.settings')?.layout, 'system');
     }
+  }
+
+  // ---- Floor-plan pictures ----------------------------------------------------------------------------------------
+  // An uploaded picture is kept for good (published versions may point at it); it is only shown once a floor's layout
+  // names it as its background and that is published.
+  addImage(by: string, name: unknown, bytes: unknown): { id: string } & ImageInfo {
+    const buf = bytes instanceof Uint8Array ? bytes : bytes instanceof ArrayBuffer ? new Uint8Array(bytes) : null;
+    if (!buf || !buf.length) throw new AppError('VALIDATION_ERROR', 'ไม่พบไฟล์ภาพ');
+    if (buf.length > IMAGE_MAX_BYTES) throw new AppError('VALIDATION_ERROR', `ไฟล์ภาพใหญ่เกิน ${(IMAGE_MAX_BYTES / 1e6).toFixed(1)} MB`);
+    const info = imageInfo(buf);
+    if (!info) throw new AppError('VALIDATION_ERROR', 'รองรับเฉพาะภาพ PNG, JPEG หรือ WebP (ด้านละไม่เกิน 8000 พิกเซล)');
+    const id = `img_${randomBytes(9).toString('base64url')}`, label = typeof name === 'string' ? name.slice(0, 120) : '';
+    this.store.db.prepare('INSERT INTO facility_images (id, name, mime, width, height, bytes, uploaded_at, uploaded_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(id, label, info.mime, info.width, info.height, buf, this.now().toISOString(), by);
+    return { id, ...info };
+  }
+  image(id: unknown): { mime: string; bytes: Uint8Array } | undefined {
+    if (typeof id !== 'string' || !/^img_[A-Za-z0-9_-]{6,20}$/.test(id)) return undefined;
+    const r = this.store.db.prepare('SELECT mime, bytes FROM facility_images WHERE id = ?').get(id) as { mime: string; bytes: Uint8Array } | undefined;
+    return r ? { mime: r.mime, bytes: r.bytes } : undefined;
   }
 
   // ---- Reading ----------------------------------------------------------------------------------------------------
@@ -226,8 +248,8 @@ export class FacilityService {
       for (const t of ['facility_buildings', 'facility_floors', 'facility_departments', 'facility_service_groups', 'facility_service_points', 'facility_site']) db.prepare(`DELETE FROM ${t}`).run();
       const b = db.prepare('INSERT INTO facility_buildings (id, name, short_name, kind, map_json, sort, active, retired_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
       data.buildings.forEach((x, i) => b.run(x.id, x.name, x.shortName ?? '', x.kind, JSON.stringify(x.map), i, x.active ? 1 : 0, x.retiredAt ?? null));
-      const f = db.prepare('INSERT INTO facility_floors (id, building_id, level, name, description, sort, active, retired_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
-      data.floors.forEach((x, i) => f.run(x.id, x.buildingId, x.level, x.name, x.description ?? '', i, x.active ? 1 : 0, x.retiredAt ?? null));
+      const f = db.prepare('INSERT INTO facility_floors (id, building_id, level, name, description, layout_json, sort, active, retired_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+      data.floors.forEach((x, i) => f.run(x.id, x.buildingId, x.level, x.name, x.description ?? '', x.layout ? JSON.stringify(x.layout) : null, i, x.active ? 1 : 0, x.retiredAt ?? null));
       const d = db.prepare('INSERT INTO facility_departments (id, name, short_name, type, queue_prefix, features_json, first_group_id, sort, active, retired_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
       data.departments.forEach((x, i) => d.run(x.id, x.name, x.shortName ?? null, x.type, x.queuePrefix ?? null, JSON.stringify(x.features), x.firstGroupId ?? null, i, x.active ? 1 : 0, x.retiredAt ?? null));
       const g = db.prepare('INSERT INTO facility_service_groups (id, department_id, name, floor_id, point_kind, point_noun, steps_json, serves, min_open, options_json, sort, active, retired_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
@@ -247,7 +269,8 @@ export class FacilityService {
     const state = (r: Row) => strip({ active: bool(r.active), retiredAt: opt(r.retired_at as string | null) });
     const data: FacilityData = {
       buildings: all('facility_buildings').map((r) => ({ id: r.id as string, name: r.name as string, shortName: r.short_name as string, kind: r.kind as never, map: JSON.parse(r.map_json as string), ...state(r) })),
-      floors: all('facility_floors').map((r) => ({ id: r.id as string, buildingId: r.building_id as string, level: r.level as number, name: r.name as string, description: r.description as string, ...state(r) })),
+      floors: all('facility_floors').map((r) => strip({ id: r.id as string, buildingId: r.building_id as string, level: r.level as number, name: r.name as string, description: r.description as string,
+        layout: r.layout_json ? JSON.parse(r.layout_json as string) : undefined, ...state(r) })),
       departments: all('facility_departments').map((r) => strip({ id: r.id as string, name: r.name as string, shortName: opt(r.short_name as string | null), type: r.type as never,
         queuePrefix: opt(r.queue_prefix as string | null), features: JSON.parse(r.features_json as string), firstGroupId: opt(r.first_group_id as string | null), ...state(r) })),
       groups: all('facility_service_groups').map((r) => strip({ id: r.id as string, departmentId: r.department_id as string, name: r.name as string, floorId: (r.floor_id as string | null) ?? null,

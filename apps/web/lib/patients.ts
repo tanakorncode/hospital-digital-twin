@@ -149,7 +149,7 @@ const world = (plan:FloorPlan, at:{x:number; z:number}):Spot => ({x:plan.cx+at.x
 // Booth i of n across a group's band (n may differ from the group's own count: the what-if view adds or removes some).
 export function boothSpot(g:FGroup, i:number, n:number):Spot {
   const fl = fFloor(g.floorId)!, plan = floorPlan(fl.buildingId,fl.level)!, band = plan.bands.find(x=>x.deptId===g.departmentId) ?? plan.bands[0];
-  return world(plan,boothAt(band?.x0 ?? -plan.W/2,band ? band.x1-band.x0 : plan.W,plan.front0,i,n));
+  return world(plan,boothAt(band?.x0 ?? -plan.W/2,band ? band.x1-band.x0 : plan.W,band?.z0 ?? plan.front0,i,n));
 }
 type BedSpot = {p:FPoint; g:FGroup; buildingId:string; level:number; index:number; count:number; spot:Spot; room?:Room};
 let bedCache:{rev:number; list:BedSpot[]}|null = null;

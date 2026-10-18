@@ -1,5 +1,6 @@
 'use client';
 import { buildings, floorPlan, floorRooms, isOff } from '../lib/scene-data';
+import { facilityImageUrl } from '../lib/api-url';
 
 // Light 2D plan of one floor, drawn from the floor's layout as the 3D scene is (lib/floor-layout.ts: rooms, the corridor
 // when laid out automatically, one waiting area per department). Small enough for a phone: used for wayfinding on the patient's
@@ -26,6 +27,8 @@ export default function FloorPlanSvg({buildingId,level,highlightRoom,highlightZo
  return <svg className="planSvg" viewBox={`${x0-pad} ${z0-pad} ${b.width+pad*2} ${b.depth+pad*2}`} style={{height}} role="img" aria-label="ผังชั้น">
   <defs><marker id="planArrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="4" markerHeight="4" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#1677ff"/></marker></defs>
   <rect x={x0} y={z0} width={b.width} height={b.depth} rx={0.3} className="pBld"/>
+  {plan?.background && <image href={facilityImageUrl(plan.background.imageId)} x={b.x+plan.background.x0} y={b.z+plan.background.z0} width={plan.background.x1-plan.background.x0}
+   height={plan.background.z1-plan.background.z0} preserveAspectRatio="none" opacity={plan.background.opacity*0.5}/>}
   {bands.map((d,i)=><g key={d.name+i}>
    <rect x={d.x0+0.05} y={d.z0} width={d.x1-d.x0-0.1} height={d.z1-d.z0-0.05} rx={0.15} className={'pZone'+(zone===i?' on':'')+(isOff(`dept:${d.name}`)?' off':'')}/>
    <text x={(d.x0+d.x1)/2} y={d.z1-0.35} className="pZoneText">{d.name}</text></g>)}

@@ -529,4 +529,24 @@ export const MIGRATIONS: Migration[] = [
       ALTER TABLE destinations ADD COLUMN department_id TEXT;
     `,
   },
+  {
+    version: 15,
+    name: 'floor layouts and floor-plan pictures',
+    sql: `
+      -- How a floor is set out: automatic with adjusted proportions, or rooms and waiting areas placed by hand, and a
+      -- floor-plan picture laid underneath (JSON, see FloorLayout in facility-model.ts).
+      ALTER TABLE facility_floors ADD COLUMN layout_json TEXT;
+      -- Pictures uploaded for floor-plan backgrounds (PNG / JPEG / WebP). Kept when no floor uses them any more, so
+      -- old versions still show theirs.
+      CREATE TABLE facility_images (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        mime TEXT NOT NULL,
+        width INTEGER NOT NULL,
+        height INTEGER NOT NULL,
+        bytes BLOB NOT NULL,
+        uploaded_at TEXT NOT NULL,
+        uploaded_by TEXT NOT NULL);
+    `,
+  },
 ];

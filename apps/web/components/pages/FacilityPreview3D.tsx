@@ -4,6 +4,7 @@ import { Canvas } from '@react-three/fiber';
 import { Html, OrbitControls } from '@react-three/drei';
 import type { FloorLayout } from './FacilityHelp';
 import { roomWalls } from '../../lib/floor-layout';
+import { FloorPicture } from '../FloorPicture';
 
 // The draft floor in 3D (Settings → ผังโรงพยาบาล): the same layout as the 2D preview, built like the main map's floor —
 // low walls around the rooms (a doorway in each), a waiting area per department, counters, booths and beds.
@@ -28,6 +29,7 @@ export default function FacilityPreview3D({L}:{L:FloorLayout}) {
       <directionalLight position={[8,14,6]} intensity={1.2}/>
       {/* Floor slab, corridor and the waiting bands */}
       <mesh position={[0,-0.05,0]}><boxGeometry args={[W,0.1,D]}/><meshStandardMaterial color="#e9eef4"/></mesh>
+      {L.background && <FloorPicture bg={L.background} y={0.003}/>}
       {corridor && <mesh position={[0,0.002,(corridor[0]+corridor[1])/2]} rotation-x={-Math.PI/2}><planeGeometry args={[W,corridor[1]-corridor[0]]}/><meshStandardMaterial color="#f8fafc"/></mesh>}
       {L.bands.map(b=><group key={b.id}>
         <mesh position={[b.x0+b.w/2,0.004,b.z0+b.d/2]} rotation-x={-Math.PI/2}><planeGeometry args={[b.w-0.06,b.d-0.06]}/><meshStandardMaterial color={b.focus?'#dbeafe':b.on?'#f1f5f9':'#e2e8f0'}/></mesh>

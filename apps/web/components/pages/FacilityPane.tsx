@@ -9,6 +9,7 @@ import { Select } from '../Select';
 import { ConfirmDialog, type Confirm } from './ConfirmDialog';
 import { FloorPreview, Help } from './FacilityHelp';
 import { SitePlan } from './FacilitySite';
+import { FloorEditor } from './FacilityFloorEditor';
 import { planFloor, seatCapacity } from '../../lib/floor-layout';
 import { ModalPortal } from '../ModalPortal';
 
@@ -446,7 +447,7 @@ function FloorDetail({f,ctx}:{f:FFloor; ctx:Ctx}) {
       <label><span>เลขชั้น</span><input type="number" min={1} max={99} value={f.level} disabled={!editable} aria-invalid={levelTaken} onChange={e=>set(x=>{ x.level = Math.max(1,Math.min(99,Math.round(Number(e.target.value)||1))); })}/>{levelTaken && <em className="facErr">มีชั้นนี้แล้ว</em>}</label>
       <label className="wide"><span>คำอธิบาย</span><input value={f.description} disabled={!editable} onChange={e=>set(x=>{ x.description = e.target.value; })} maxLength={120} placeholder="เช่น ห้องตรวจอายุรกรรม"/></label>
     </div>
-    <FloorPreview data={data} floorId={f.id}/>
+    <FloorEditor data={data} floor={f} editable={editable} update={update} api={ctx.api as never}/>
     <h4 className="setSub">บนชั้นนี้ <small>พื้นที่รอของแต่ละแผนกเรียงตามลำดับแผนก</small></h4>
     <ul className="facFloors">{here.map(g=>{ const d = data.departments.find(x=>x.id===g.departmentId);
       return <li key={g.id} className={on(g)&&on(d)?'':'off'}><button className="linkBtn dark" onClick={()=>setSel({kind:'dept',id:g.departmentId,focus:g.id})}><b>{g.name}</b></button>

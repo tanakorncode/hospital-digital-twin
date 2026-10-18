@@ -96,3 +96,68 @@ test('a department added in the draft: the preview shows it where the map puts i
   for (const id of ['p_ks1','p_ks2']) { const p = preview.counters.find(x=>x.id===id)!, m = map.counters.find(x=>x.id===id)!; assert.ok(near(p.x,m.x) && near(p.z,m.z),id); }
   assert.ok(preview.seats.some(s=>s.focus),'its waiting chairs');
 });
+
+const inside = (p:{x:number; z:number}, r:{x0:number; x1:number; z0:number; z1:number}) => p.x>=r.x0-1e-9 && p.x<=r.x1+1e-9 && p.z>=r.z0-1e-9 && p.z<=r.z1+1e-9;
+
+test('a floor\'s proportions: room depth, the order and widths of rooms and waiting bands', () => {
+  const f = structuredClone(template()), floor = f.floors.find(x=>x.id==='opd-2')!;
+  const before = planFloor(f,'opd-2')!;
+  floor.layout = {roomDepth:0.3, bandOrder:['opd-2-2'], bandWeights:{'opd-2-2':2}, roomOrder:['room:opd-206'], roomWeights:{'room:opd-206':3}};
+  const plan = planFloor(f,'opd-2')!;
+  assert.ok(near(plan.roomFront,-plan.D/2+plan.D*0.3),'shallower rooms');
+  assert.ok(plan.rooms.every(r=>near(r.z1,plan.roomFront)));
+  assert.equal(plan.bands[0].deptId,'opd-2-2','moved to the left');
+  const w = plan.bands.map(b=>b.x1-b.x0);
+  assert.ok(near(w[0],2*w[1]) && near(w[1],w[2]),'twice as wide');
+  assert.ok(near(plan.bands[0].x0,-plan.W/2) && near(plan.bands.at(-1)!.x1,plan.W/2),'still the whole width');
+  assert.equal(plan.rooms[0].point.id,'room:opd-206');
+  assert.ok(near(plan.rooms[0].w,3*plan.rooms[1].w));
+  assert.deepEqual(plan.rooms.map(r=>r.point.id).sort(),before.rooms.map(r=>r.point.id).sort(),'the same rooms');
+  // Counters and chairs follow their band.
+  for (const c of plan.counters) assert.ok(inside(c.at,plan.bands.find(b=>b.deptId===c.group.departmentId)!),c.point.id);
+  for (const b of plan.bands) for (const st of b.seats) assert.ok(inside(st,b));
+});
+
+test('a floor laid out by hand: rooms with their door, waiting areas, the rest where they would be', () => {
+  const f = structuredClone(template()), floor = f.floors.find(x=>x.id==='er-1')!;
+  const auto = planFloor(f,'er-1')!, hw = auto.W/2, hd = auto.D/2;
+  const room = auto.rooms[0], other = auto.rooms[1];
+  floor.layout = {mode:'manual', rooms:{[room.point.id]:{x0:-hw,z0:0,x1:-hw+3,z1:4,door:'e'}}, areas:{[auto.bands[0].deptId]:{x0:0,z0:-hd,x1:hw,z1:-hd+5}}};
+  const plan = planFloor(f,'er-1')!;
+  assert.equal(plan.manual,true); assert.equal(plan.corridor,null,'no corridor by hand');
+  const r0 = plan.rooms.find(r=>r.point.id===room.point.id)!;
+  assert.deepEqual([r0.x0,r0.z0,r0.x1,r0.z1,r0.door],[-hw,0,-hw+3,4,'e']);
+  const r1 = plan.rooms.find(r=>r.point.id===other.point.id)!;
+  assert.deepEqual([r1.x0,r1.z0,r1.x1,r1.z1,r1.door],[other.x0,other.z0,other.x1,other.z1,'s'],'not placed yet: where the automatic layout puts it');
+  // Beds stay in their room — along the back wall, away from the door on the east side.
+  const inR0 = plan.beds.filter(b=>b.room?.point.id===room.point.id);
+  assert.ok(inR0.length>0);
+  for (const b of inR0) { assert.ok(inside(b.at,r0),b.point.id); assert.ok(b.at.x<(r0.x0+r0.x1)/2,'by the wall opposite the door'); }
+  const area = plan.bands[0];
+  assert.deepEqual([area.x0,area.z0,area.x1,area.z1],[0,-hd,hw,-hd+5]);
+  for (const c of plan.counters.filter(c=>c.group.departmentId===area.deptId)) assert.ok(inside(c.at,area),c.point.id);
+  for (const b of plan.beds.filter(b=>!b.room && b.group.departmentId===area.deptId)) assert.ok(inside(b.at,area),b.point.id);
+  // Switching back to automatic keeps the placements but uses the automatic layout.
+  floor.layout.mode = 'auto';
+  assert.deepEqual(planFloor(f,'er-1')!.rooms.map(r=>[r.x0,r.z0]),auto.rooms.map(r=>[r.x0,r.z0]));
+});
+
+test('a floor laid out by hand: the map, the patients and the preview agree once published', () => {
+  const f = structuredClone(template()), floor = f.floors.find(x=>x.id==='opd-4')!;
+  const auto = planFloor(f,'opd-4')!, hw = auto.W/2, hd = auto.D/2;
+  const rooms:Record<string,{x0:number; z0:number; x1:number; z1:number; door:'n'|'s'|'e'|'w'}> = {};
+  auto.rooms.forEach((r,k)=>{ rooms[r.point.id] = {x0:-hw+(k%6)*2,z0:k<6 ? -hd : hd-3,x1:-hw+(k%6)*2+2,z1:k<6 ? -hd+3 : hd,door:k<6 ? 's' : 'n'}; });
+  const areas = Object.fromEntries(auto.bands.map((b,i)=>[b.deptId,{x0:-hw+i*(auto.W/auto.bands.length),z0:-hd+3.5,x1:-hw+(i+1)*(auto.W/auto.bands.length),z1:hd-3.5}]));
+  floor.layout = {mode:'manual',rooms,areas};
+  const preview = layoutFloor(f,'opd-4')!;
+  publish(f);
+  const b = buildings.find(x=>x.id==='opd')!;
+  const mapRooms = floorRooms('opd',4);
+  assert.deepEqual(mapRooms.map(r=>[r.pointId,r.x0,r.z0,r.x1,r.z1,r.door]),preview.rooms.map(r=>[r.id,r.x0,r.z0,r.x0+r.w,r.z0+r.d,r.door]));
+  // Each exam room's doctor station and the clinic's screening counters stand where the preview shows them.
+  for (const s of allStations().filter(s=>s.buildingId==='opd' && s.level===4 && !s.id.startsWith('room:'))) {
+    const p = preview.counters.find(c=>c.id===s.id); if (!p) continue;
+    assert.ok(near(p.x,s.spot.x-b.x) && near(p.z,s.spot.z-b.z),s.id);
+  }
+  for (const r of mapRooms) { const at = allStations().find(s=>s.id===r.pointId)?.spot; if (at) assert.ok(inside({x:at.x-b.x,z:at.z-b.z},r),`${r.pointId} patient inside its room`); }
+});
