@@ -132,22 +132,27 @@ export const getServiceHours = () => serviceHours;
 // counters switched off. Ids: `dept:<name>` for a department, the queue station id for a room or counter.
 // The floor's rooms are shared out between its departments, so a new department takes rooms from its neighbours.
 export type CustomDept = {name:string; level:number};
-export type Layout = {off?:string[]; depts?:CustomDept[]};
+// names: a department renamed in Settings, by its clinic key (opd-<floor>-<index>); the key itself never changes.
+// split: exam rooms per department of an OPD floor ('opd-<floor>' → counts in department order); roomNames: a room's
+// display name by id (opd-205). Ids never change.
+export type Layout = {off?:string[]; depts?:CustomDept[]; names?:Record<string,string>; split?:Record<string,number[]>; roomNames?:Record<string,string>};
 export const CLINIC_FLOORS = [2,3,4];
 const builtInDepts = new Map(Object.entries(buildingStats).flatMap(([id,s])=>s.floors.map(f=>[`${id}:${f.level}`,[...f.depts]] as [string,string[]])));
 export const builtInDeptCount = (level:number) => builtInDepts.get(`opd:${level}`)?.length ?? 0;
-let layoutOff = new Set<string>(), layoutDepts:CustomDept[] = [], layoutKey = '', layoutRev = 0;
+let layoutOff = new Set<string>(), layoutDepts:CustomDept[] = [], layoutNames:Record<string,string> = {}, layoutSplit:Record<string,number[]> = {}, layoutRoomNames:Record<string,string> = {}, layoutKey = '', layoutRev = 0;
 export function setLayout(l?:Layout) {
-  const key = JSON.stringify([l?.depts ?? [],[...(l?.off ?? [])].sort()]);
+  const key = JSON.stringify([l?.depts ?? [],[...(l?.off ?? [])].sort(),l?.names ?? {},l?.split ?? {},l?.roomNames ?? {}]);
   if (key===layoutKey) return;
   layoutKey = key; layoutRev++;
-  layoutOff = new Set(l?.off ?? []); layoutDepts = [...(l?.depts ?? [])];
-  buildingStats.opd?.floors.forEach(f=>{ f.depts = [...(builtInDepts.get(`opd:${f.level}`) ?? f.depts),...layoutDepts.filter(d=>d.level===f.level).map(d=>d.name)]; });
+  layoutOff = new Set(l?.off ?? []); layoutDepts = [...(l?.depts ?? [])]; layoutNames = {...(l?.names ?? {})}; layoutSplit = {...(l?.split ?? {})}; layoutRoomNames = {...(l?.roomNames ?? {})};
+  buildingStats.opd?.floors.forEach(f=>{ f.depts = [...(builtInDepts.get(`opd:${f.level}`) ?? f.depts).map((n,i)=>layoutNames[`opd-${f.level}-${i}`] ?? n),...layoutDepts.filter(d=>d.level===f.level).map(d=>d.name)]; });
 }
 // Bumps on every layout change: memoised lists of rooms / stations / clinics key on it.
 export const layoutRevision = () => layoutRev;
 export const isOff = (id:string) => layoutOff.has(id);
 export const customDepts = () => layoutDepts;
+// The name a built-in OPD department had before any rename (for "คืนชื่อเดิม").
+export const builtInDeptName = (level:number, index:number) => builtInDepts.get(`opd:${level}`)?.[index];
 export const opdOpenMin = () => serviceHours.opdOpen*60, opdLastArrivalMin = () => serviceHours.opdClose*60;
 const dailyProfile:Record<BuildingKind,number[]> = {
   //            00   01   02   03   04   05   06   07   08   09   10   11   12   13   14   15   16   17   18   19   20   21   22   23
@@ -243,14 +248,17 @@ export function floorRooms(buildingId:string, level:number):Room[] {
   const b = buildings.find(x=>x.id===buildingId);
   if (!b) return [];
   const n = roomsPerFloor(b), depts = buildingStats[buildingId]?.floors.find(f=>f.level===level)?.depts ?? [''];
+  // A split from Settings counts only while it still fits the floor (same departments, every room given out).
+  const s = layoutSplit[`${buildingId}-${level}`], split = s && s.length===depts.length && s.every(x=>x>=1) && s.reduce((a,x)=>a+x,0)===n ? s : undefined;
   return Array.from({length:n},(_,k)=>{
     // Medical centre: floor 1 = laboratory rooms, floor 2 = x-ray rooms, floor 3 = scan / exam rooms alternating.
     const kind:RoomKind = b.kind==='opd'?'exam':b.kind==='er'?'treatment':b.kind==='inpatient'?'ward':b.kind==='support'?'office'
       : level===1?'office':level===2||k%2===0?'scan':'exam';
     const title = b.kind==='diagnostics' && level===1 ? 'ห้องปฏิบัติการ' : b.kind==='diagnostics' && level===2 ? 'ห้องเอกซเรย์' : roomTitle[kind];
-    // Department bands split the floor's width evenly, so a room belongs to the band its centre falls in.
-    const deptIndex = Math.min(depts.length-1,Math.floor((k+0.5)/n*depts.length)), number = level*100+k+1;
-    return {id:`${b.id}-${number}`,buildingId,level,index:k,count:n,number,name:`${title} ${number}`,kind,dept:depts[deptIndex],deptIndex};
+    // Rooms go to departments as set in Settings (split), else by even bands — a room belongs to the band its centre is in.
+    const deptIndex = split ? split.findIndex((_,i)=>k<split.slice(0,i+1).reduce((a,x)=>a+x,0)) : Math.min(depts.length-1,Math.floor((k+0.5)/n*depts.length)), number = level*100+k+1;
+    const id = `${b.id}-${number}`;
+    return {id,buildingId,level,index:k,count:n,number,name:layoutRoomNames[id] ?? `${title} ${number}`,kind,dept:depts[deptIndex],deptIndex};
   });
 }
 export const findRoom = (id:string) => { const [b,num] = [id.slice(0,id.lastIndexOf('-')),Number(id.slice(id.lastIndexOf('-')+1))]; return floorRooms(b,Math.floor(num/100)).find(r=>r.id===id); };

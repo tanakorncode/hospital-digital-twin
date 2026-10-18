@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { RefreshCw, RotateCcw } from 'lucide-react';
 import type { QueueSync } from '../../lib/queue';
+import { Select } from '../Select';
 
 // Settings → การแจ้งเตือน (administrators): the LINE messages to patients — switch, whether LINE is set up, what was
 // sent, what is waiting to retry, what failed (and send it again). Recipients are never shown.
@@ -31,7 +32,7 @@ export function NotificationsPane({api,features,setFeature}:{api:Api; features:Q
   {data && !data.line && <p className="serviceNote">ยังไม่ได้ตั้งค่า LINE OA ของโรงพยาบาล (LINE_CHANNEL_ACCESS_TOKEN) · ข้อความจะถูกข้ามจนกว่าจะตั้งค่า — ดู docs/DEPLOY.md</p>}
   {msg && <p className={'setToast'+(msg.bad?' bad':'')} role="status">{msg.text}</p>}
   {data && <div className="notifyCounts">{['SENT','RETRY','FAILED','SKIPPED','PENDING'].map(k=><span key={k} className={'nc-'+k}><b>{data.counts[k] ?? 0}</b>{statusText[k]}</span>)}<small className="muted">7 วันล่าสุด</small></div>}
-  <div className="slotListHead"><select value={status} onChange={e=>setStatus(e.target.value)} aria-label="กรองตามสถานะ">{filters.map(f=><option key={f} value={f}>{f ? statusText[f] : 'ทุกสถานะ'}</option>)}</select>
+  <div className="slotListHead"><Select value={status} onChange={setStatus} aria-label="กรองตามสถานะ" className="selFilter" options={filters.map(f=>({value:f,label:f ? statusText[f] : 'ทุกสถานะ'}))}/>
    <button className="iconBtn" aria-label="โหลดใหม่" onClick={()=>void load()}><RefreshCw size={15}/></button></div>
   {data?.jobs.length ? <div className="tableWrap tall"><table className="dataTable compact"><thead><tr><th>เมื่อ</th><th>ข้อความ</th><th>สถานะ</th><th className="num">ครั้ง</th><th>หมายเหตุ</th><th/></tr></thead>
    <tbody>{data.jobs.map(j=><tr key={j.id}><td>{when(j.sentAt ?? j.scheduledAt)}</td><td>{templateText[j.template] ?? j.template}</td>

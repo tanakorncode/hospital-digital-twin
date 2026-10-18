@@ -1,9 +1,11 @@
 'use client';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CalendarCheck, CalendarPlus, CheckCircle2, LogIn, RefreshCw, Search, X } from 'lucide-react';
+import { CalendarPlus, CheckCircle2, LogIn, RefreshCw, Search, X } from 'lucide-react';
 import { CheckInCard, type CheckInResult } from '../CheckInCard';
 import { opdClinics, type Clinic } from '../../lib/patients';
 import { actionKey, covers, type AuthUser, type QueueSync } from '../../lib/queue';
+import { Select } from '../Select';
+import { DatePicker } from '../DatePicker';
 
 // General booking (Phase 2): administrators set the rules and the time slots per clinic; staff book for patients at
 // the counter or on the phone (the path for people without LINE) and cancel on request. The server checks
@@ -62,7 +64,7 @@ export function BookingAdminPane({api,rev,features,setFeature}:{api:Api; rev:num
 }
 export function NumPick({value,options,unit,onPick}:{value:number; options:number[]; unit:string; onPick:(v:number)=>void}) {
  const list = options.includes(value) ? options : [...options,value].sort((a,b)=>a-b);
- return <select className="numPick" value={value} onChange={e=>onPick(Number(e.target.value))}>{list.map(v=><option key={v} value={v}>{v} {unit}</option>)}</select>;
+ return <Select size="sm" className="numPick" value={value} onChange={onPick} options={list.map(v=>({value:v,label:`${v} ${unit}`}))}/>;
 }
 
 function SlotPlanner({api,clinics,onDone}:{api:Api; clinics:Clinic[]; onDone:(r:{ok:boolean; reason?:string}, ok:string)=>void}) {
@@ -86,11 +88,11 @@ function SlotPlanner({api,clinics,onDone}:{api:Api; clinics:Clinic[]; onDone:(r:
  return <div className="slotPlan">
   <h4 className="setSub">สร้างช่วงเวลาให้จอง <small>สร้างซ้ำได้ ช่วงที่มีอยู่แล้วจะไม่ถูกแก้</small></h4>
   <div className="slotPlanGrid">
-   <label>คลินิก<select value={svc} onChange={e=>setSvc(e.target.value)}>{clinics.map(c=><option key={c.key} value={c.key}>{clinicName(c)}</option>)}</select></label>
-   <label>ตั้งแต่<input type="date" value={from} onChange={e=>setFrom(e.target.value)}/></label>
-   <label>ถึง<input type="date" value={to} onChange={e=>setTo(e.target.value)}/></label>
+   <label>คลินิก<Select value={svc} onChange={setSvc} options={clinics.map(c=>({value:c.key,label:clinicName(c),sub:`ชั้น ${c.level}`}))}/></label>
+   <label>ตั้งแต่<DatePicker value={from} onChange={setFrom}/></label>
+   <label>ถึง<DatePicker value={to} min={from} onChange={setTo}/></label>
    <label className="wide">เวลา<span className="timeRange"><input type="time" value={start} onChange={e=>setStart(e.target.value)}/>–<input type="time" value={end} onChange={e=>setEnd(e.target.value)}/></span></label>
-   <label>ช่วงละ<select value={minutes} onChange={e=>setMinutes(Number(e.target.value))}>{[15,30,60,120,240].map(m=><option key={m} value={m}>{m} นาที</option>)}</select></label>
+   <label>ช่วงละ<Select value={minutes} onChange={setMinutes} options={[15,30,60,120,240].map(m=>({value:m,label:`${m} นาที`}))}/></label>
    <label>รับต่อช่วง<input type="number" min={1} max={500} value={capacity} onChange={e=>setCapacity(Math.max(1,Math.min(500,Number(e.target.value)||1)))}/></label>
   </div>
   <div className="segBtns">{weekdayNames.map((d,i)=><button key={i} className={days.includes(i)?'on':''} aria-pressed={days.includes(i)} onClick={()=>setDays(x=>x.includes(i)?x.filter(y=>y!==i):[...x,i].sort())}>{d}</button>)}
@@ -111,8 +113,8 @@ function SlotList({api,rev,clinics,onDone}:{api:Api; rev:number; clinics:Clinic[
  const set = async (s:Slot, change:Record<string,unknown>, ok:string) => { const r = await api('booking:slot:set',{slotId:s.id,...change}); onDone(r,ok); setCancelFor(null); setReason(''); void load(); };
  return <div className="slotList">
   <h4 className="setSub">ช่วงเวลาของวัน <small>ปิดรับ = ไม่รับจองเพิ่ม (คนที่จองแล้วยังอยู่) · ยกเลิก = ยกเลิกการจองทั้งช่วงพร้อมเหตุผล</small></h4>
-  <div className="slotListHead"><select value={svc} onChange={e=>setSvc(e.target.value)}>{clinics.map(c=><option key={c.key} value={c.key}>{clinicName(c)}</option>)}</select>
-   <input type="date" value={date} onChange={e=>setDate(e.target.value)}/><span className="muted">{dayOf(date)}</span></div>
+  <div className="slotListHead"><Select value={svc} onChange={setSvc} aria-label="คลินิก" className="selFilter" options={clinics.map(c=>({value:c.key,label:clinicName(c),sub:`ชั้น ${c.level}`}))}/>
+   <DatePicker value={date} onChange={setDate} aria-label="วันที่" className="dpFilter"/></div>
   {slots.length ? <div className="tableWrap"><table className="dataTable compact"><thead><tr><th>เวลา</th><th className="num">จองแล้ว</th><th className="num">รับได้</th><th>สถานะ</th><th/></tr></thead>
    <tbody>{slots.map(s=><tr key={s.id} className={s.status!=='OPEN'?'muted':''}><td>{timeOf(s.startsAt)}–{timeOf(s.endsAt)}</td><td className="num">{s.reserved}</td>
     <td className="num">{s.capacity}</td><td>{slotText[s.status]}</td>
@@ -170,8 +172,8 @@ export function BookingTab({api,rev,user,features}:{api:Api; rev:number; user?:A
   {!on && <p className="serviceNote">ระบบจองยังปิดอยู่ · ผู้ดูแลระบบเปิดได้ที่ ตั้งค่า → การจองล่วงหน้า (ดูรายการเดิมได้ตามปกติ)</p>}
   <div className="bookBar">
    <button className="btn" disabled={!on || !open.length} onClick={()=>setNewOpen(true)}><CalendarPlus size={15}/> จองให้ผู้ป่วย</button>
-   <label className="bookDate"><CalendarCheck size={15}/><input type="date" value={date} onChange={e=>{ setDate(e.target.value); setFound(null); }}/><span>{dayOf(date)}</span></label>
-   <select value={svc} onChange={e=>setSvc(e.target.value)}><option value="">ทุกคลินิก</option>{clinics.filter(c=>policies.some(p=>p.serviceCode===c.key)).map(c=><option key={c.key} value={c.key}>{clinicName(c)}</option>)}</select>
+   <DatePicker value={date} onChange={d=>{ setDate(d); setFound(null); }} aria-label="วันที่" className="dpFilter"/>
+   <Select value={svc} onChange={setSvc} aria-label="คลินิก" className="selFilter" options={[{value:'',label:'ทุกคลินิก'},...clinics.filter(c=>policies.some(p=>p.serviceCode===c.key)).map(c=>({value:c.key,label:clinicName(c),sub:`ชั้น ${c.level}`}))]}/>
    <form className="bookFind" onSubmit={e=>{ e.preventDefault(); void search(); }}><Search size={14}/><input value={find} onChange={e=>setFind(e.target.value)} placeholder="รหัสจอง (BK…) หรือ HN"/>
     {found && <button type="button" className="iconBtn" aria-label="ล้างการค้นหา" onClick={()=>{ setFind(''); setFound(null); }}><X size={14}/></button>}</form>
    <button className="iconBtn" aria-label="โหลดใหม่" onClick={()=>void load()}><RefreshCw size={15}/></button>

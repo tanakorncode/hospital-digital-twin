@@ -1,11 +1,13 @@
 'use client';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CalendarClock, CalendarPlus, Check, CheckCircle2, LogIn, MoveRight, RefreshCw, Search, X } from 'lucide-react';
+import { CalendarPlus, Check, CheckCircle2, LogIn, MoveRight, RefreshCw, Search, X } from 'lucide-react';
 import { opdClinics, type Clinic } from '../../lib/patients';
 import { findRoom } from '../../lib/scene-data';
 import { actionKey, canDo, covers, type AuthUser, type QueueSync } from '../../lib/queue';
 import { CheckInCard, type CheckInResult } from '../CheckInCard';
 import { NumPick, addDays, dayOf, timeOf, today, weekdayNames } from './Booking';
+import { Select } from '../Select';
+import { DatePicker } from '../DatePicker';
 
 // Doctor appointments (Phase 2): administrators set each clinic's rules and the doctors' sessions; staff make, move
 // and cancel appointments for patients and decide on requests to move; supervisors record a no-show (after the time,
@@ -84,15 +86,15 @@ function SessionPlanner({api,clinics,say}:{api:Api; clinics:Clinic[]; say:Say}) 
  return <div className="slotPlan">
   <h4 className="setSub">ตารางออกตรวจของแพทย์ <small>แบ่งเป็นช่วงนัด · แพทย์คนเดียวกันจะไม่ถูกลงตารางซ้อนเวลา</small></h4>
   <div className="slotPlanGrid">
-   <label>คลินิก<select value={clinic} onChange={e=>setClinic(e.target.value)}>{clinics.map(c=><option key={c.key} value={c.key}>{clinicName(c)}</option>)}</select></label>
+   <label>คลินิก<Select value={clinic} onChange={setClinic} options={clinics.map(c=>({value:c.key,label:clinicName(c),sub:`ชั้น ${c.level}`}))}/></label>
    <label>รหัสแพทย์<input value={code} maxLength={20} placeholder="รหัสใน HIS / เลข ว." onChange={e=>setCode(e.target.value)}/></label>
    <label className="wide">ชื่อแพทย์<input value={name} maxLength={60} placeholder="เช่น นพ.สมชาย ใจดี" onChange={e=>setName(e.target.value)}/></label>
-   <label>ตั้งแต่<input type="date" value={from} onChange={e=>setFrom(e.target.value)}/></label>
-   <label>ถึง<input type="date" value={to} onChange={e=>setTo(e.target.value)}/></label>
+   <label>ตั้งแต่<DatePicker value={from} onChange={setFrom}/></label>
+   <label>ถึง<DatePicker value={to} min={from} onChange={setTo}/></label>
    <label className="wide">เวลา<span className="timeRange"><input type="time" value={start} onChange={e=>setStart(e.target.value)}/>–<input type="time" value={end} onChange={e=>setEnd(e.target.value)}/></span></label>
-   <label>ช่วงละ<select value={minutes} onChange={e=>setMinutes(Number(e.target.value))}>{[10,15,20,30,60].map(m=><option key={m} value={m}>{m} นาที</option>)}</select></label>
+   <label>ช่วงละ<Select value={minutes} onChange={setMinutes} options={[10,15,20,30,60].map(m=>({value:m,label:`${m} นาที`}))}/></label>
    <label>นัดต่อช่วง<input type="number" min={1} max={100} value={capacity} onChange={e=>setCapacity(Math.max(1,Math.min(100,Number(e.target.value)||1)))}/></label>
-   <label className="wide">ห้องตรวจ<select value={room} onChange={e=>setRoom(e.target.value)}><option value="">ไม่ระบุ (ห้องที่ว่างของคลินิก)</option>{rooms.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select></label>
+   <label className="wide">ห้องตรวจ<Select value={room} onChange={setRoom} options={[{value:'',label:'ไม่ระบุ (ห้องที่ว่างของคลินิก)'},...rooms.map(r=>({value:r.id,label:r.name}))]}/></label>
   </div>
   <div className="segBtns">{weekdayNames.map((d,i)=><button key={i} className={days.includes(i)?'on':''} aria-pressed={days.includes(i)} onClick={()=>setDays(x=>x.includes(i)?x.filter(y=>y!==i):[...x,i].sort())}>{d}</button>)}
    <button className="btn" disabled={busy || !days.length || !code.trim() || !name.trim()} onClick={()=>void make()}><CalendarPlus size={15}/> {busy?'กำลังสร้าง…':'สร้างตาราง'}</button></div>
@@ -113,14 +115,14 @@ function SessionList({api,rev,clinics,say,roomOnly=false}:{api:Api; rev:number; 
  return <div className="slotList">
   {roomOnly ? <h4 className="setSub">ห้องตรวจของแพทย์ <small>ผู้ป่วยนัดรอที่ห้องของแพทย์ · แพทย์ย้ายห้อง: เปลี่ยนที่นี่ ผู้ป่วยที่รออยู่ย้ายตามไปด้วย</small></h4>
    : <h4 className="setSub">ตารางแพทย์ของวัน <small>ปิดรับ = ไม่รับนัดเพิ่ม · ยกเลิก = แพทย์ไม่ออกตรวจ นัดทั้งหมดในตารางถูกยกเลิกพร้อมเหตุผล · ห้องตรวจ: ผู้ป่วยนัดรอที่ห้องนี้</small></h4>}
-  <div className="slotListHead"><select value={clinic} onChange={e=>setClinic(e.target.value)}>{clinics.map(c=><option key={c.key} value={c.key}>{clinicName(c)}</option>)}</select>
-   <input type="date" value={date} onChange={e=>setDate(e.target.value)}/><span className="muted">{dayOf(date)}</span></div>
+  <div className="slotListHead"><Select value={clinic} onChange={setClinic} aria-label="คลินิก" className="selFilter" options={clinics.map(c=>({value:c.key,label:clinicName(c),sub:`ชั้น ${c.level}`}))}/>
+   <DatePicker value={date} onChange={setDate} aria-label="วันที่" className="dpFilter"/></div>
   {list.length ? <div className="tableWrap"><table className="dataTable compact"><thead><tr><th>แพทย์</th><th>เวลา</th><th>ห้องตรวจ</th><th className="num">นัดแล้ว</th>{!roomOnly && <th className="num">รับได้</th>}<th>สถานะ</th>{!roomOnly && <th/>}</tr></thead>
    <tbody>{list.map(s=><tr key={s.id} className={s.status!=='OPEN'?'muted':''}><td><b>{s.providerName}</b> <small className="muted">{s.providerCode}</small></td>
     <td>{timeOf(s.startsAt)}–{timeOf(s.endsAt)}</td>
-    <td>{s.status==='CANCELLED' ? roomLabel(s.roomId) || '—' : <select className="roomPick" aria-label={`ห้องตรวจของ ${s.providerName}`} value={s.roomId ?? ''}
-     onChange={e=>void set(s,{roomId:e.target.value},e.target.value?`${s.providerName} ตรวจที่${roomLabel(e.target.value)}`:`${s.providerName} ไม่ระบุห้อง`)}>
-     <option value="">ไม่ระบุ</option>{rooms.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select>}</td>
+    <td>{s.status==='CANCELLED' ? roomLabel(s.roomId) || '—' : <Select size="sm" className="roomPick" aria-label={`ห้องตรวจของ ${s.providerName}`} value={s.roomId ?? ''}
+     onChange={v=>void set(s,{roomId:v},v?`${s.providerName} ตรวจที่${roomLabel(v)}`:`${s.providerName} ไม่ระบุห้อง`)}
+     options={[{value:'',label:'ไม่ระบุ'},...rooms.map(r=>({value:r.id,label:r.name}))]}/>}</td>
     <td className="num">{s.reserved}</td>{!roomOnly && <td className="num">{s.capacity}</td>}<td>{s.status==='OPEN'?'เปิด':s.status==='CLOSED'?'ปิดรับ':'ยกเลิก'}</td>
     {!roomOnly && <td className="slotActs">{s.status==='OPEN' && <button className="btn ghost sm" onClick={()=>void set(s,{status:'CLOSED'},`ปิดรับนัด ${s.providerName} แล้ว`)}>ปิดรับ</button>}
      {s.status==='CLOSED' && <button className="btn ghost sm" onClick={()=>void set(s,{status:'OPEN'},`เปิดรับนัด ${s.providerName} แล้ว`)}>เปิดรับ</button>}
@@ -184,8 +186,8 @@ export function ApptTab({api,rev,user,features}:{api:Api; rev:number; user?:Auth
   {!on && <p className="serviceNote">ระบบนัดแพทย์ยังปิดอยู่ · ผู้ดูแลระบบเปิดได้ที่ ตั้งค่า → นัดแพทย์ (ดูรายการเดิมได้ตามปกติ)</p>}
   <div className="bookBar">
    <button className="btn" disabled={!on || !open.length} onClick={()=>setPicker({mode:'new'})}><CalendarPlus size={15}/> นัดผู้ป่วย</button>
-   <label className="bookDate"><CalendarClock size={15}/><input type="date" value={date} onChange={e=>{ setDate(e.target.value); setFound(null); }}/><span>{dayOf(date)}</span></label>
-   <select value={clinic} onChange={e=>setClinic(e.target.value)}><option value="">ทุกคลินิก</option>{clinics.filter(c=>policies.some(p=>p.clinicCode===c.key)).map(c=><option key={c.key} value={c.key}>{clinicName(c)}</option>)}</select>
+   <DatePicker value={date} onChange={d=>{ setDate(d); setFound(null); }} aria-label="วันที่" className="dpFilter"/>
+   <Select value={clinic} onChange={setClinic} aria-label="คลินิก" className="selFilter" options={[{value:'',label:'ทุกคลินิก'},...clinics.filter(c=>policies.some(p=>p.clinicCode===c.key)).map(c=>({value:c.key,label:clinicName(c),sub:`ชั้น ${c.level}`}))]}/>
    <form className="bookFind" onSubmit={e=>{ e.preventDefault(); void search(); }}><Search size={14}/><input value={find} onChange={e=>setFind(e.target.value)} placeholder="รหัสนัด (AP…) หรือ HN"/>
     {found && <button type="button" className="iconBtn" aria-label="ล้างการค้นหา" onClick={()=>{ setFind(''); setFound(null); }}><X size={14}/></button>}</form>
    <button className="iconBtn" aria-label="โหลดใหม่" onClick={()=>void load()}><RefreshCw size={15}/></button>
@@ -279,8 +281,8 @@ function ApptPicker({api,clinics,policies,move,onClose,onDone}:{api:Api; clinics
     {!move && <div className="visitRow"><span>คลินิก</span><div className="visitClinics">{clinics.map(c=><button key={c.key} className={c.key===clinic?'on':''} aria-pressed={c.key===clinic} onClick={()=>setClinic(c.key)}>
      <b>{c.letter}</b><span>{c.dept}</span><small>ชั้น {c.level}</small></button>)}</div></div>}
     <div className="visitRow"><span>วันที่ <small className="muted">(นัดล่วงหน้าได้ {p?.advanceDays ?? 90} วัน)</small></span>
-     <span className="apptDate"><input type="date" value={date} min={today()} max={addDays(today(),p?.advanceDays ?? 90)} onChange={e=>setDate(e.target.value)}/>
-      <span>{dayOf(date)}</span><button className="btn ghost sm" disabled={!prevDay} onClick={()=>prevDay && setDate(prevDay)}>‹ วันว่างก่อนหน้า</button><button className="btn ghost sm" disabled={!nextDay} onClick={()=>nextDay && setDate(nextDay)}>วันว่างถัดไป ›</button></span></div>
+     <span className="apptDate"><DatePicker value={date} min={today()} max={addDays(today(),p?.advanceDays ?? 90)} onChange={setDate} aria-label="วันนัด" className="dpFilter"/>
+      <button className="btn ghost sm" disabled={!prevDay} onClick={()=>prevDay && setDate(prevDay)}>‹ วันว่างก่อนหน้า</button><button className="btn ghost sm" disabled={!nextDay} onClick={()=>nextDay && setDate(nextDay)}>วันว่างถัดไป ›</button></span></div>
     <div className="visitRow"><span>แพทย์และเวลา</span>
      {slots===null ? <p className="cmdNote">กำลังโหลด…</p> : byDoctor.length ? byDoctor.map(([doc,list])=><div key={doc} className="apptDoc"><b>{doc}</b>
       <div className="segBtns">{list.map(s=>{ const current = !!move && s.startsAt===move.startsAt && s.providerName===move.providerName;

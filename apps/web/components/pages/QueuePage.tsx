@@ -15,6 +15,7 @@ import { DEFAULT_POLICY, SYSTEM_BY, actionText, openReports, groupName, moveNote
 import { DEFAULT_HOURS, buildings, floorRooms, layoutRevision, waitingSeats, deptArea } from '../../lib/scene-data';
 import FloorPlanSvg from '../FloorPlanSvg';
 import type { FloorUnit, SceneMode } from '../HospitalScene';
+import { Select } from '../Select';
 const FloorScene = dynamic(()=>import('../HospitalScene').then(m=>m.FloorScene),{ssr:false,loading:()=><div className="loading">กำลังโหลดผัง…</div>});
 
 type Tab = 'station'|'overview'|'er'|'booking'|'appts'|'line';
@@ -783,8 +784,8 @@ function OverviewTab({patients,m,onOpen,queue,assist,onOpenSettings,onOpenPlace}
    <button className={'linkBtn dark'+(more?' on':'')} onClick={()=>setMore(o=>!o)}>{more?<ChevronDown size={14}/>:<ChevronRight size={14}/>} ปรับมุมมอง</button>
   </div>
   {more && <div className="ovMore">
-   <label>จัดกลุ่มตาม <select value={g1} onChange={e=>setG1(e.target.value as GroupKey)}>{groupKeys.map(([k,l])=><option key={k} value={k}>{l}</option>)}</select></label>
-   <label>แล้วแบ่งย่อยตาม <select value={g2} onChange={e=>setG2(e.target.value as GroupKey|'')}><option value="">— ไม่แบ่งย่อย —</option>{groupKeys.filter(([k])=>k!==g1).map(([k,l])=><option key={k} value={k}>{l}</option>)}</select></label>
+   <label>จัดกลุ่มตาม <Select size="sm" value={g1} onChange={v=>setG1(v as GroupKey)} options={groupKeys.map(([k,l])=>({value:k as string,label:l}))}/></label>
+   <label>แล้วแบ่งย่อยตาม <Select size="sm" value={g2 as string} onChange={v=>setG2(v as GroupKey|'')} options={[{value:'',label:'— ไม่แบ่งย่อย —'},...groupKeys.filter(([k])=>k!==g1).map(([k,l])=>({value:k as string,label:l}))]}/></label>
    <span className="viewsBar"><span>มุมมองที่บันทึก</span>
     {views.map(v=><span key={v.name} className="viewChip"><button onClick={()=>{ setG1(v.g1); setG2(v.g2); setFilter(v.filter); setQ(v.q); }}>{v.name}</button>
      <button aria-label={`ลบ ${v.name}`} onClick={()=>saveViews(views.filter(x=>x.name!==v.name))}><X size={12}/></button></span>)}
@@ -853,7 +854,7 @@ function OverviewMap({floor,onFloor,focusKey,patients,minute,assist,patient,foll
  const sel = patient ? patients.find(p=>p.id===patient) : undefined, st = sel ? patientAt(sel,m) : undefined;
  return <div className="ovMap">
   <div className="ovMapHead">
-   <select value={floor} onChange={e=>onFloor(e.target.value)} aria-label="เลือกชั้น">{floors.map(f=><option key={f} value={f}>{floorName(allStations().find(x=>floorKey(x)===f)!)}</option>)}</select>
+   <Select size="sm" value={floor} onChange={onFloor} aria-label="เลือกชั้น" className="selFilter" options={floors.map(f=>({value:f,label:floorName(allStations().find(x=>floorKey(x)===f)!)}))}/>
    <div className="viewSwitch inline">{(['2d','3d'] as const).map(x=><button key={x} className={mode===x?'active':''} onClick={()=>setMode(x)}>{x.toUpperCase()}</button>)}</div>
    {fc && fc.level===level && buildingId==='opd' && <button className="chip" onClick={()=>setWhole(w=>!w)}>{whole?`ซูม ${fc.dept}`:'ดูทั้งชั้น'}</button>}
    <button className="linkBtn dark" onClick={()=>onOpenPlace(buildingId,level)}>เปิดแผนที่เต็ม</button>

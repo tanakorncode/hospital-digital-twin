@@ -1,8 +1,8 @@
 'use client';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Archive, BellRing, Smile, Building2, CalendarClock, Clock, Database, MessageCircle, Navigation, ScrollText, Stethoscope, FlaskConical, History, KeyRound, Layers, Minus, Plus, RotateCcw, Search, Sparkles, Trash2, UserCog, X, type LucideIcon } from 'lucide-react';
+import { Archive, BellRing, Pencil, Smile, Building2, CalendarClock, Clock, Database, MessageCircle, Navigation, ScrollText, Stethoscope, FlaskConical, History, KeyRound, Layers, Minus, Plus, RotateCcw, Search, Sparkles, Trash2, UserCog, X, type LucideIcon } from 'lucide-react';
 import { fmtMin, opdClinics, screeningCounters, screeningStationId, type Clinic } from '../../lib/patients';
-import { CLINIC_FLOORS, DEFAULT_HOURS, buildingStats, builtInDeptCount, buildings, roomsPerFloor, type CustomDept } from '../../lib/scene-data';
+import { CLINIC_FLOORS, DEFAULT_HOURS, buildingStats, builtInDeptCount, builtInDeptName, buildings, roomsPerFloor, type CustomDept } from '../../lib/scene-data';
 import { BookingAdminPane } from './Booking';
 import { ApptAdminPane } from './Appointments';
 import { NotificationsPane } from './Notifications';
@@ -12,6 +12,7 @@ import { LineOaPane } from './LineOaPane';
 import { RetentionPane } from './RetentionPane';
 import { ReceptionAdminPane } from './ReceptionAdmin';
 import { DEFAULT_RULES, canDo, isLive, roleText, type AuthUser, type QueueSync, type Role, type UserInput, counterServices, everyStation, modeText, queueGroups, rulesFor, scopeName, type AssistMode, type QueueEvent, type QueueGroup, type QueueRules, type QueueSettings, type SettingsPatch } from '../../lib/queue';
+import { Select } from '../Select';
 
 // Settings, one topic at a time (left menu). Rules read as sentences with − / + steppers; several changes are saved
 // together from a bar at the bottom. Hospital defaults, per-department overrides and the test clock are separate
@@ -141,9 +142,9 @@ function HoursPane({settings,commit}:{settings:QueueSettings;commit:Commit}) {
  return <section className="setCard">
   <PaneHead icon="hours" title="เวลาให้บริการผู้ป่วยนอก (OPD)" scope="ทุกหน้าจอ">ใช้สร้างตารางเวรแพทย์และการมาถึงของผู้ป่วยในตัวจำลอง · ห้องฉุกเฉินเปิด 24 ชั่วโมงเสมอ</PaneHead>
   <div className="hoursPick">
-   <label><span>เปิดช่องบริการ</span><select value={d.opdOpen} onChange={e=>{ const v = Number(e.target.value); setD(x=>({opdOpen:v,opdClose:Math.max(x.opdClose,v+4)})); }}>{Array.from({length:8},(_,i)=>5+i).map(h=><option key={h} value={h}>{hh(h)}</option>)}</select></label>
+   <label><span>เปิดช่องบริการ</span><Select size="lg" value={d.opdOpen} onChange={v=>setD(x=>({opdOpen:v,opdClose:Math.max(x.opdClose,v+4)}))} aria-label="เปิดช่องบริการ" options={Array.from({length:8},(_,i)=>5+i).map(h=>({value:h,label:hh(h)}))}/></label>
    <span className="hoursArrow">→</span>
-   <label><span>รับผู้ป่วยใหม่ถึง</span><select value={d.opdClose} onChange={e=>setD(x=>({...x,opdClose:Number(e.target.value)}))}>{Array.from({length:22-(d.opdOpen+4)+1},(_,i)=>d.opdOpen+4+i).map(h=><option key={h} value={h}>{hh(h)}</option>)}</select></label>
+   <label><span>รับผู้ป่วยใหม่ถึง</span><Select size="lg" value={d.opdClose} onChange={v=>setD(x=>({...x,opdClose:v}))} aria-label="รับผู้ป่วยใหม่ถึง" options={Array.from({length:22-(d.opdOpen+4)+1},(_,i)=>d.opdOpen+4+i).map(h=>({value:h,label:hh(h)}))}/></label>
   </div>
   <div className="dayBar">{Array.from({length:24},(_,h)=><i key={h} className={kind(h)} title={hh(h)}>{h%3===0 && <small>{String(h).padStart(2,'0')}</small>}</i>)}</div>
   <div className="dayKey"><span><i className="early"/>คนเริ่มมารอ</span><span><i className="open"/>ช่องบริการเปิด</span><span><i className="doc"/>แพทย์ออกตรวจ</span><span><i className="lunch"/>พักกลางวัน</span><span><i className="eve"/>คลินิกนอกเวลา (บางห้อง)</span></div>
@@ -322,13 +323,20 @@ const sharedUnits = ():(UnitGroup & {where:string})[] => counterServices.map(({k
 type Filter = 'all'|'opd'|'shared'|'off';
 
 function UnitsPane({settings,commit}:{settings:QueueSettings;commit:Commit}) {
- const saved = useMemo(()=>({off:settings.layout?.off ?? [],depts:settings.layout?.depts ?? []}),[settings.layout]);
+ const saved = useMemo(()=>({off:settings.layout?.off ?? [],depts:settings.layout?.depts ?? [],names:settings.layout?.names ?? {},split:settings.layout?.split ?? {},
+  roomNames:settings.layout?.roomNames ?? {}}),[settings.layout]);
  const [off,setOff] = useState(()=>new Set(saved.off));
  const [depts,setDepts] = useState<CustomDept[]>(saved.depts);
+ // Edits (drafts until saved): a department's new name (by clinic key — built-in or added), exam rooms per department
+ // of a floor, and room names. Keys never change, so bookings / appointments / queues keep pointing at the same place.
+ const [rename,setRename] = useState<Record<string,string>>({});
+ const [split,setSplit] = useState<Record<string,number[]>>(saved.split);
+ const [roomNames,setRoomNames] = useState<Record<string,string>>(saved.roomNames);
+ const [editing,setEditing] = useState<string|null>(null);
  const [filter,setFilter] = useState<Filter>('all');
  const [adding,setAdding] = useState(false);
  const [note,setNote] = useState<{id:string;text:string}|null>(null);
- useEffect(()=>{ setOff(new Set(saved.off)); setDepts(saved.depts); },[saved]);
+ useEffect(()=>{ setOff(new Set(saved.off)); setDepts(saved.depts); setRename({}); setSplit(saved.split); setRoomNames(saved.roomNames); setEditing(null); },[saved]);
  useEffect(()=>{ if (!note) return; const t = setTimeout(()=>setNote(null),3500); return ()=>clearTimeout(t); },[note]);
  const clinics = opdClinics(), shared = sharedUnits();
  const label = new Map<string,string>([...everyStation().map(st=>[st.id,st.label] as [string,string]),...clinics.map(c=>[deptId(c.dept),`แผนก${c.dept}`] as [string,string])]);
@@ -339,17 +347,32 @@ function UnitsPane({settings,commit}:{settings:QueueSettings;commit:Commit}) {
  };
  // Draft vs saved.
  const turnedOff = [...off].filter(id=>!saved.off.includes(id)), turnedOn = saved.off.filter(id=>!off.has(id));
- const added = depts.filter(d=>!saved.depts.some(x=>x.name===d.name)), removed = saved.depts.filter(d=>!depts.some(x=>x.name===d.name));
- const changes = turnedOff.length+turnedOn.length+added.length+removed.length;
+ const same = (a:CustomDept, b:CustomDept) => a.name===b.name && a.level===b.level;
+ const added = depts.filter(d=>!saved.depts.some(x=>same(x,d))), removed = saved.depts.filter(d=>!depts.some(x=>same(x,d)));
+ // The name a department will have: the draft rename, else its saved name.
+ const nameOf = (c:Clinic) => rename[c.key] ?? c.dept;
+ const original = (c:Clinic) => c.custom ? undefined : builtInDeptName(c.level,c.deptIndex);
+ const renamed = clinics.filter(c=>rename[c.key]!==undefined && rename[c.key].trim()!==c.dept);
+ const splitChanged = JSON.stringify(split)!==JSON.stringify(saved.split), roomsRenamed = JSON.stringify(roomNames)!==JSON.stringify(saved.roomNames);
+ const changes = turnedOff.length+turnedOn.length+added.length+removed.length+renamed.length+(splitChanged?1:0)+(roomsRenamed?1:0);
+ const allNames = (except:Clinic) => [...clinics.filter(c=>c.key!==except.key && !removed.some(d=>d.name===c.dept)).map(nameOf),...added.map(d=>d.name)];
  const deptsChanged = added.length+removed.length>0;
  const save = () => {
-  // Switches that belonged to a removed department's counters would land on the next one: drop them.
-  const keep = [...off].filter(id=>!removed.some(d=>id===deptId(d.name) || id.startsWith(`screen:opd-${d.level}-`) && Number(id.split('-')[2]?.split(':')[0])>=builtInDeptCount(d.level)));
+  // Switches that belonged to a removed department's counters would land on the next one: drop them. A renamed
+  // department's switch follows its new name.
+  const moved = new Map(renamed.map(c=>[deptId(c.dept),deptId(rename[c.key].trim())]));
+  const keep = [...off].filter(id=>!removed.some(d=>id===deptId(d.name) || id.startsWith(`screen:opd-${d.level}-`) && Number(id.split('-')[2]?.split(':')[0])>=builtInDeptCount(d.level))).map(id=>moved.get(id) ?? id);
+  // Added departments are renamed in place; built-in ones by key (only while different from their original name).
+  const deptsOut = depts.map(d=>{ const c = clinics.find(x=>x.custom && x.dept===d.name && x.level===d.level); return c && rename[c.key]?.trim() ? {...d,name:rename[c.key].trim()} : d; });
+  const names:Record<string,string> = {};
+  clinics.filter(c=>!c.custom).forEach(c=>{ const n = (rename[c.key] ?? c.dept).trim(), o = original(c); if (n && n!==o) names[c.key] = n; });
+  const cleanRooms = Object.fromEntries(Object.entries(roomNames).filter(([,v])=>v.trim()));
   const name = (id:string) => label.get(id) ?? id;
   const text = [turnedOff.length && `ปิด ${turnedOff.map(name).join(', ')}`,turnedOn.length && `เปิด ${turnedOn.map(name).join(', ')}`,
-   added.length && `เพิ่มแผนก ${added.map(d=>`${d.name} (ชั้น ${d.level})`).join(', ')}`,removed.length && `ลบแผนก ${removed.map(d=>d.name).join(', ')}`].filter(Boolean).join(' · ');
-  void commit({layout:{off:keep,depts}},'system',text.length>290?text.slice(0,288)+'…':text,
-   deptsChanged ? 'แบ่งห้องตรวจใหม่และเริ่มวันจำลองใหม่แล้ว' : 'จุดที่ปิดไม่รับคิวใหม่ · ผู้ที่รออยู่จะถูกเรียกจากห้อง/ช่องอื่นในกลุ่มเดียวกัน');
+   added.length && `เพิ่มแผนก ${added.map(d=>`${d.name} (ชั้น ${d.level})`).join(', ')}`,removed.length && `ลบแผนก ${removed.map(d=>d.name).join(', ')}`,
+   renamed.length && `เปลี่ยนชื่อ ${renamed.map(c=>`${c.dept} → ${rename[c.key].trim()}`).join(', ')}`,splitChanged && 'แบ่งห้องตรวจใหม่',roomsRenamed && 'แก้ชื่อห้องตรวจ'].filter(Boolean).join(' · ');
+  void commit({layout:{off:keep,depts:deptsOut,names,split,roomNames:cleanRooms}},'system',text.length>290?text.slice(0,288)+'…':text,
+   deptsChanged || splitChanged ? 'แบ่งห้องตรวจใหม่และเริ่มวันจำลองใหม่แล้ว' : 'จุดที่ปิดไม่รับคิวใหม่ · ผู้ที่รออยู่จะถูกเรียกจากห้อง/ช่องอื่นในกลุ่มเดียวกัน');
  };
  // Totals for the summary strip (saved clinics + draft switches).
  const deptsOn = clinics.filter(c=>!off.has(deptId(c.dept))).length;
@@ -377,13 +400,19 @@ function UnitsPane({settings,commit}:{settings:QueueSettings;commit:Commit}) {
      return <div key={c.key} className={'uDeptRow'+(dOff?' off':'')+(gone?' gone':'')}>
       <div className="uDeptHead">
        <span className="uDeptLetter">{c.letter}</span>
-       <div className="uDeptName"><b>{c.dept}{c.custom && <em className="tagNew">เพิ่มเอง</em>}</b>
+       <div className="uDeptName"><b>{nameOf(c)}{c.custom && <em className="tagNew">เพิ่มเอง</em>}{rename[c.key]!==undefined && rename[c.key].trim()!==c.dept && <em className="tagNew">เปลี่ยนชื่อ</em>}</b>
         <small>{gone ? 'จะถูกลบเมื่อบันทึก' : dOff ? 'งดให้บริการ · ไม่รับผู้ป่วยใหม่ ไม่แสดงในหน้าคิวและจอทีวี' : clinicUnits(c).map(g=>`${g.title} ${onOf(g.units)}/${g.units.length}`).join(' · ')}</small></div>
-       {c.custom && !gone && <button className="iconBtn" title="ลบแผนก" aria-label={`ลบแผนก ${c.dept}`} onClick={()=>setDepts(x=>x.filter(d=>d.name!==c.dept))}><Trash2 size={16}/></button>}
+       {!gone && <button className={'iconBtn'+(editing===c.key?' on':'')} title="แก้ไขแผนกและห้องตรวจ" aria-label={`แก้ไข ${nameOf(c)}`} aria-expanded={editing===c.key} onClick={()=>setEditing(e=>e===c.key ? null : c.key)}><Pencil size={15}/></button>}
+       {c.custom && !gone && <button className="iconBtn danger" title="ลบแผนก" aria-label={`ลบแผนก ${c.dept}`} onClick={()=>setDepts(x=>x.filter(d=>d.name!==c.dept))}><Trash2 size={16}/></button>}
        {gone ? <button className="linkBtn dark" onClick={()=>setDepts(x=>[...x,saved.depts.find(d=>d.name===c.dept)!])}>ไม่ลบ</button>
         : <label className="switch" title={dOff?'เปิดแผนก':'ปิดแผนก'}><input type="checkbox" checked={!dOff} onChange={()=>toggle(deptId(c.dept))}/><span/><small>{dOff?'ปิด':'เปิด'}</small></label>}
       </div>
-      {!dOff && !gone && clinicUnits(c).map(g=><UnitChips key={g.key} group={g} off={off} onToggle={toggle} note={note?.id===g.key?note.text:undefined}/>)}
+      {editing===c.key && !gone && <DeptEditor c={c} name={nameOf(c)} original={original(c)} taken={allNames(c)} floorClinics={clinics.filter(x=>x.level===c.level)}
+       floorBusy={added.some(d=>d.level===c.level) || removed.some(d=>d.level===c.level)} split={split} roomNames={roomNames}
+       onName={n=>setRename(r=>({...r,[c.key]:n}))} onSplit={(level,counts)=>setSplit(x=>({...x,[`opd-${level}`]:counts}))} onRoomName={(id,n)=>setRoomNames(x=>({...x,[id]:n}))}
+       floors={CLINIC_FLOORS.filter(l=>l!==c.level && clinics.filter(x=>x.level===l).length+depts.filter(d=>d.level===l && !saved.depts.some(x=>same(x,d))).length<ROOMS_PER_FLOOR && depts.filter(d=>d.level===l).length<3)}
+       onMove={c.custom ? l=>{ setDepts(x=>x.map(d=>d.name===c.dept && d.level===c.level ? {...d,level:l} : d)); setEditing(null); } : undefined} onDone={()=>setEditing(null)}/>}
+      {!dOff && !gone && editing!==c.key && clinicUnits(c).map(g=><UnitChips key={g.key} group={g} off={off} onToggle={toggle} note={note?.id===g.key?note.text:undefined}/>)}
      </div>; })}
     {drafts.map(d=><div key={d.name} className="uDeptRow draft"><div className="uDeptHead"><span className="uDeptLetter"><Plus size={16}/></span>
      <div className="uDeptName"><b>{d.name}<em className="tagNew">ใหม่</em></b><small>ห้องตรวจและช่องซักประวัติจะแบ่งให้หลังบันทึก</small></div>
@@ -394,10 +423,46 @@ function UnitsPane({settings,commit}:{settings:QueueSettings;commit:Commit}) {
     {list.map(g=><div key={g.key} className="uDeptRow shared"><div className="uDeptHead"><div className="uDeptName"><b>{g.title}</b><small>{g.where} · เปิด {onOf(g.units)}/{g.units.length}</small></div></div>
      <UnitChips group={g} off={off} onToggle={toggle} note={note?.id===g.key?note.text:undefined} bare/></div>)}</div>; })()}
   {filter==='off' && !off.size && <p className="cmdEmpty">ทุกแผนกและทุกจุดบริการเปิดอยู่</p>}
-  <SaveBar count={changes} onCancel={()=>{ setOff(new Set(saved.off)); setDepts(saved.depts); }} onSave={save}
-   note={deptsChanged ? 'เพิ่ม/ลบแผนก: ห้องตรวจบนชั้นนั้นจะแบ่งใหม่ และตัวจำลองเริ่มวันใหม่ · คิวที่เรียก/ย้ายไว้วันนี้จะถูกล้าง'
+  <SaveBar count={changes} onCancel={()=>{ setOff(new Set(saved.off)); setDepts(saved.depts); setRename({}); setSplit(saved.split); setRoomNames(saved.roomNames); setEditing(null); }} onSave={save}
+   note={deptsChanged || splitChanged ? 'เพิ่ม/ลบแผนก หรือแบ่งห้องตรวจใหม่: ห้องตรวจบนชั้นนั้นจะแบ่งใหม่ และตัวจำลองเริ่มวันใหม่ · คิวที่เรียก/ย้ายไว้วันนี้จะถูกล้าง'
     : 'ผู้ที่รออยู่ที่จุดที่ปิดจะถูกเรียกจากห้อง/ช่องอื่นในกลุ่มเดียวกัน ไม่ต้องย้ายที่นั่ง'}/>
  </section>;
+}
+
+// Edit one OPD department: its name (built-in ones can go back to their original), how many of the floor's exam rooms
+// it has (taken from / given to the department with the most), each room's name, and — for an added department — its
+// floor. Drafts; the pane's save bar saves everything together.
+function DeptEditor({c,name,original,taken,floorClinics,floorBusy,split,roomNames,floors,onName,onSplit,onRoomName,onMove,onDone}:{c:Clinic; name:string; original?:string; taken:string[];
+ floorClinics:Clinic[]; floorBusy:boolean; split:Record<string,number[]>; roomNames:Record<string,string>; floors:number[]; onName:(n:string)=>void;
+ onSplit:(level:number,counts:number[])=>void; onRoomName:(id:string,n:string)=>void; onMove?:(level:number)=>void; onDone:()=>void}) {
+ const n = ROOMS_PER_FLOOR, m = floorClinics.length, i = floorClinics.findIndex(x=>x.key===c.key);
+ const s = split[`opd-${c.level}`], counts = s && s.length===m && s.reduce((a,x)=>a+x,0)===n ? s : roomShare(n,m);
+ const start = counts.slice(0,i).reduce((a,x)=>a+x,0), rooms = Array.from({length:counts[i]},(_,k)=>c.level*100+start+k+1);
+ const dup = !!name.trim() && taken.includes(name.trim()), empty = !name.trim();
+ // One more room comes from the department with the most (keeping at least one each); one fewer goes to the one with the fewest.
+ const change = (d:number) => { const next = [...counts], others = next.map((_,k)=>k).filter(k=>k!==i);
+  if (d>0) { const j = others.filter(k=>next[k]>1).sort((x,y)=>next[y]-next[x])[0]; if (j===undefined) return; next[j]--; next[i]++; }
+  else { if (next[i]<=1 || !others.length) return; const j = others.sort((x,y)=>next[x]-next[y])[0]; next[i]--; next[j]++; }
+  onSplit(c.level,next); };
+ return <div className="deptEdit">
+  <div className="deptEditGrid">
+   <label className="addField"><span>ชื่อแผนก</span><input value={name} maxLength={30} onChange={e=>onName(e.target.value)} aria-invalid={dup || empty}/>
+    {dup && <small className="unitNote">มีแผนกชื่อนี้แล้ว</small>}{empty && <small className="unitNote">ใส่ชื่อแผนก</small>}</label>
+   {original && name.trim()!==original && <button type="button" className="btn ghost sm deptReset" onClick={()=>onName(original)}><RotateCcw size={13}/> คืนชื่อเดิม ({original})</button>}
+   {onMove && floors.length>0 && <div className="addField"><span>ย้ายไปชั้น</span><div className="segBtns">{floors.map(l=><button key={l} type="button" onClick={()=>onMove(l)}>ชั้น {l}</button>)}</div>
+    <small className="muted">ย้ายชั้นแล้วรหัสคลินิกเปลี่ยน — กติกาการจอง/นัด ตารางแพทย์ และป้ายนำทางของแผนกนี้ต้องตั้งใหม่</small></div>}
+  </div>
+  <div className="addField"><span>ห้องตรวจของแผนกนี้ <small className="muted">ชั้น {c.level} มี {n} ห้อง แบ่งกัน {m} แผนก</small></span>
+   {floorBusy ? <p className="unitNote">มีการเพิ่ม/ลบแผนกบนชั้นนี้ที่ยังไม่บันทึก — บันทึกก่อน แล้วจึงแบ่งห้องใหม่</p> : <>
+    <div className="roomCount"><button type="button" className="iconBtn" aria-label="ลดห้องตรวจ" disabled={counts[i]<=1} onClick={()=>change(-1)}><Minus size={15}/></button>
+     <b>{counts[i]} ห้อง</b><button type="button" className="iconBtn" aria-label="เพิ่มห้องตรวจ" disabled={counts.every((x,k)=>k===i || x<=1)} onClick={()=>change(1)}><Plus size={15}/></button></div>
+    <div className="shareBar">{floorClinics.map((x,k)=><span key={x.key} className={k===i?'new':''} style={{flex:counts[k]}}><b>{x.key===c.key ? name || x.dept : x.dept}</b><small>{counts[k]} ห้อง</small></span>)}</div></>}
+   <div className="roomNames">{rooms.map(num=>{ const id = `opd-${num}`;
+    return <label key={id}><span>ห้อง {num}</span><input value={roomNames[id] ?? ''} maxLength={30} placeholder={`ห้องตรวจ ${num}`} onChange={e=>onRoomName(id,e.target.value)}/></label>; })}</div>
+   <small className="muted">ชื่อห้องใช้แสดงในหน้าคิว จอทีวี และตารางแพทย์ · ว่างไว้ = ชื่อเดิม · รหัสห้อง (opd-{c.level}xx) ไม่เปลี่ยน</small>
+  </div>
+  <div className="addActions"><button type="button" className="btn" onClick={onDone} disabled={dup || empty}>เสร็จ</button></div>
+ </div>;
 }
 
 function UnitChips({group,off,onToggle,note,bare}:{group:UnitGroup;off:Set<string>;onToggle:(id:string,g:UnitGroup)=>void;note?:string;bare?:boolean}) {

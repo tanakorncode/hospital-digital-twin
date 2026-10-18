@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import { BellRing, ChevronLeft, Clock, Keyboard, ListOrdered, MapPin, Navigation, Search, Users, Volume2, VolumeX } from 'lucide-react';
 import FloorPlanSvg from '../FloorPlanSvg';
-import { Avatar, type AvatarState } from './Avatar';
+import { AVATAR_NAME, Avatar, type AvatarState } from './Avatar';
 import { MyQueue, QueueBoard, QueueFeed } from './QueueViews';
 import type { Capabilities, KioskClient, PublicPlace, Reply, Turn } from '../../lib/reception/client';
 import { speak, speechAvailable, stopSpeaking } from '../../lib/reception/speech';
@@ -14,7 +14,7 @@ import { speak, speechAvailable, stopSpeaking } from '../../lib/reception/speech
 // welcome and the visitor's session ends, so the next person sees nothing of the previous one.
 type View = {kind:'menu'} | {kind:'reply'; reply:Reply} | {kind:'directory'} | {kind:'ask'} | {kind:'help'} | {kind:'queue'} | {kind:'myqueue'};
 const IDLE_SECONDS = 90, WARN_SECONDS = 15;
-const GREETING = 'สวัสดีค่ะ ยินดีต้อนรับ ต้องการให้ช่วยเรื่องใดคะ';
+const GREETING = `สวัสดีค่ะ ฉันชื่อ${AVATAR_NAME} ผู้ช่วยต้อนรับของโรงพยาบาล มีอะไรให้ช่วยไหมคะ`;
 const SUGGEST = ['ห้องยาอยู่ไหน','การเงินอยู่ไหน','เวลาทำการ','ทำบัตรผู้ป่วยใหม่','จอดรถที่ไหน'];
 
 export function ReceptionShell({client,caps}:{client:KioskClient; caps:Capabilities}) {
@@ -82,10 +82,10 @@ export function ReceptionShell({client,caps}:{client:KioskClient; caps:Capabilit
  };
 
  if (!active) return <main className="rcp idle" onClick={()=>void begin()}>
-  <Avatar state={busy?'thinking':'greeting'} label="ผู้ช่วยต้อนรับ"/>
+  <Avatar state={busy?'thinking':'greeting'}/>
   <div className="rcpWelcome">
-   <h1>สวัสดีค่ะ</h1>
-   <p>ค้นหาจุดบริการ · ขั้นตอนรับบริการ · เวลาทำการ · เรียกเจ้าหน้าที่</p>
+   <h1>สวัสดีค่ะ ยินดีต้อนรับ</h1>
+   <p>ฉันชื่อ<b>{AVATAR_NAME}</b> ผู้ช่วยต้อนรับดิจิทัล<br/>ค้นหาจุดบริการ · ขั้นตอนรับบริการ · เวลาทำการ · ข้อมูลคิว · เรียกเจ้าหน้าที่</p>
    <button className="rcpStart" disabled={busy}>{busy?'กำลังเริ่ม…':'แตะเพื่อเริ่มใช้งาน'}</button>
    {error && <p className="rcpError" role="alert">{error}</p>}
    <small>{caps.kiosk.name}{caps.kiosk.at ? ` · ${caps.kiosk.at.nameTh}` : ''} · ตู้นี้ไม่ใช้กล้อง ไม่บันทึกเสียงหรือข้อความที่พิมพ์</small>
@@ -95,7 +95,8 @@ export function ReceptionShell({client,caps}:{client:KioskClient; caps:Capabilit
  const queueOn = caps.capabilities.generalQueueInfo || caps.capabilities.myQueue;
  const page = <main className="rcp" onPointerDown={touch} onKeyDown={touch}>
   <aside className="rcpSide">
-   <Avatar state={avatar} label="ผู้ช่วยต้อนรับ"/>
+   <Avatar state={avatar}/>
+   <span className="rcpNameTag">{AVATAR_NAME} · ผู้ช่วยต้อนรับดิจิทัล</span>
    <p className="rcpCaption" aria-live="polite">{caption}</p>
    <div className="rcpSideActs">
     {caps.capabilities.speech && voice && <button className="rcpSmall" aria-pressed={sound} onClick={()=>{ if (sound) stopSpeaking(); setSound(s=>!s); }}>{sound?<Volume2 size={20}/>:<VolumeX size={20}/>} {sound?'เปิดเสียง':'ปิดเสียง'}</button>}

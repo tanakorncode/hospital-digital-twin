@@ -1,7 +1,11 @@
 'use client';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Check, Copy, KeyRound, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { Ban, Check, Copy, Download, KeyRound, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { ConfirmDialog, type Confirm } from './ConfirmDialog';
+import { directoryPlaces } from '../../lib/wayfinding';
 import type { QueueSync } from '../../lib/queue';
+import { Select } from '../Select';
+import { DatePicker } from '../DatePicker';
 
 // Settings → ตู้ต้อนรับ (administrators): the Digital Reception kiosks (/reception), what they may say, and how they are
 // used. Release A — no LLM: a kiosk answers only with what is approved here, places from QR นำทาง, and the OPD hours.
@@ -28,6 +32,7 @@ export function ReceptionAdminPane({api,on,setFeature}:{api:Api; on:boolean; set
  const [secret,setSecret] = useState<{name:string; credential:string}|null>(null);
  const [newKiosk,setNewKiosk] = useState({name:'',atCode:''});
  const [edit,setEdit] = useState<(typeof blank & {id?:string})|null>(null);
+ const [confirm,setConfirm] = useState<Confirm|null>(null);
  const say = (r:{ok:boolean; reason?:string}, ok:string) => setMsg(r.ok ? {text:ok} : {text:r.reason ?? 'บันทึกไม่สำเร็จ',bad:true});
  const load = useCallback(async ()=>{
   const [k,a,p,u] = await Promise.all([api<{ok:boolean; kiosks?:Kiosk[]; settings?:{queueInfo:boolean; myQueue:boolean}}>('reception:kiosks',{}),api<{ok:boolean; answers?:Answer[]}>('reception:answers',{}),
@@ -42,6 +47,9 @@ export function ReceptionAdminPane({api,on,setFeature}:{api:Api; on:boolean; set
   say(r,`ลงทะเบียน ${newKiosk.name} แล้ว`);
   if (r.ok && r.credential) { setSecret({name:newKiosk.name,credential:r.credential}); setNewKiosk({name:'',atCode:''}); void load(); }
  };
+ // The same import as Settings → QR นำทาง: every department / service point on the layout becomes a public place.
+ const importPlaces = async () => { const r = await api<{ok:boolean; reason?:string; added?:number}>('wayfinding:import',{list:directoryPlaces()});
+  say(r,`นำเข้าจุดหมาย ${r.added ?? 0} จุดแล้ว · แก้ชื่อ/จุดสังเกต/พิมพ์ป้าย QR ได้ที่ ตั้งค่า → QR นำทาง`); void load(); };
  const rotate = async (k:Kiosk) => { const r = await api<{ok:boolean; reason?:string; credential?:string}>('reception:kiosk:rotate',{id:k.id}); say(r,`ออกรหัสใหม่ให้ ${k.name} แล้ว — รหัสเดิมใช้ไม่ได้ทันที`); if (r.ok && r.credential) setSecret({name:k.name,credential:r.credential}); void load(); };
  const revoke = async (k:Kiosk) => { const r = await api('reception:kiosk:revoke',{id:k.id}); say(r,`ยกเลิก ${k.name} แล้ว — ตู้หยุดใช้งานทันที`); void load(); };
  const saveAnswer = async () => {
@@ -79,26 +87,34 @@ export function ReceptionAdminPane({api,on,setFeature}:{api:Api; on:boolean; set
   {secret && <div className="rcpSecret"><b>รหัสของ {secret.name}</b><code>{secret.credential}</code>
    <small>นำไปวางที่หน้าตั้งค่าของตู้ (<code>/reception</code>) · จะไม่แสดงอีก — ถ้าหาย ให้กด "ออกรหัสใหม่"</small>
    <span className="segBtns"><button onClick={()=>void navigator.clipboard?.writeText(secret.credential)}><Copy size={14}/> คัดลอก</button><button onClick={()=>setSecret(null)}><Check size={14}/> เก็บแล้ว</button></span></div>}
-  <div className="tableWrap"><table className="dataTable compact"><thead><tr><th>ตู้</th><th>ตั้งอยู่ที่</th><th>ใช้งานล่าสุด</th><th>สถานะ</th><th/></tr></thead>
+  {kiosks.length>0 && <div className="tableWrap"><table className="dataTable compact"><thead><tr><th>ตู้</th><th>ตั้งอยู่ที่</th><th>ใช้งานล่าสุด</th><th>สถานะ</th><th/></tr></thead>
    <tbody>{kiosks.map(k=><tr key={k.id} className={k.status==='REVOKED'?'muted':''}><td><b>{k.name}</b> <small className="muted">{k.id}</small></td><td>{placeName(k.atCode)}</td><td>{when(k.lastSeenAt)}</td>
     <td>{k.status==='ACTIVE'?'ใช้งาน':'ยกเลิกแล้ว'}</td>
-    <td className="slotActs">{k.status==='ACTIVE' && <><button className="btn ghost sm" onClick={()=>void rotate(k)}><KeyRound size={13}/> ออกรหัสใหม่</button><button className="linkBtn danger" onClick={()=>void revoke(k)}>ยกเลิกตู้</button></>}</td></tr>)}
-    <tr><td><input value={newKiosk.name} maxLength={60} placeholder="ชื่อตู้ เช่น ตู้ล็อบบี้ OPD ชั้น 1" onChange={e=>setNewKiosk({...newKiosk,name:e.target.value})}/></td>
-     <td><select value={newKiosk.atCode} onChange={e=>setNewKiosk({...newKiosk,atCode:e.target.value})}><option value="">จุดที่ตั้ง (เริ่มเส้นทางจากที่นี่)</option>{places.map(p=><option key={p.code} value={p.code}>{p.nameTh}</option>)}</select></td>
-     <td colSpan={3}><button className="btn sm" disabled={!newKiosk.name.trim()} onClick={()=>void addKiosk()}><Plus size={14}/> ลงทะเบียนตู้</button></td></tr></tbody></table></div>
-  {!places.length && <p className="cmdNote">ยังไม่มีจุดหมายนำทาง — เพิ่มที่ ตั้งค่า → QR นำทาง ก่อน เพื่อให้ตู้ตอบ "…อยู่ไหน" และบอกเส้นทางได้</p>}
+    <td>{k.status==='ACTIVE' && <span className="rowActs">
+     <button className="iconBtn" title="ออกรหัสใหม่" aria-label={`ออกรหัสใหม่ให้ ${k.name}`} onClick={()=>setConfirm({title:`ออกรหัสใหม่ให้ "${k.name}"?`,detail:k.id,action:'ออกรหัสใหม่',
+      facts:['รหัสเดิมใช้ไม่ได้ทันที — ตู้ที่เปิดอยู่จะกลับไปหน้าตั้งค่ารหัส','รหัสใหม่แสดงครั้งเดียว ให้คัดลอกไปวางที่ตู้'],run:()=>rotate(k)})}><KeyRound size={14}/></button>
+     <button className="iconBtn danger" title="ยกเลิกตู้" aria-label={`ยกเลิก ${k.name}`} onClick={()=>setConfirm({title:`ยกเลิก "${k.name}"?`,detail:k.id,action:'ยกเลิกตู้',danger:true,
+      facts:['ตู้หยุดใช้งานทันที ผู้ใช้ที่ตู้จะเห็นว่ายังไม่ได้ลงทะเบียน','ใช้กับตู้ที่หาย ย้ายเครื่อง หรือเลิกใช้ — กลับมาใช้รหัสเดิมไม่ได้ ต้องลงทะเบียนใหม่'],run:()=>revoke(k)})}><Ban size={14}/></button></span>}</td></tr>)}
+   </tbody></table></div>}
+  <form className="rcpEdit rcpNewKiosk" onSubmit={e=>{ e.preventDefault(); if (newKiosk.name.trim()) void addKiosk(); }}>
+   <label className="wide">ชื่อตู้<input value={newKiosk.name} maxLength={60} placeholder="เช่น ตู้ล็อบบี้ OPD ชั้น 1" onChange={e=>setNewKiosk({...newKiosk,name:e.target.value})}/></label>
+   <label>ตั้งอยู่ที่ (เส้นทางเริ่มจากจุดนี้)<Select value={newKiosk.atCode} onChange={v=>setNewKiosk({...newKiosk,atCode:v})} options={[{value:'',label:'ไม่ระบุ — เริ่มจากทางเข้าหลัก'},...places.map(p=>({value:p.code,label:p.nameTh,sub:p.code}))]}/></label>
+   <button className="btn" disabled={!newKiosk.name.trim()}><Plus size={16}/> ลงทะเบียนตู้</button>
+  </form>
+  {!places.length && <div className="rcpHint"><span>ยังไม่มีจุดหมายนำทาง — ตู้จะตอบ "…อยู่ไหน" และบอกเส้นทางได้เมื่อมีจุดหมาย</span>
+   <button className="btn ghost" onClick={()=>void importPlaces()}><Download size={15}/> นำเข้าจุดหมายจากผังแผนก</button></div>}
 
   <h4 className="setSub">คำตอบที่ตู้ใช้ได้ <small>ร่าง → อนุมัติ ตู้จึงใช้ · แก้คำตอบที่อนุมัติแล้ว = เป็นร่างใหม่ ต้องอนุมัติอีกครั้ง · คำถามทางการแพทย์และข้อมูลส่วนตัว ตู้ส่งต่อเจ้าหน้าที่เสมอ</small></h4>
   <div className="segBtns"><button onClick={()=>setEdit({...blank})}><Plus size={14}/> เพิ่มคำตอบ</button><button className="iconBtn" aria-label="โหลดใหม่" onClick={()=>void load()}><RefreshCw size={14}/></button></div>
   {edit && <div className="rcpEdit">
-   <label>หมวด<select value={edit.topic} onChange={e=>setEdit({...edit,topic:e.target.value as Topic})}>{(Object.keys(topicText) as Topic[]).map(t=><option key={t} value={t}>{topicText[t]}</option>)}</select></label>
-   <label className="wide">คำถาม/หัวข้อ (แสดงบนตู้)<input value={edit.questionTh} maxLength={120} placeholder="เช่น ทำบัตรผู้ป่วยใหม่ทำอย่างไร" onChange={e=>setEdit({...edit,questionTh:e.target.value})}/></label>
-   <label className="wide">คำค้น (คั่นด้วยจุลภาค)<input value={edit.keywords} placeholder="เช่น ทำบัตร,บัตรใหม่,ผู้ป่วยใหม่" onChange={e=>setEdit({...edit,keywords:e.target.value})}/></label>
+   <label>หมวด<Select value={edit.topic as string} onChange={v=>setEdit({...edit,topic:v as Topic})} options={(Object.keys(topicText) as Topic[]).map(t=>({value:t as string,label:topicText[t]}))}/></label>
+   <label className="span3">คำถาม/หัวข้อ (แสดงบนตู้)<input value={edit.questionTh} maxLength={120} placeholder="เช่น ทำบัตรผู้ป่วยใหม่ทำอย่างไร" onChange={e=>setEdit({...edit,questionTh:e.target.value})}/></label>
+   <label className="full">คำค้น (คั่นด้วยจุลภาค)<input value={edit.keywords} placeholder="เช่น ทำบัตร,บัตรใหม่,ผู้ป่วยใหม่" onChange={e=>setEdit({...edit,keywords:e.target.value})}/></label>
    <label className="full">คำตอบ (ตู้แสดงและอ่านตามนี้ทุกตัวอักษร)<textarea value={edit.answerTh} maxLength={600} rows={4} onChange={e=>setEdit({...edit,answerTh:e.target.value})}/></label>
    <label>หน่วยงานเจ้าของเนื้อหา<input value={edit.owner} maxLength={60} placeholder="เช่น งานเวชระเบียน" onChange={e=>setEdit({...edit,owner:e.target.value})}/></label>
-   <label>พาไปที่ (ไม่บังคับ)<select value={edit.destinationCode} onChange={e=>setEdit({...edit,destinationCode:e.target.value})}><option value="">—</option>{places.map(p=><option key={p.code} value={p.code}>{p.nameTh}</option>)}</select></label>
-   <label>มีผลตั้งแต่<input type="date" value={edit.effectiveFrom} onChange={e=>setEdit({...edit,effectiveFrom:e.target.value})}/></label>
-   <label>ถึง<input type="date" value={edit.effectiveUntil} onChange={e=>setEdit({...edit,effectiveUntil:e.target.value})}/></label>
+   <label>พาไปที่ (ไม่บังคับ)<Select value={edit.destinationCode} onChange={v=>setEdit({...edit,destinationCode:v})} options={[{value:'',label:'— ไม่พาไปที่ไหน'},...places.map(p=>({value:p.code,label:p.nameTh,sub:p.code}))]}/></label>
+   <label>มีผลตั้งแต่<DatePicker clearable placeholder="ไม่กำหนด" value={edit.effectiveFrom} onChange={v=>setEdit({...edit,effectiveFrom:v})}/></label>
+   <label>ถึง<DatePicker clearable placeholder="ไม่กำหนด" min={edit.effectiveFrom || undefined} value={edit.effectiveUntil} onChange={v=>setEdit({...edit,effectiveUntil:v})}/></label>
    <span className="segBtns full"><button className="on" onClick={()=>void saveAnswer()}>บันทึกเป็นร่าง</button><button onClick={()=>setEdit(null)}>ยกเลิก</button></span>
   </div>}
   {answers.length ? <div className="tableWrap"><table className="dataTable compact"><thead><tr><th>หมวด</th><th>คำถาม/หัวข้อ</th><th>คำตอบ</th><th>เจ้าของ</th><th>สถานะ</th><th/></tr></thead>
@@ -106,9 +122,10 @@ export function ReceptionAdminPane({api,on,setFeature}:{api:Api; on:boolean; set
     <td><small>{a.answerTh.length>90?`${a.answerTh.slice(0,90)}…`:a.answerTh}</small>{a.destinationCode && <small className="muted"> · พาไป {placeName(a.destinationCode)}</small>}</td><td>{a.owner}</td>
     <td>{a.status==='APPROVED' ? <span className="bookState s-CONFIRMED">อนุมัติ v{a.version}</span> : <span className="bookState s-CANCELLED">ร่าง v{a.version}</span>}
      {(a.effectiveFrom || a.effectiveUntil) && <small className="muted"> {a.effectiveFrom ?? '…'} – {a.effectiveUntil ?? '…'}</small>}</td>
-    <td className="slotActs">{a.status==='DRAFT' && <button className="btn sm" onClick={()=>void approve(a)}><Check size={13}/> อนุมัติ</button>}
-     <button className="btn ghost sm" onClick={()=>setEdit({id:a.id,topic:a.topic,questionTh:a.questionTh,keywords:a.keywords.join(','),answerTh:a.answerTh,owner:a.owner,destinationCode:a.destinationCode ?? '',effectiveFrom:a.effectiveFrom ?? '',effectiveUntil:a.effectiveUntil ?? ''})}>แก้ไข</button>
-     <button className="iconBtn" aria-label={`เลิกใช้ ${a.questionTh}`} onClick={()=>void retire(a)}><Trash2 size={14}/></button></td></tr>)}</tbody></table></div>
+    <td><span className="rowActs">{a.status==='DRAFT' && <button className="iconBtn ok" title="อนุมัติ — ตู้เริ่มใช้ทันที" aria-label={`อนุมัติ ${a.questionTh}`} onClick={()=>void approve(a)}><Check size={15}/></button>}
+     <button className="iconBtn" title="แก้ไข (กลับเป็นร่าง ต้องอนุมัติใหม่)" aria-label={`แก้ไข ${a.questionTh}`} onClick={()=>setEdit({id:a.id,topic:a.topic,questionTh:a.questionTh,keywords:a.keywords.join(','),answerTh:a.answerTh,owner:a.owner,destinationCode:a.destinationCode ?? '',effectiveFrom:a.effectiveFrom ?? '',effectiveUntil:a.effectiveUntil ?? ''})}><Pencil size={14}/></button>
+     <button className="iconBtn danger" title="เลิกใช้" aria-label={`เลิกใช้ ${a.questionTh}`} onClick={()=>setConfirm({title:`เลิกใช้คำตอบ "${a.questionTh}"?`,detail:`${topicText[a.topic]} · ${a.owner}`,action:'เลิกใช้คำตอบ',danger:true,
+      facts:['ตู้หยุดใช้คำตอบนี้ทันที','ต้องการแก้ข้อความแทน ให้ใช้ปุ่มแก้ไข (กลับเป็นร่าง แล้วอนุมัติใหม่)'],run:()=>retire(a)})}><Trash2 size={14}/></button></span></td></tr>)}</tbody></table></div>
    : <p className="cmdNote">ยังไม่มีคำตอบ — ระหว่างนี้ตู้ตอบได้เฉพาะ "…อยู่ไหน" จาก QR นำทาง และเวลาทำการ OPD จากการตั้งค่าคิว</p>}
 
   <h4 className="setSub">การใช้งาน 30 วัน <small>นับจำนวนครั้งเท่านั้น ไม่มีข้อความที่ผู้ใช้พิมพ์ · "ตอบไม่ได้" สูง = ควรเพิ่มคำตอบ ก่อนพิจารณา AI</small></h4>
@@ -120,5 +137,6 @@ export function ReceptionAdminPane({api,on,setFeature}:{api:Api; on:boolean; set
   </div>
   {totals.byIntent.length>0 && <div className="tableWrap"><table className="dataTable compact"><thead><tr><th>ประเภท</th><th className="num">ครั้ง</th></tr></thead>
    <tbody>{totals.byIntent.map(([i,n])=><tr key={i}><td>{intentText[i] ?? i}</td><td className="num">{n}</td></tr>)}</tbody></table></div>}
+ {confirm && <ConfirmDialog confirm={confirm} onClose={()=>setConfirm(null)}/>}
  </section>;
 }

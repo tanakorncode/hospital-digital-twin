@@ -5,6 +5,7 @@ import { DEFAULT_CAPACITY, capacityText, opdClinics, stepText, type Capacity, ty
 import { canDo, type AuthUser, type QueueSync } from '../../lib/queue';
 import { Phase2Report } from './Phase2Report';
 import { STAT_HOURS, STEP_ORDER, runScenario, summarize, toCsv, weekSummaries, type DaySummary } from '../../lib/ops';
+import { Select } from '../Select';
 
 // Sequential blue ramp (light → dark) for the heatmap; series colours for single / paired bars.
 const RAMP = ['#cde2fb','#9ec5f4','#6da7ec','#3987e5','#256abf','#184f95','#0d366b'];
@@ -107,7 +108,7 @@ function WhatIf({tt}:{tt:ReturnType<typeof useTooltip>}) {
     {CAP_KEYS.map(k=><div key={k} className={'capRow'+(cap[k]!==DEFAULT_CAPACITY[k]?' changed':'')}><span>{capacityText[k]}</span>
      <button aria-label={`ลด${capacityText[k]}`} onClick={()=>bump(k,-1)}><Minus size={14}/></button><b>{cap[k]}</b><button aria-label={`เพิ่ม${capacityText[k]}`} onClick={()=>bump(k,1)}><Plus size={14}/></button></div>)}
     <div className={'capRow'+(extra?' changed':'')}><span>เปิดห้องตรวจเพิ่ม (08–16 น.)
-     <select value={clinic} onChange={e=>setClinic(e.target.value)}>{clinics.map(c=><option key={c.key} value={c.key}>{c.dept} · ชั้น {c.level}</option>)}</select></span>
+     <Select size="sm" value={clinic} onChange={setClinic} aria-label="คลินิก" options={clinics.map(c=>({value:c.key,label:c.dept,sub:`ชั้น ${c.level}`}))}/></span>
      <button aria-label="ลดห้องตรวจ" onClick={()=>setExtra(extra-1)}><Minus size={14}/></button><b>+{extra}</b><button aria-label="เพิ่มห้องตรวจ" onClick={()=>setExtra(extra+1)}><Plus size={14}/></button></div>
    </div>
    <div className="whatIfResult">

@@ -84,10 +84,10 @@ export function Phase2Report({api,user,tip,hide}:{api:Api; user:AuthUser; tip:Ti
     {asTable ? <div className="tableWrap tall"><table className="dataTable compact"><thead><tr><th>วัน</th><th className="num">จอง</th><th className="num">นัด</th><th className="num">เช็กอิน</th></tr></thead>
      <tbody>{r.days.map(d=><tr key={d.day}><td>{dayLabel(d.day)}</td><td className="num">{d.bookingsMade}</td><td className="num">{d.appointmentsMade}</td><td className="num">{d.checkIns}</td></tr>)}</tbody></table></div>
     : <><div className="vizLegend"><span><i style={{background:SERIES.booking}}/>จอง</span><span><i style={{background:SERIES.appt}}/>นัด</span><small className="muted">สูงสุด {max} รายการ/วัน</small></div>
-     <div className="dayBars" role="img" aria-label="จำนวนการจองและนัดใหม่ต่อวัน">{r.days.map(d=><div key={d.day} className="dayBar" onMouseMove={e=>tip(e,<><b>{dayLabel(d.day)}</b><br/>จอง {d.bookingsMade} · นัด {d.appointmentsMade}<br/>เช็กอิน {d.checkIns}</>)} onMouseLeave={hide}>
-      <span className="dayStack">{d.appointmentsMade>0 && <i style={{height:`${d.appointmentsMade/max*100}%`,background:SERIES.appt}}/>}{d.bookingsMade>0 && <i style={{height:`${d.bookingsMade/max*100}%`,background:SERIES.booking}}/>}</span>
+     <div className="p2Days" role="img" aria-label="จำนวนการจองและนัดใหม่ต่อวัน">{r.days.map(d=><div key={d.day} className="p2Day" onMouseMove={e=>tip(e,<><b>{dayLabel(d.day)}</b><br/>จอง {d.bookingsMade} · นัด {d.appointmentsMade}<br/>เช็กอิน {d.checkIns}</>)} onMouseLeave={hide}>
+      <span className="p2Stack">{d.appointmentsMade>0 && <i style={{height:`${d.appointmentsMade/max*100}%`,background:SERIES.appt}}/>}{d.bookingsMade>0 && <i style={{height:`${d.bookingsMade/max*100}%`,background:SERIES.booking}}/>}</span>
      </div>)}</div>
-     <div className="dayAxis"><span>{dayLabel(r.from)}</span><span>{dayLabel(r.to)}</span></div></>}
+     <div className="p2Axis"><span>{dayLabel(r.from)}</span><span>{dayLabel(r.to)}</span></div></>}
    </section>
    <section className="panel">
     <div className="panelHead"><h3>รายคลินิก · ที่ถึงกำหนดในช่วงนี้</h3></div>

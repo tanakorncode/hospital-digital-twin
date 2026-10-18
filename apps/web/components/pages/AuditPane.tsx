@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import type { AuthUser, QueueSync } from '../../lib/queue';
+import { Select } from '../Select';
 
 // Settings → บันทึกการใช้งาน (administrators): who did what, to which record, and why — accounts, settings, switches,
 // bookings, appointments, check-ins, LINE links, look-ups by HN. Staff appear by name (from their account); patients only
@@ -34,7 +35,7 @@ export function AuditPane({api,listUsers}:{api:Api; listUsers:QueueSync['listUse
  const names = useMemo(()=>new Map(users.map(u=>[`user:${u.id}`,u.name])),[users]);
  const who = (e:Entry) => e.actorType==='staff' ? names.get(e.actorId ?? '') ?? e.actorId : e.actorType==='patient' ? 'ผู้ป่วย (LINE)' : e.actorType==='his' ? 'HIS' : 'ระบบ';
  return <section className="setCard">
-  <div className="slotListHead"><select value={group} onChange={e=>setGroup(e.target.value)} aria-label="ประเภท">{groups.map(([k,l])=><option key={k} value={k}>{l}</option>)}</select>
+  <div className="slotListHead"><Select value={group} onChange={setGroup} aria-label="ประเภท" className="selFilter" options={groups.map(([k,l])=>({value:k,label:l}))}/>
    <button className="iconBtn" aria-label="โหลดใหม่" onClick={()=>void load()}><RefreshCw size={15}/></button>
    <small className="muted">300 รายการล่าสุด · ผู้ป่วยแสดงเป็นรหัสอ้างอิง ไม่แสดง HN หรือบัญชี LINE</small></div>
   {entries.length ? <div className="tableWrap tall"><table className="dataTable compact"><thead><tr><th>เวลา</th><th>ผู้ทำ</th><th>การกระทำ</th><th>รายการ</th><th>เหตุผล / รายละเอียด</th></tr></thead>

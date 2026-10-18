@@ -15,7 +15,11 @@ type Mode = 'off' | 'suggest' | 'auto';
 type Rules = { mode: Mode; cap: number; stallMin: number; slowFactor: number; imbalance: number };
 // hours: OPD service hours (whole hours) the simulated day is built on · demoOffset: minutes every screen adds to the real clock (testing).
 // layout: departments added on the OPD clinic floors and departments / rooms / counters switched off (ids from the web app).
-export type Layout = { off?: string[]; depts?: { name: string; level: number }[] };
+// names: a new name for an OPD department, by its clinic key (opd-<floor>-<index>) — the key stays, so bookings,
+// appointments and queues that refer to the clinic are unaffected.
+// split: how many exam rooms each department of an OPD floor has (in department order, by floor 'opd-<floor>'), instead
+// of an even split · roomNames: a room's display name by its id (opd-205) — the id stays.
+export type Layout = { off?: string[]; depts?: { name: string; level: number }[]; names?: Record<string, string>; split?: Record<string, number[]>; roomNames?: Record<string, string> };
 // dataMode: 'demo' (default) — the simulated day; 'live' — only real patients taken in as visits (no simulation).
 export type DataMode = 'demo' | 'live';
 export type QueueSettings = { system: Rules; groups: Record<string, Partial<Rules>>; stations: Record<string, { cap?: number }>; hours?: { opdOpen: number; opdClose: number }; demoOffset?: number; layout?: Layout; dataMode?: DataMode; updatedAt?: string; updatedBy?: string };
@@ -122,15 +126,28 @@ export class QueueService {
         perFloor.set(d.level, (perFloor.get(d.level) ?? 0) + 1);
       }
       if ([...perFloor.values()].some((n) => n > 3)) return { ok: false, reason: 'ชั้นหนึ่งเพิ่มแผนกได้ไม่เกิน 3 แผนก' };
-      if (new Set(depts.map((d) => d.name.trim())).size !== depts.length) return { ok: false, reason: 'ชื่อแผนกซ้ำกัน' }; }
+      if (new Set(depts.map((d) => d.name.trim())).size !== depts.length) return { ok: false, reason: 'ชื่อแผนกซ้ำกัน' };
+      const names = p.layout.names ?? {};
+      if (typeof names !== 'object' || Array.isArray(names) || Object.keys(names).length > 40
+        || Object.entries(names).some(([k, v]) => !/^opd-[2-4]-\d{1,2}$/.test(k) || typeof v !== 'string' || !v.trim() || v.length > 30)) return { ok: false, reason: 'ชื่อแผนกที่แก้ไม่ถูกต้อง' };
+      if (new Set([...Object.values(names).map((v) => v.trim()), ...depts.map((d) => d.name.trim())]).size !== Object.keys(names).length + depts.length) return { ok: false, reason: 'ชื่อแผนกซ้ำกัน' };
+      const split = p.layout.split ?? {}, roomNames = p.layout.roomNames ?? {};
+      if (typeof split !== 'object' || Array.isArray(split) || Object.entries(split).some(([k, v]) => !/^opd-[2-4]$/.test(k) || !Array.isArray(v) || !v.length || v.length > 12 || v.some((n) => !Number.isInteger(n) || n < 1 || n > 20)))
+        return { ok: false, reason: 'การแบ่งห้องตรวจไม่ถูกต้อง' };
+      if (typeof roomNames !== 'object' || Array.isArray(roomNames) || Object.keys(roomNames).length > 80 || Object.entries(roomNames).some(([k, v]) => !/^opd-\d{3}$/.test(k) || typeof v !== 'string' || !v.trim() || v.length > 30))
+        return { ok: false, reason: 'ชื่อห้องตรวจไม่ถูกต้อง' }; }
     const next: QueueSettings = { system: { ...this.settings.system, ...(p.system ?? {}) }, groups: { ...this.settings.groups }, stations: { ...this.settings.stations }, hours: this.settings.hours, demoOffset: this.settings.demoOffset, layout: this.settings.layout, dataMode: this.settings.dataMode };
     // New service hours rebuild the simulated day, so today's queue actions no longer point at the same patients: start the log afresh.
     const hoursChanged = p.hours !== undefined && JSON.stringify(p.hours ?? null) !== JSON.stringify(this.settings.hours ?? null);
     if (p.hours !== undefined) { if (p.hours === null) delete next.hours; else next.hours = { opdOpen: p.hours.opdOpen, opdClose: p.hours.opdClose }; }
     if (p.demoOffset !== undefined) { if (p.demoOffset === null) delete next.demoOffset; else next.demoOffset = p.demoOffset; }
     // New departments re-share the floor's rooms and the patients between clinics: same reason to start afresh.
-    const deptsChanged = p.layout !== undefined && JSON.stringify(p.layout?.depts ?? []) !== JSON.stringify(this.settings.layout?.depts ?? []);
-    if (p.layout !== undefined) { if (p.layout === null) delete next.layout; else next.layout = { off: [...new Set(p.layout.off ?? [])], depts: (p.layout.depts ?? []).map((d) => ({ name: d.name.trim(), level: d.level })) }; }
+    // Rooms shared out differently also rebuild the simulated day (patients are assigned to rooms).
+    const deptsChanged = p.layout !== undefined && JSON.stringify([p.layout?.depts ?? [], p.layout?.split ?? {}]) !== JSON.stringify([this.settings.layout?.depts ?? [], this.settings.layout?.split ?? {}]);
+    if (p.layout !== undefined) { if (p.layout === null) delete next.layout; else next.layout = { off: [...new Set(p.layout.off ?? [])], depts: (p.layout.depts ?? []).map((d) => ({ name: d.name.trim(), level: d.level })),
+      ...(p.layout.names && Object.keys(p.layout.names).length ? { names: Object.fromEntries(Object.entries(p.layout.names).map(([k, v]) => [k, v.trim()])) } : {}),
+      ...(p.layout.split && Object.keys(p.layout.split).length ? { split: p.layout.split } : {}),
+      ...(p.layout.roomNames && Object.keys(p.layout.roomNames).length ? { roomNames: Object.fromEntries(Object.entries(p.layout.roomNames).map(([k, v]) => [k, v.trim()])) } : {}) }; }
     if (p.dataMode !== undefined) { if (p.dataMode === null || p.dataMode === 'demo') delete next.dataMode; else next.dataMode = p.dataMode; }
     // Real patients do not depend on the simulated day: their queue log is never cleared by a settings change.
     const reset = (hoursChanged || deptsChanged) && next.dataMode !== 'live';

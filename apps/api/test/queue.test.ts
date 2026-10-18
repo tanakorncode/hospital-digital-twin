@@ -74,3 +74,17 @@ test('invalid settings are refused', () => {
   assert.equal(bad({ layout: { off: [], depts: [{ name: 'A', level: 7 }] } }), false);
   assert.equal(bad({ layout: { off: [], depts: [{ name: 'A', level: 2 }, { name: 'A', level: 3 }] } }), false);
 });
+
+test('layout: departments renamed by clinic key, exam rooms shared out and named — kept; bad ones refused', () => {
+  const api = makeApi();
+  const set = (layout: object) => api.queue.setSettings({ patch: { layout }, at: 0, scope: 'system', summary: 'layout', by: 'test' });
+  const ok = set({ off: [], depts: [{ name: 'ผิวหนัง', level: 3 }], names: { 'opd-2-0': ' อายุรกรรม 1 ' }, split: { 'opd-2': [3, 2, 1] }, roomNames: { 'opd-201': 'ห้องตรวจ 1' } });
+  assert.equal(ok.ok, true);
+  assert.deepEqual(api.queue.getSettings().layout, { off: [], depts: [{ name: 'ผิวหนัง', level: 3 }], names: { 'opd-2-0': 'อายุรกรรม 1' }, split: { 'opd-2': [3, 2, 1] }, roomNames: { 'opd-201': 'ห้องตรวจ 1' } });
+  assert.equal(set({ off: [], names: { 'er-1-0': 'x' } }).ok, false, 'OPD clinic floors only');
+  assert.equal(set({ off: [], names: { 'opd-2-0': 'ผิวหนัง' }, depts: [{ name: 'ผิวหนัง', level: 3 }] }).ok, false, 'no two departments with one name');
+  assert.equal(set({ off: [], split: { 'opd-2': [0, 6] } }).ok, false, 'every department keeps a room');
+  assert.equal(set({ off: [], roomNames: { 'opd-201': 'x'.repeat(31) } }).ok, false);
+  assert.equal(set({ off: [] }).ok, true);
+  assert.deepEqual(api.queue.getSettings().layout, { off: [], depts: [] }, 'cleared');
+});

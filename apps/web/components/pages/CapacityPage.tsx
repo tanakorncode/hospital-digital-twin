@@ -5,6 +5,7 @@ import { AlertTriangle, OctagonAlert, Phone, Search } from 'lucide-react';
 import { CLEANING_MIN, fmtDur, fmtMin, maskHN, stepText, type Patient } from '../../lib/patients';
 import { capacityBoard, unitStateText, type CapFloor, type Unit } from '../../lib/ops';
 import type { FloorUnit } from '../HospitalScene';
+import { Select } from '../Select';
 
 // For staff coordinating across departments: which beds, exam rooms and stations are free right now,
 // building by building — the question that is usually answered by phoning around.
@@ -73,7 +74,7 @@ export default function CapacityPage({patients,minute,timeNote,onOpenPatient}:{p
    <h3><Search size={15}/> หาที่ว่าง</h3>
    <span className="coordContact"><Phone size={13}/> จัดสรรเตียง: ศูนย์ประสานงานเตียง · เบอร์ภายใน 3000 <small className="muted">(จำลอง)</small></span>
    <div className="segmented small">{findKinds.map(([k,l])=><button key={k} className={findKind===k?'active':''} onClick={()=>{ setFindKind(k); setFindDept(''); focusFind(k,''); }}>{l}</button>)}</div>
-   <select value={findDept} onChange={e=>{ setFindDept(e.target.value); focusFind(findKind,e.target.value); }} aria-label="แผนก"><option value="">ทุกแผนก</option>{deptsOfKind.map(d=><option key={d}>{d}</option>)}</select>
+   <Select size="sm" value={findDept} onChange={v=>{ setFindDept(v); focusFind(findKind,v); }} aria-label="แผนก" className="selFilter" options={[{value:'',label:'ทุกแผนก'},...deptsOfKind.map(d=>({value:d,label:d}))]}/>
    {/* One row per floor: how many are free there, then each free unit (click floor → open it, click unit → select it). */}
    <div className="foundBox">
     <p className="foundTotal">{found.length ? <>ว่างตอนนี้ <b>{found.length}</b> {kindNoun[findKind]}{findDept?` · ${findDept}`:''}</>
