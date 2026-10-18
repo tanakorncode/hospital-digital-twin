@@ -1410,6 +1410,8 @@ kbd{margin-left:6px;padding:1px 6px;border-radius:5px;background:#ffffff33;borde
 .cmdCard.span2 .fcChart{flex:1}
 .fcChart{position:relative;width:100%}
 .fcChart svg{display:block;overflow:visible}
+/* The drawing takes the box's size and never sets it (drawn on top, absolute): the box's height comes from the card. */
+.fcChart:not(.mini) svg{position:absolute;top:0;left:0}
 .fcChart .future{fill:#f5f3ff;opacity:.55}
 .fcChart .grid{stroke:#edf1f6;stroke-width:1}
 .fcChart .axis{font-size:11px;fill:#8a9bb0}
@@ -2903,8 +2905,12 @@ input.bare[type=search]::-webkit-search-cancel-button{display:none}
 .ovTile small{display:flex;align-items:center;gap:5px}
 .ovTile.ok{border-top-color:#16a34a}.ovTile.warn{border-top-color:#d97706}.ovTile.bad{border-top-color:#c92a2a}
 .ovTile.bad b{color:#c92a2a}
-.ovTop{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:12px;align-items:stretch}
-@media (max-width:1100px){.ovTop{grid-template-columns:minmax(0,1fr)}}
+.ovTop{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);grid-template-rows:360px;gap:12px}
+/* the same height every time: the chart fills its panel; a long "ต้องดูตอนนี้" list scrolls inside its own */
+.ovTop>.ovPanel{min-height:0}
+.ovTop .fcChart{flex:1;min-height:0!important}
+.ovTop .ovAttn{flex:1;min-height:0;overflow-y:auto}
+@media (max-width:1100px){.ovTop{grid-template-columns:minmax(0,1fr);grid-template-rows:auto}.ovTop .fcChart{flex:none;height:260px}.ovTop .ovAttn{flex:none;max-height:320px}}
 /* the rest flows into as many columns as fit, each panel its own height (no gaps under short ones) */
 .ovGrid{column-width:360px;column-gap:12px}
 .ovGrid>.ovPanel{break-inside:avoid;margin:0 0 12px;width:100%;box-sizing:border-box}
