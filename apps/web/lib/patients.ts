@@ -1,7 +1,7 @@
 // Simulated patient journeys for one day (demo). Real journeys would be assembled from events that
 // existing systems already record (kiosk ticket, queue call, vital signs, HIS orders, LIS, pharmacy,
 // cashier), so no extra data entry for doctors or nurses. No names: an opaque id, queue number and HN.
-import { bandIndex, buildings, builtInDeptCount, counterSpot, floorBands, floorRooms, floorY, isDoctorRoom, findRoom, isOff, kiosks, layoutRevision, parkingLots, roomOpenIntervals, roomSpot, waitingSpot,
+import { bandIndex, buildings, counterSpot, floorBands, floorRooms, floorY, isDoctorRoom, findRoom, isOff, kiosks, layoutRevision, parkingLots, roomOpenIntervals, roomSpot, waitingSpot,
   type Room, type Spot, getServiceHours, opdOpenMin } from './scene-data';
 import { buildingShort, erDepartment, facility, fBuildings, fDepartment, fDepartments, fFloor, fFloors, fGroup, fPoints, groupsForStep, groupsOf, pointFloor, pointLabel, pointsOf,
   onFacility, type FGroup, type FPoint } from './facility';
@@ -117,7 +117,7 @@ export const capacityText:Record<CapacityKey,string> = {registration:'ช่อ�
 
 // OPD clinics: the facility's clinic departments with at least one exam room. level / deptIndex: where the clinic's
 // patients wait (its first group's floor and band); buildingId: that building. letter: its queue letter.
-export type Clinic = {key:string; letter:string; buildingId:string; level:number; deptIndex:number; dept:string; rooms:Room[]; custom?:boolean};
+export type Clinic = {key:string; letter:string; buildingId:string; level:number; deptIndex:number; dept:string; rooms:Room[]};
 const examGroups = (deptId:string) => groupsOf(deptId).filter(g=>g.steps.includes('exam') && g.pointKind==='room');
 const screenGroups = (deptId:string) => groupsOf(deptId).filter(g=>g.steps.includes('screening'));
 // Screening counters of a clinic: its own number in the facility, moved by the what-if view's baseline change.
@@ -132,8 +132,7 @@ export function opdClinics():Clinic[] {
     const rooms = examGroups(d.id).flatMap(g=>pointsOf(g.id)).map(p=>findRoom(p.id)).filter((r):r is Room=>!!r);
     const home = fGroup(d.firstGroupId) ?? screenGroups(d.id)[0] ?? examGroups(d.id)[0], fl = fFloor(home?.floorId);
     if (!rooms.length || !fl) return [];
-    const custom = /^opd-\d-\d+$/.test(d.id) && Number(d.id.split('-')[2])>=builtInDeptCount(Number(d.id.split('-')[1]));
-    return [{key:d.id,letter:d.queuePrefix ?? '',buildingId:fl.buildingId,level:fl.level,deptIndex:Math.max(0,bandIndex(fl.buildingId,fl.level,d.id)),dept:d.name,rooms,custom}];
+    return [{key:d.id,letter:d.queuePrefix ?? '',buildingId:fl.buildingId,level:fl.level,deptIndex:Math.max(0,bandIndex(fl.buildingId,fl.level,d.id)),dept:d.name,rooms}];
   });
   clinicCache = {rev:layoutRevision(),list};
   return list;

@@ -2,7 +2,7 @@
 // (one exam room or counter) show. Used by the 3D screens on the map and by the /tv pages, so both always agree.
 // Queue numbers only — never names or HN — because these are shown in public.
 import { clinicOpen, opdClinics, patientAt, servicePlace, type Patient, type PatientState, type StepKind } from './patients';
-import { buildingShort, fDepartment, fGroup, fPoint } from './facility';
+import { buildingShort, fGroup, fPoint } from './facility';
 import { floorBands } from './scene-data';
 import { DEFAULT_POLICY, counterServices, pausedUntil, stationById, stationDoctor, stationQueue, type QueueEvent } from './queue';
 

@@ -450,6 +450,15 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
     if (body?.version !== undefined) { const data = this.facility.versionData(body.version); return data ? { ok: true, data } : { ok: false, code: 'RESOURCE_NOT_FOUND', reason: 'ไม่พบเวอร์ชันนี้' }; }
     return { ok: true, current: this.facility.version(), versions: this.facility.versions() };
   }
+  // What uses a department or a room / counter (ids), for the settings page.
+  @SubscribeMessage('facility:usage')
+  facilityUsage(@ConnectedSocket() client: Socket, @MessageBody() body: { ids?: unknown }) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (!may(me, 'admin')) return DENIED;
+    const ids = Array.isArray(body?.ids) ? body.ids.filter((x): x is string => typeof x === 'string').slice(0, 300) : [];
+    return { ok: true, usage: Object.fromEntries(ids.map((id) => [id, this.facility.usage(id)]).filter(([, u]) => (u as unknown[]).length)) };
+  }
   @SubscribeMessage('facility:rollback')
   facilityRollback(@ConnectedSocket() client: Socket, @MessageBody() body: { version?: unknown }) {
     const me = userOf(client);

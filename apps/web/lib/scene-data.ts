@@ -1,4 +1,4 @@
-import { facility, facilityRevision, fBuildings, fDepartment, fFloors, fGroup, fPoint, fPoints, floorAt, fGroups, isActive, onFacility, pointLabel, sampleFacility,
+import { facility, facilityRevision, fBuildings, fDepartment, fFloors, fGroup, fPoint, fPoints, floorAt, fGroups, isActive, onFacility, pointLabel,
   type FBuilding, type FPoint } from './facility';
 
 // The hospital as drawn and simulated comes from the facility model (lib/facility.ts) — buildings, floors, the
@@ -139,19 +139,9 @@ export const isOff = (id:string) => {
 // Bumps on every new facility: memoised lists of rooms / stations / clinics key on it.
 export const layoutRevision = () => facilityRevision();
 
-// ---- The old Settings "layout" (แผนกและจุดบริการ), until the facility settings page replaces it --------------------
-// The API re-makes the facility from it; here it is only what that page edits. Departments added on the OPD clinic
-// floors (2–4), renamed (by clinic key), exam rooms shared out ('opd-<floor>' → counts in department order), room names.
-export type CustomDept = {name:string; level:number};
-export type Layout = {off?:string[]; depts?:CustomDept[]; names?:Record<string,string>; split?:Record<string,number[]>; roomNames?:Record<string,string>};
-export const CLINIC_FLOORS = [2,3,4];
-let layoutDepts:CustomDept[] = [];
-export function setLayout(l?:Layout) { layoutDepts = [...(l?.depts ?? [])]; }
-export const customDepts = () => layoutDepts;
-// The sample hospital's own OPD departments (what the layout page counts from, and "คืนชื่อเดิม").
-const builtIn = (level:number) => sampleFacility().departments.filter(d=>d.id.startsWith(`opd-${level}-`));
-export const builtInDeptCount = (level:number) => builtIn(level).length;
-export const builtInDeptName = (level:number, index:number) => sampleFacility().departments.find(d=>d.id===`opd-${level}-${index}`)?.name;
+// The old Settings "layout" (departments added / renamed / rooms shared out / switched off) — still in the queue
+// settings of installations that used it; the API made the facility from it. Nothing reads it here any more.
+export type Layout = {off?:string[]; depts?:{name:string; level:number}[]; names?:Record<string,string>; split?:Record<string,number[]>; roomNames?:Record<string,string>};
 export const opdOpenMin = () => serviceHours.opdOpen*60, opdLastArrivalMin = () => serviceHours.opdClose*60;
 const dailyProfile:Record<BuildingKind,number[]> = {
   //            00   01   02   03   04   05   06   07   08   09   10   11   12   13   14   15   16   17   18   19   20   21   22   23
@@ -239,14 +229,12 @@ export const fmtHour = (h:number) => `${String(Math.floor(h)).padStart(2,'0')}:$
 
 // ---- Rooms --------------------------------------------------------------------------------------------------------
 // Rooms along the back wall of each floor: the room points of the facility on that floor, in band order, equal widths.
-// A room's id is how records name it: `opd-201` for the point `room:opd-201` (and building + room number for rooms
-// that are queue stations under another id, such as the x-ray rooms), else the point's own id.
+// A room's id is how records name it — the same rule as the API's roomRef: `opd-201` for the point `room:opd-201`,
+// else the point's own id (a room added in Settings, the x-ray rooms `counter:xray:1`).
 export type RoomKind = 'exam'|'scan'|'treatment'|'ward'|'office';
 export type Room = {id:string; buildingId:string; level:number; index:number; count:number; number:number; name:string; kind:RoomKind; dept:string; deptIndex:number; pointId:string};
-// The sample hospital's rule for how many rooms fit a floor (the old layout page still shares out that many).
-export const roomsPerFloor = (b:BuildingSpec) => Math.max(3,Math.round(b.width/2));
 const roomsByFloor = new Map<string,Room[]>(), roomById = new Map<string,Room>();
-const roomIdOf = (p:FPoint, buildingId:string) => p.id.startsWith('room:') ? p.id.slice(5) : p.roomCode ? `${buildingId}-${p.roomCode}` : p.id;
+const roomIdOf = (p:FPoint) => p.id.startsWith('room:') ? p.id.slice(5) : p.id;
 function rebuildRooms() {
   roomsByFloor.clear(); roomById.clear();
   for (const b of fBuildings()) for (const fl of fFloors(b.id)) {
@@ -258,7 +246,7 @@ function rebuildRooms() {
     const rooms = list.map(({p,g,band:deptIndex},k):Room=>{
       const number = /^\d+$/.test(p.roomCode ?? '') ? Number(p.roomCode) : p.number;
       const kind:RoomKind = p.roomKind==='lab' ? 'office' : p.roomKind ?? (g.steps.includes('exam') ? 'exam' : b.kind==='er' ? 'treatment' : b.kind==='inpatient' ? 'ward' : 'office');
-      return {id:roomIdOf(p,b.id),buildingId:b.id,level:fl.level,index:k,count:list.length,number,name:pointLabel(p),kind,dept:bands[deptIndex]?.name ?? '',deptIndex,pointId:p.id};
+      return {id:roomIdOf(p),buildingId:b.id,level:fl.level,index:k,count:list.length,number,name:pointLabel(p),kind,dept:bands[deptIndex]?.name ?? '',deptIndex,pointId:p.id};
     });
     roomsByFloor.set(`${b.id}:${fl.level}`,rooms);
     for (const r of rooms) { roomById.set(r.id,r); roomById.set(r.pointId,r); }

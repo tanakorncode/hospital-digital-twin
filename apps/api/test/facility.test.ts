@@ -104,6 +104,7 @@ test('administrators publish a draft: checked, versioned, audited and sent to ev
   assert.ok(sent.every((e) => (e.data as { version: number }).version === 2));
   assert.ok(api.audit.list().some((e) => e.action === 'facility.publish' && e.targetId === '2'));
   assert.deepEqual((api.gateway.facilityVersions(admin, {}) as R).versions!.map((v) => `${v.version}:${v.source}`), ['2:publish', '1:seed']);
+  assert.ok(((api.gateway.facilityVersions(admin, {}) as R).versions![0] as { publishedByName?: string }).publishedByName, 'the publisher by name');
   // Someone else published meanwhile: a draft made from version 1 must start again.
   assert.equal((api.gateway.facilityPublish(admin, { data: d, baseVersion: 1 }) as R).code, 'INVALID_STATE_TRANSITION');
   assert.equal((api.gateway.facilityPublish(admin, { data: data() }) as R).code, 'VALIDATION_ERROR', 'nothing to publish');
@@ -139,6 +140,11 @@ test('what still points at a department or a room: removing it is refused (retir
   api.gateway.setApptPolicy(admin, { clinicCode: 'opd-3-1', displayName: 'ออร์โธ', enabled: true, queuePrefix: 'E' });
   api.gateway.createApptSessions(admin, { clinicCode: 'opd-3-1', providerCode: 'D1', providerName: 'นพ.เอ', from: '2026-11-03', to: '2026-11-03', weekdays: [2], start: '13:00', end: '14:00', minutes: 30, capacity: 1, roomId: 'opd-303' });
 
+  // The settings page can show what uses them.
+  const usage = (api.gateway.facilityUsage(admin, { ids: ['opd-3-1', 'room:opd-303', 'room:opd-301'] }) as { usage: Record<string, { what: string; count: number }[]> }).usage;
+  assert.deepEqual(usage['opd-3-1'].map((u) => `${u.what}:${u.count}`), ['การจองล่วงหน้า:1', 'ตารางออกตรวจ:1']);
+  assert.deepEqual(usage['room:opd-303'].map((u) => u.what), ['ตารางออกตรวจที่ระบุห้องนี้']);
+  assert.equal(usage['room:opd-301'], undefined, 'nothing uses it');
   const removed = data();
   removed.departments = removed.departments.filter((x) => x.id !== 'opd-3-1');
   removed.groups = removed.groups.filter((g) => g.departmentId !== 'opd-3-1');

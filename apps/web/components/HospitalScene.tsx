@@ -7,7 +7,7 @@ import { screenData, type ScreenData } from '../lib/queue-screen';
 import { BedDouble, DoorOpen, FlaskConical, Plus, Settings, SquareParking, Ticket, type LucideIcon } from 'lucide-react';
 import { bandBeds, bandBooths, fmtMin, patientAt, statusColor as patientColor, stepText, wardBeds, type Patient, type PatientState, type StepKind } from '../lib/patients';
 import { REF_HOUR, entranceSpot, floorBands, isOff, layoutRevision, plazas, kioskY, kiosks, type KioskStatus, buildingDensityAt, doctorName, findRoom, floorDutyAt, floorRooms, type DutyStatus, buildings, buildingStats, demoFlows, densityColor, fillerBuildings, floorCountAt, floorDepartments, floorPresence, isRealMode, kindPresence, peakFloorCount, parkingLots, personTypes, roads, type BuildingKind, type PersonType, type BuildingSpec, type Department, type Rect } from '../lib/scene-data';
-import { buildingShort, facility, fGroup, groupsOf } from '../lib/facility';
+import { buildingShort, facility } from '../lib/facility';
 
 export type SceneMode = '2d'|'3d';
 export type SceneView = 'campus'|'building'|'floor'|'department';

@@ -10,7 +10,7 @@ import type { Layout, QueueSettings } from './queue.service';
 // and in memory (every lookup reads the index); administrators edit a draft, see its impact, and publish it as a new
 // version in one transaction. The first start makes version 1 from the sample hospital and the Settings layout.
 // Until the Settings page edits the model itself (F3), a layout change re-makes it — only while nobody has published.
-export type VersionInfo = { version: number; publishedAt: string; publishedBy: string; source: 'seed' | 'layout' | 'publish' | 'rollback'; note?: string; summary: ChangeSummary };
+export type VersionInfo = { version: number; publishedAt: string; publishedBy: string; publishedByName?: string; source: 'seed' | 'layout' | 'publish' | 'rollback'; note?: string; summary: ChangeSummary };
 // site: the ground around the buildings (roads, car parks, plazas, neighbouring blocks, walking routes) — changed or not.
 export type ChangeSummary = Record<'buildings' | 'floors' | 'departments' | 'groups' | 'points' | 'site', { added: number; changed: number; removed: number }>;
 export type Change = { kind: keyof ChangeSummary; id: string; name: string; change: 'added' | 'changed' | 'removed' | 'off' | 'on' | 'retired' };
@@ -112,8 +112,10 @@ export class FacilityService {
     return { facility: this.cur, impact };
   }
   versions(limit = 50): VersionInfo[] {
-    return (this.store.db.prepare('SELECT version, published_at, published_by, source, note, summary_json FROM facility_versions ORDER BY version DESC LIMIT ?').all(Math.min(200, Math.max(1, limit))) as Row[])
-      .map((r) => strip({ version: r.version as number, publishedAt: r.published_at as string, publishedBy: r.published_by as string, source: r.source as VersionInfo['source'],
+    // Who published it, by the account's name (the id stays in published_by).
+    return (this.store.db.prepare(`SELECT v.version, v.published_at, v.published_by, v.source, v.note, v.summary_json, u.name AS by_name FROM facility_versions v
+      LEFT JOIN users u ON v.published_by = 'user:' || u.id ORDER BY v.version DESC LIMIT ?`).all(Math.min(200, Math.max(1, limit))) as Row[])
+      .map((r) => strip({ version: r.version as number, publishedAt: r.published_at as string, publishedBy: r.published_by as string, publishedByName: opt(r.by_name as string | null), source: r.source as VersionInfo['source'],
         note: opt(r.note as string | null), summary: JSON.parse(r.summary_json as string) as ChangeSummary }));
   }
   versionData(version: unknown): FacilityData | undefined {
@@ -139,6 +141,28 @@ export class FacilityService {
     if (!changes.length) return false;
     this.store.tx(() => this.write(next, by, 'layout', 'ตามการตั้งค่าแผนกและจุดบริการ', summary));
     return true;
+  }
+
+  // What uses a department or a point now (for the settings page: why it can only be retired, what switching it off
+  // touches). Counts only, nothing about any patient.
+  usage(id: unknown): { what: string; count: number }[] {
+    if (typeof id !== 'string') return [];
+    const nowIso = this.now().toISOString(), day = localDay(this.now());
+    const count = (sql: string, ...args: (string | number)[]) => (this.store.db.prepare(sql).get(...args) as { n: number }).n;
+    const d = this.ix.department.get(id), p = this.ix.point.get(id);
+    const list: [string, number][] = d ? [
+      ['การจองล่วงหน้า', count(`SELECT COUNT(*) AS n FROM bookings b JOIN booking_slots s ON s.id = b.slot_id WHERE b.service_code = ? AND b.status = 'CONFIRMED' AND s.starts_at >= ?`, id, nowIso)],
+      ['นัดหมายล่วงหน้า', count(`SELECT COUNT(*) AS n FROM appointments a JOIN appointment_slots s ON s.id = a.slot_id WHERE a.clinic_code = ? AND a.status = 'CONFIRMED' AND s.starts_at >= ?`, id, nowIso)],
+      ['ตารางออกตรวจ', count(`SELECT COUNT(*) AS n FROM provider_schedules WHERE clinic_code = ? AND status = 'OPEN' AND ends_at >= ?`, id, nowIso)],
+      ['ผู้ป่วยในคิววันนี้', count(`SELECT COUNT(*) AS n FROM visits WHERE day = ? AND clinic_key = ? AND status = 'active'`, day, id)],
+      ['เจ้าหน้าที่ที่ดูแล', count('SELECT COUNT(*) AS n FROM user_clinics WHERE clinic_key = ?', id)],
+    ] : p ? [
+      ['ตารางออกตรวจที่ระบุห้องนี้', count(`SELECT COUNT(*) AS n FROM provider_schedules WHERE room_id IN (?, ?) AND status = 'OPEN' AND ends_at >= ?`, roomRef(p), p.id, nowIso)],
+      ['ผู้ป่วยวันนี้ที่รอห้องนี้', count(`SELECT COUNT(*) AS n FROM visits WHERE day = ? AND exam_room IN (?, ?) AND status = 'active'`, day, roomRef(p), p.id)],
+      ['การเรียกคิววันนี้', count(`SELECT COUNT(*) AS n FROM queue_events WHERE day = ? AND json_extract(body, '$.station') = ?`, day, p.id)],
+      ['ป้าย QR นำทาง', count(`SELECT COUNT(*) AS n FROM destinations WHERE room_id IN (?, ?) AND status = 'ACTIVE'`, roomRef(p), p.id)],
+    ] : [];
+    return list.filter(([, n]) => n > 0).map(([what, n]) => ({ what, count: n }));
   }
 
   // ---- Internals -----------------------------------------------------------------------------------------------------

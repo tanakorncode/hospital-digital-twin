@@ -54,7 +54,7 @@ for (const [what, layout] of LAYOUTS) test(`the facility model has the app's ids
 
   // Every room on every floor of every building, with its name.
   for (const b of buildings) for (const fl of buildingStats[b.id]?.floors ?? []) for (const r of floorRooms(b.id, fl.level)) {
-    const p = point.get(`room:${r.id}`) ?? f.points.find((x) => x.groupId === 'counter:xray' && x.roomCode === String(r.number));
+    const p = point.get(r.pointId);
     assert.ok(p, r.id);
     assert.equal(p.name || `${group.get(p.groupId)!.pointNoun} ${p.number}`, r.name, r.id);
     assert.equal(f.groups.find((g) => g.id === p.groupId)!.floorId, `${b.id}-${fl.level}`, r.id);
@@ -94,7 +94,7 @@ test('a published facility reaches the map, the queue and the simulator at once'
 
   assert.ok(buildings.some((b) => b.id === 'b_new'), 'the new building is on the map');
   assert.deepEqual(buildingStats.b_new.floors.map((x) => x.depts), [['คลินิกโรคไต']]);
-  assert.deepEqual(floorRooms('b_new', 1).map((r) => [r.id, r.name]), [['b_new-101', 'ห้องตรวจ 1'], ['b_new-102', 'ห้องตรวจ 2'], ['b_new-103', 'ห้องตรวจ 3']]);
+  assert.deepEqual(floorRooms('b_new', 1).map((r) => [r.id, r.name, r.number]), [['p_ke1', 'ห้องตรวจ 1', 101], ['p_ke2', 'ห้องตรวจ 2', 102], ['p_ke3', 'ห้องตรวจ 3', 103]], 'a new room goes by its point id, as the API names it');
   const kidney = opdClinics().find((c) => c.key === 'd_kidney')!;
   assert.equal(kidney.letter, 'K');
   assert.equal(kidney.buildingId, 'b_new');

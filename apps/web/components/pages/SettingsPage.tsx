@@ -1,9 +1,9 @@
 'use client';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Archive, BellRing, Pencil, Smile, Building2, CalendarClock, Clock, Database, MessageCircle, Navigation, ScrollText, Stethoscope, FlaskConical, History, KeyRound, Layers, Minus, Plus, RotateCcw, Search, Sparkles, Trash2, UserCog, X, type LucideIcon } from 'lucide-react';
-import { fmtMin, opdClinics, screeningCounters, screeningStationId, type Clinic } from '../../lib/patients';
-import { CLINIC_FLOORS, DEFAULT_HOURS, buildingStats, builtInDeptCount, builtInDeptName, buildings, roomsPerFloor, type CustomDept } from '../../lib/scene-data';
-import { buildingShort, erDepartment, fDepartment, fGroup, sampleFacility } from '../../lib/facility';
+import { Archive, BellRing, Smile, Building2, CalendarClock, Clock, Database, MessageCircle, Navigation, ScrollText, Stethoscope, FlaskConical, History, KeyRound, Layers, Minus, Plus, RotateCcw, Search, Sparkles, UserCog, type LucideIcon } from 'lucide-react';
+import { fmtMin, opdClinics } from '../../lib/patients';
+import { DEFAULT_HOURS } from '../../lib/scene-data';
+import { buildingShort, erDepartment, fDepartment, fGroup } from '../../lib/facility';
 import { BookingAdminPane } from './Booking';
 import { ApptAdminPane } from './Appointments';
 import { NotificationsPane } from './Notifications';
@@ -12,7 +12,8 @@ import { AuditPane } from './AuditPane';
 import { LineOaPane } from './LineOaPane';
 import { RetentionPane } from './RetentionPane';
 import { ReceptionAdminPane } from './ReceptionAdmin';
-import { DEFAULT_RULES, canDo, isLive, roleText, type AuthUser, type QueueSync, type Role, type UserInput, counterServices, everyStation, modeText, queueGroups, rulesFor, scopeName, type AssistMode, type QueueEvent, type QueueGroup, type QueueRules, type QueueSettings, type SettingsPatch } from '../../lib/queue';
+import { FacilityPane } from './FacilityPane';
+import { DEFAULT_RULES, canDo, isLive, roleText, type AuthUser, type QueueSync, type Role, type UserInput, modeText, queueGroups, rulesFor, scopeName, type AssistMode, type QueueEvent, type QueueGroup, type QueueRules, type QueueSettings, type SettingsPatch } from '../../lib/queue';
 import { Select } from '../Select';
 
 // Settings, one topic at a time (left menu). Rules read as sentences with − / + steppers; several changes are saved
@@ -31,10 +32,10 @@ const modes:{id:AssistMode; hint:string}[] = [{id:'off',hint:'แสดงสถ
 const valText = (k:keyof QueueRules, v:unknown) => k==='mode' ? modeText[v as AssistMode] : k==='cap' && v===0 ? 'ไม่จำกัด' : String(v);
 const ruleName:Record<keyof QueueRules,string> = {mode:'ระดับตัวช่วย',stallMin:'เกณฑ์ไม่ตอบรับ',slowFactor:'เกณฑ์ช้ากว่าปกติ',cap:'เพดานคิว',imbalance:'เกณฑ์เกลี่ยคิว'};
 const loadPref = (k:string, d:string) => { try { return localStorage.getItem(k) ?? d; } catch { return d; } };
-type Pane = 'hours'|'units'|'assist'|'groups'|'history'|'test'|'data'|'booking'|'appts'|'notify'|'wayfinding'|'lineoa'|'reception'|'audit'|'retention'|'users';
+type Pane = 'hours'|'facility'|'assist'|'groups'|'history'|'test'|'data'|'booking'|'appts'|'notify'|'wayfinding'|'lineoa'|'reception'|'audit'|'retention'|'users';
 const panes:{id:Pane; icon:LucideIcon; title:string; sub:string}[] = [
  {id:'hours',icon:Clock,title:'เวลาให้บริการ',sub:'เวลาเปิด–ปิด OPD'},
- {id:'units',icon:Building2,title:'แผนกและจุดบริการ',sub:'เพิ่มแผนก · เปิด–ปิดห้อง/ช่อง'},
+ {id:'facility',icon:Building2,title:'ผังโรงพยาบาล',sub:'อาคาร · ชั้น · แผนก · ห้อง/ช่อง'},
  {id:'assist',icon:Sparkles,title:'ตัวช่วยกระจายคิว',sub:'ค่าของทั้งโรงพยาบาล'},
  {id:'groups',icon:Layers,title:'ปรับรายแผนก',sub:'แผนกที่ต่างจากค่าทั้งโรงพยาบาล'},
  {id:'history',icon:History,title:'ประวัติการเปลี่ยน',sub:'ใครเปลี่ยนอะไร เมื่อไร'},
@@ -51,11 +52,11 @@ const panes:{id:Pane; icon:LucideIcon; title:string; sub:string}[] = [
  {id:'users',icon:UserCog,title:'ผู้ใช้งาน',sub:'บัญชีเจ้าหน้าที่และสิทธิ์'},
 ];
 // What each role may open (the API enforces the same). Offline / not connected: everything except accounts and real data.
-const panesFor = (u:AuthUser|null):Pane[] => !u ? ['hours','units','assist','groups','history','test']
- : u.role==='admin' ? ['hours','units','assist','groups','history','test','data','booking','appts','notify','wayfinding','lineoa','reception','audit','retention','users'] : ['groups','history'];
+const panesFor = (u:AuthUser|null):Pane[] => !u ? ['hours','facility','assist','groups','history','test']
+ : u.role==='admin' ? ['hours','facility','assist','groups','history','test','data','booking','appts','notify','wayfinding','lineoa','reception','audit','retention','users'] : ['groups','history'];
 
 export default function SettingsPage({settings,save,events,minute,timeNote,focusGroup,user=null,listUsers,saveUser,sync}:{settings:QueueSettings;save:Save;events:QueueEvent[];minute:number;timeNote:string;focusGroup?:string|null;
- user?:AuthUser|null;listUsers?:QueueSync['listUsers'];saveUser?:QueueSync['saveUser'];sync?:Pick<QueueSync,'api'|'bookingRev'|'apptRev'|'features'>}) {
+ user?:AuthUser|null;listUsers?:QueueSync['listUsers'];saveUser?:QueueSync['saveUser'];sync?:Pick<QueueSync,'api'|'bookingRev'|'apptRev'|'features'|'online'>}) {
  const allowed = panesFor(user);
  const [pane,setPane] = useState<Pane>(focusGroup || !allowed.includes('hours') ? 'groups' : 'hours');
  const [msg,setMsg] = useState<{text:string;bad?:boolean}|null>(null);
@@ -70,8 +71,7 @@ export default function SettingsPage({settings,save,events,minute,timeNote,focus
  };
  const history = events.filter(e=>e.action==='config');
  const custom = Object.keys(settings.groups).length+Object.keys(settings.stations).length;
- const offCount = settings.layout?.off?.length ?? 0;
- const badge:Partial<Record<Pane,string>> = {units:offCount?`ปิด ${offCount}`:'',groups:custom?String(custom):'',history:history.length?String(history.length):'',test:settings.demoOffset?'เปิดอยู่':'',data:isLive(settings)?'จริง':''};
+ const badge:Partial<Record<Pane,string>> = {groups:custom?String(custom):'',history:history.length?String(history.length):'',test:settings.demoOffset?'เปิดอยู่':'',data:isLive(settings)?'จริง':''};
  return <div className="page settingsPage v2">
   <div className="pageHead"><h2>ตั้งค่า</h2><span className="pageTime">{timeNote}</span>
    {user ? <span className="setBy">บันทึกในชื่อ <b>{user.name}</b> · {roleText[user.role]}</span> : <label className="setBy">บันทึกในชื่อ <input value={by} maxLength={40} placeholder="ชื่อ / รหัส" onChange={e=>{ setBy(e.target.value); try { localStorage.setItem('hdt.operator',e.target.value); } catch { /* ignore */ } }}/></label>}</div>
@@ -82,7 +82,8 @@ export default function SettingsPage({settings,save,events,minute,timeNote,focus
    <div className="setPane">
     {msg && <p className={'setToast'+(msg.bad?' bad':'')} role="status">{msg.text}</p>}
     {pane==='hours' && <HoursPane settings={settings} commit={commit}/>}
-    {pane==='units' && <UnitsPane settings={settings} commit={commit}/>}
+    {pane==='facility' && <FacilityPane api={sync?.api} online={!!sync?.online} canEdit={user?.role==='admin'}
+     head={<PaneHead icon="facility" title="ผังโรงพยาบาล" scope="ทุกหน้าจอ">อาคาร ชั้น แผนก กลุ่มบริการ และห้อง/ช่อง/เตียง ของทั้งโรงพยาบาล · แก้เป็นร่าง ดูผลกระทบ แล้วเผยแพร่ครั้งเดียว — แผนที่ คิว จอทีวี จอง/นัด และตัวจำลองใช้ผังนี้</PaneHead>}/>}
     {pane==='assist' && <AssistPane settings={settings} commit={commit}/>}
     {pane==='groups' && <GroupsPane settings={settings} commit={commit} focus={focusGroup ?? null}/>}
     {pane==='history' && <HistoryPane history={history}/>}
@@ -305,195 +306,6 @@ function DataPane({settings,commit,linking}:{settings:QueueSettings;commit:Commi
   <p className="cmdNote">{live ? 'รับผู้ป่วยเข้าคิวได้ที่หน้าคิว → "รับผู้ป่วยเข้าคิว" · เปลี่ยนกลับเป็นสาธิตได้ รายการผู้ป่วยจริงของวันนี้ยังเก็บไว้'
    : 'ระบบกลางต้องเชื่อมต่ออยู่ · การเปลี่ยนบันทึกในประวัติการเปลี่ยน'}</p>
  </section>;
-}
-
-// ---- Departments & service points ----------------------------------------------------------------------------
-// Every department, exam room and counter can be switched off (not in use today), and departments can be added on
-// the OPD clinic floors. Switches are drafts until saved, like the other panes.
-type Unit = {id:string; label:string};
-type UnitGroup = {key:string; title:string; units:Unit[]; min:string}; // min: why the last one cannot be switched off
-const deptId = (name:string) => `dept:${name}`;
-// The old layout page shares out the sample hospital's rooms per OPD floor (the facility settings page replaces it).
-const ROOMS_PER_FLOOR = (()=>{ const b = sampleFacility().buildings.find(x=>x.kind==='opd'); return b ? roomsPerFloor({...b,...b.map,kind:'opd',floors:0}) : 6; })();
-// Same sharing as floorRooms: room k belongs to the department whose band its centre falls in.
-const roomShare = (n:number, m:number) => Array.from({length:m},(_,i)=>Array.from({length:n},(_,k)=>k).filter(k=>Math.min(m-1,Math.floor((k+0.5)/n*m))===i).length);
-const clinicUnits = (c:Clinic):UnitGroup[] => [
- {key:`rooms:${c.key}`,title:'ห้องตรวจ',units:c.rooms.map(r=>({id:`room:${r.id}`,label:`ห้อง ${r.number}`})),min:'ต้องเปิดอย่างน้อย 1 ห้อง · ถ้าไม่ใช้ทั้งแผนก ให้ปิดแผนก'},
- {key:`screen:${c.key}`,title:'ซักประวัติ',units:Array.from({length:screeningCounters(c)},(_,i)=>({id:screeningStationId(c.key,i),label:`ช่อง ${i+1}`})),min:'ต้องเปิดอย่างน้อย 1 ช่อง · ถ้าไม่ใช้ทั้งแผนก ให้ปิดแผนก'}];
-const sharedUnits = ():(UnitGroup & {where:string})[] => counterServices.map(({group,section,name})=>{ const list = everyStation().filter(st=>st.group===group);
- return {key:group,title:section===name ? section : `${section} · ${name}`,where:`${buildingShort(list[0]?.buildingId)} ชั้น ${list[0]?.level ?? 1}`,units:list.map(st=>({id:st.id,label:st.label})),min:'บริการนี้ต้องเปิดอย่างน้อย 1 จุด'}; });
-type Filter = 'all'|'opd'|'shared'|'off';
-
-function UnitsPane({settings,commit}:{settings:QueueSettings;commit:Commit}) {
- const saved = useMemo(()=>({off:settings.layout?.off ?? [],depts:settings.layout?.depts ?? [],names:settings.layout?.names ?? {},split:settings.layout?.split ?? {},
-  roomNames:settings.layout?.roomNames ?? {}}),[settings.layout]);
- const [off,setOff] = useState(()=>new Set(saved.off));
- const [depts,setDepts] = useState<CustomDept[]>(saved.depts);
- // Edits (drafts until saved): a department's new name (by clinic key — built-in or added), exam rooms per department
- // of a floor, and room names. Keys never change, so bookings / appointments / queues keep pointing at the same place.
- const [rename,setRename] = useState<Record<string,string>>({});
- const [split,setSplit] = useState<Record<string,number[]>>(saved.split);
- const [roomNames,setRoomNames] = useState<Record<string,string>>(saved.roomNames);
- const [editing,setEditing] = useState<string|null>(null);
- const [filter,setFilter] = useState<Filter>('all');
- const [adding,setAdding] = useState(false);
- const [note,setNote] = useState<{id:string;text:string}|null>(null);
- useEffect(()=>{ setOff(new Set(saved.off)); setDepts(saved.depts); setRename({}); setSplit(saved.split); setRoomNames(saved.roomNames); setEditing(null); },[saved]);
- useEffect(()=>{ if (!note) return; const t = setTimeout(()=>setNote(null),3500); return ()=>clearTimeout(t); },[note]);
- const clinics = opdClinics(), shared = sharedUnits();
- const label = new Map<string,string>([...everyStation().map(st=>[st.id,st.label] as [string,string]),...clinics.map(c=>[deptId(c.dept),`แผนก${c.dept}`] as [string,string])]);
- const toggle = (id:string, group?:UnitGroup) => {
-  if (off.has(id)) { setOff(prev=>{ const x = new Set(prev); x.delete(id); return x; }); return; }
-  if (group && group.units.filter(u=>!off.has(u.id)).length<=1) { setNote({id:group.key,text:group.min}); return; }
-  setOff(prev=>new Set(prev).add(id));
- };
- // Draft vs saved.
- const turnedOff = [...off].filter(id=>!saved.off.includes(id)), turnedOn = saved.off.filter(id=>!off.has(id));
- const same = (a:CustomDept, b:CustomDept) => a.name===b.name && a.level===b.level;
- const added = depts.filter(d=>!saved.depts.some(x=>same(x,d))), removed = saved.depts.filter(d=>!depts.some(x=>same(x,d)));
- // The name a department will have: the draft rename, else its saved name.
- const nameOf = (c:Clinic) => rename[c.key] ?? c.dept;
- const original = (c:Clinic) => c.custom ? undefined : builtInDeptName(c.level,c.deptIndex);
- const renamed = clinics.filter(c=>rename[c.key]!==undefined && rename[c.key].trim()!==c.dept);
- const splitChanged = JSON.stringify(split)!==JSON.stringify(saved.split), roomsRenamed = JSON.stringify(roomNames)!==JSON.stringify(saved.roomNames);
- const changes = turnedOff.length+turnedOn.length+added.length+removed.length+renamed.length+(splitChanged?1:0)+(roomsRenamed?1:0);
- const allNames = (except:Clinic) => [...clinics.filter(c=>c.key!==except.key && !removed.some(d=>d.name===c.dept)).map(nameOf),...added.map(d=>d.name)];
- const deptsChanged = added.length+removed.length>0;
- const save = () => {
-  // Switches that belonged to a removed department's counters would land on the next one: drop them. A renamed
-  // department's switch follows its new name.
-  const moved = new Map(renamed.map(c=>[deptId(c.dept),deptId(rename[c.key].trim())]));
-  const keep = [...off].filter(id=>!removed.some(d=>id===deptId(d.name) || id.startsWith(`screen:opd-${d.level}-`) && Number(id.split('-')[2]?.split(':')[0])>=builtInDeptCount(d.level))).map(id=>moved.get(id) ?? id);
-  // Added departments are renamed in place; built-in ones by key (only while different from their original name).
-  const deptsOut = depts.map(d=>{ const c = clinics.find(x=>x.custom && x.dept===d.name && x.level===d.level); return c && rename[c.key]?.trim() ? {...d,name:rename[c.key].trim()} : d; });
-  const names:Record<string,string> = {};
-  clinics.filter(c=>!c.custom).forEach(c=>{ const n = (rename[c.key] ?? c.dept).trim(), o = original(c); if (n && n!==o) names[c.key] = n; });
-  const cleanRooms = Object.fromEntries(Object.entries(roomNames).filter(([,v])=>v.trim()));
-  const name = (id:string) => label.get(id) ?? id;
-  const text = [turnedOff.length && `ปิด ${turnedOff.map(name).join(', ')}`,turnedOn.length && `เปิด ${turnedOn.map(name).join(', ')}`,
-   added.length && `เพิ่มแผนก ${added.map(d=>`${d.name} (ชั้น ${d.level})`).join(', ')}`,removed.length && `ลบแผนก ${removed.map(d=>d.name).join(', ')}`,
-   renamed.length && `เปลี่ยนชื่อ ${renamed.map(c=>`${c.dept} → ${rename[c.key].trim()}`).join(', ')}`,splitChanged && 'แบ่งห้องตรวจใหม่',roomsRenamed && 'แก้ชื่อห้องตรวจ'].filter(Boolean).join(' · ');
-  void commit({layout:{off:keep,depts:deptsOut,names,split,roomNames:cleanRooms}},'system',text.length>290?text.slice(0,288)+'…':text,
-   deptsChanged || splitChanged ? 'แบ่งห้องตรวจใหม่และเริ่มวันจำลองใหม่แล้ว' : 'จุดที่ปิดไม่รับคิวใหม่ · ผู้ที่รออยู่จะถูกเรียกจากห้อง/ช่องอื่นในกลุ่มเดียวกัน');
- };
- // Totals for the summary strip (saved clinics + draft switches).
- const deptsOn = clinics.filter(c=>!off.has(deptId(c.dept))).length;
- const roomUnits = clinics.flatMap(c=>off.has(deptId(c.dept)) ? [] : clinicUnits(c)[0].units), counterUnits = [...clinics.flatMap(c=>off.has(deptId(c.dept)) ? [] : clinicUnits(c)[1].units),...shared.flatMap(g=>g.units)];
- const onOf = (list:Unit[]) => list.filter(u=>!off.has(u.id)).length;
- const isOffAny = (c:Clinic) => off.has(deptId(c.dept)) || clinicUnits(c).some(g=>g.units.some(u=>off.has(u.id)));
- const floorsShown = filter==='shared' ? [] : CLINIC_FLOORS.slice().reverse();
- return <section className="setCard unitsPane">
-  <PaneHead icon="units" title="แผนกและจุดบริการ" scope="ทุกหน้าจอ">ปิดจุดที่ไม่ได้ใช้ เช่น ห้องที่ไม่มีแพทย์ออกตรวจ หรือช่องที่ไม่มีเจ้าหน้าที่ · จุดที่ปิดไม่รับคิวใหม่ และไม่แสดงในหน้าเลือกจุด การย้ายคิว และตัวช่วยกระจายคิว</PaneHead>
-  <div className="unitStats">
-   <div><b>{deptsOn}<small>/{clinics.length}</small></b><span>แผนกเปิด</span></div>
-   <div><b>{onOf(roomUnits)}<small>/{roomUnits.length}</small></b><span>ห้องตรวจเปิด</span></div>
-   <div><b>{onOf(counterUnits)}<small>/{counterUnits.length}</small></b><span>ช่องบริการเปิด</span></div>
-   <button className="btn" onClick={()=>setAdding(true)} disabled={adding}><Plus size={16}/> เพิ่มแผนก</button>
-  </div>
-  {adding && <AddDept depts={depts} clinics={clinics} onCancel={()=>setAdding(false)} onAdd={d=>{ setDepts(x=>[...x,d]); setAdding(false); setFilter(f=>f==='shared'||f==='off'?'all':f); }}/>}
-  <div className="unitFilter" role="tablist">{([['all','ทั้งหมด'],['opd','แผนก OPD'],['shared','จุดบริการร่วม'],['off',`ที่ปิดอยู่ (${off.size})`]] as [Filter,string][]).map(([id,t])=>
-   <button key={id} role="tab" aria-selected={filter===id} className={filter===id?'on':''} onClick={()=>setFilter(id)}>{t}</button>)}</div>
-  {floorsShown.map(level=>{
-   const list = clinics.filter(c=>c.level===level && (filter!=='off' || isOffAny(c))), drafts = filter==='off' ? [] : added.filter(d=>d.level===level);
-   if (!list.length && !drafts.length) return null;
-   const desc = buildingStats.opd?.floors.find(f=>f.level===level)?.desc;
-   return <div key={level} className="unitFloor"><h4 className="setSub">OPD ชั้น {level} <small>{desc}</small></h4>
-    {list.map(c=>{ const dOff = off.has(deptId(c.dept)), gone = removed.some(d=>d.name===c.dept);
-     return <div key={c.key} className={'uDeptRow'+(dOff?' off':'')+(gone?' gone':'')}>
-      <div className="uDeptHead">
-       <span className="uDeptLetter">{c.letter}</span>
-       <div className="uDeptName"><b>{nameOf(c)}{c.custom && <em className="tagNew">เพิ่มเอง</em>}{rename[c.key]!==undefined && rename[c.key].trim()!==c.dept && <em className="tagNew">เปลี่ยนชื่อ</em>}</b>
-        <small>{gone ? 'จะถูกลบเมื่อบันทึก' : dOff ? 'งดให้บริการ · ไม่รับผู้ป่วยใหม่ ไม่แสดงในหน้าคิวและจอทีวี' : clinicUnits(c).map(g=>`${g.title} ${onOf(g.units)}/${g.units.length}`).join(' · ')}</small></div>
-       {!gone && <button className={'iconBtn'+(editing===c.key?' on':'')} title="แก้ไขแผนกและห้องตรวจ" aria-label={`แก้ไข ${nameOf(c)}`} aria-expanded={editing===c.key} onClick={()=>setEditing(e=>e===c.key ? null : c.key)}><Pencil size={15}/></button>}
-       {c.custom && !gone && <button className="iconBtn danger" title="ลบแผนก" aria-label={`ลบแผนก ${c.dept}`} onClick={()=>setDepts(x=>x.filter(d=>d.name!==c.dept))}><Trash2 size={16}/></button>}
-       {gone ? <button className="linkBtn dark" onClick={()=>setDepts(x=>[...x,saved.depts.find(d=>d.name===c.dept)!])}>ไม่ลบ</button>
-        : <label className="switch" title={dOff?'เปิดแผนก':'ปิดแผนก'}><input type="checkbox" checked={!dOff} onChange={()=>toggle(deptId(c.dept))}/><span/><small>{dOff?'ปิด':'เปิด'}</small></label>}
-      </div>
-      {editing===c.key && !gone && <DeptEditor c={c} name={nameOf(c)} original={original(c)} taken={allNames(c)} floorClinics={clinics.filter(x=>x.level===c.level)}
-       floorBusy={added.some(d=>d.level===c.level) || removed.some(d=>d.level===c.level)} split={split} roomNames={roomNames}
-       onName={n=>setRename(r=>({...r,[c.key]:n}))} onSplit={(level,counts)=>setSplit(x=>({...x,[`opd-${level}`]:counts}))} onRoomName={(id,n)=>setRoomNames(x=>({...x,[id]:n}))}
-       floors={CLINIC_FLOORS.filter(l=>l!==c.level && clinics.filter(x=>x.level===l).length+depts.filter(d=>d.level===l && !saved.depts.some(x=>same(x,d))).length<ROOMS_PER_FLOOR && depts.filter(d=>d.level===l).length<3)}
-       onMove={c.custom ? l=>{ setDepts(x=>x.map(d=>d.name===c.dept && d.level===c.level ? {...d,level:l} : d)); setEditing(null); } : undefined} onDone={()=>setEditing(null)}/>}
-      {!dOff && !gone && editing!==c.key && clinicUnits(c).map(g=><UnitChips key={g.key} group={g} off={off} onToggle={toggle} note={note?.id===g.key?note.text:undefined}/>)}
-     </div>; })}
-    {drafts.map(d=><div key={d.name} className="uDeptRow draft"><div className="uDeptHead"><span className="uDeptLetter"><Plus size={16}/></span>
-     <div className="uDeptName"><b>{d.name}<em className="tagNew">ใหม่</em></b><small>ห้องตรวจและช่องซักประวัติจะแบ่งให้หลังบันทึก</small></div>
-     <button className="iconBtn" aria-label={`ยกเลิกการเพิ่ม ${d.name}`} onClick={()=>setDepts(x=>x.filter(y=>y.name!==d.name))}><X size={16}/></button></div></div>)}
-   </div>; })}
-  {filter!=='opd' && (()=>{ const list = shared.filter(g=>filter!=='off' || g.units.some(u=>off.has(u.id)));
-   return list.length>0 && <div className="unitFloor"><h4 className="setSub">จุดบริการร่วม <small>ทุกแผนกใช้ร่วมกัน · ปิดได้ทีละช่อง แต่ต้องเหลืออย่างน้อย 1 ช่อง</small></h4>
-    {list.map(g=><div key={g.key} className="uDeptRow shared"><div className="uDeptHead"><div className="uDeptName"><b>{g.title}</b><small>{g.where} · เปิด {onOf(g.units)}/{g.units.length}</small></div></div>
-     <UnitChips group={g} off={off} onToggle={toggle} note={note?.id===g.key?note.text:undefined} bare/></div>)}</div>; })()}
-  {filter==='off' && !off.size && <p className="cmdEmpty">ทุกแผนกและทุกจุดบริการเปิดอยู่</p>}
-  <SaveBar count={changes} onCancel={()=>{ setOff(new Set(saved.off)); setDepts(saved.depts); setRename({}); setSplit(saved.split); setRoomNames(saved.roomNames); setEditing(null); }} onSave={save}
-   note={deptsChanged || splitChanged ? 'เพิ่ม/ลบแผนก หรือแบ่งห้องตรวจใหม่: ห้องตรวจบนชั้นนั้นจะแบ่งใหม่ และตัวจำลองเริ่มวันใหม่ · คิวที่เรียก/ย้ายไว้วันนี้จะถูกล้าง'
-    : 'ผู้ที่รออยู่ที่จุดที่ปิดจะถูกเรียกจากห้อง/ช่องอื่นในกลุ่มเดียวกัน ไม่ต้องย้ายที่นั่ง'}/>
- </section>;
-}
-
-// Edit one OPD department: its name (built-in ones can go back to their original), how many of the floor's exam rooms
-// it has (taken from / given to the department with the most), each room's name, and — for an added department — its
-// floor. Drafts; the pane's save bar saves everything together.
-function DeptEditor({c,name,original,taken,floorClinics,floorBusy,split,roomNames,floors,onName,onSplit,onRoomName,onMove,onDone}:{c:Clinic; name:string; original?:string; taken:string[];
- floorClinics:Clinic[]; floorBusy:boolean; split:Record<string,number[]>; roomNames:Record<string,string>; floors:number[]; onName:(n:string)=>void;
- onSplit:(level:number,counts:number[])=>void; onRoomName:(id:string,n:string)=>void; onMove?:(level:number)=>void; onDone:()=>void}) {
- const n = ROOMS_PER_FLOOR, m = floorClinics.length, i = floorClinics.findIndex(x=>x.key===c.key);
- const s = split[`opd-${c.level}`], counts = s && s.length===m && s.reduce((a,x)=>a+x,0)===n ? s : roomShare(n,m);
- const start = counts.slice(0,i).reduce((a,x)=>a+x,0), rooms = Array.from({length:counts[i]},(_,k)=>c.level*100+start+k+1);
- const dup = !!name.trim() && taken.includes(name.trim()), empty = !name.trim();
- // One more room comes from the department with the most (keeping at least one each); one fewer goes to the one with the fewest.
- const change = (d:number) => { const next = [...counts], others = next.map((_,k)=>k).filter(k=>k!==i);
-  if (d>0) { const j = others.filter(k=>next[k]>1).sort((x,y)=>next[y]-next[x])[0]; if (j===undefined) return; next[j]--; next[i]++; }
-  else { if (next[i]<=1 || !others.length) return; const j = others.sort((x,y)=>next[x]-next[y])[0]; next[i]--; next[j]++; }
-  onSplit(c.level,next); };
- return <div className="deptEdit">
-  <div className="deptEditGrid">
-   <label className="addField"><span>ชื่อแผนก</span><input value={name} maxLength={30} onChange={e=>onName(e.target.value)} aria-invalid={dup || empty}/>
-    {dup && <small className="unitNote">มีแผนกชื่อนี้แล้ว</small>}{empty && <small className="unitNote">ใส่ชื่อแผนก</small>}</label>
-   {original && name.trim()!==original && <button type="button" className="btn ghost sm deptReset" onClick={()=>onName(original)}><RotateCcw size={13}/> คืนชื่อเดิม ({original})</button>}
-   {onMove && floors.length>0 && <div className="addField"><span>ย้ายไปชั้น</span><div className="segBtns">{floors.map(l=><button key={l} type="button" onClick={()=>onMove(l)}>ชั้น {l}</button>)}</div>
-    <small className="muted">ย้ายชั้นแล้วรหัสคลินิกเปลี่ยน — กติกาการจอง/นัด ตารางแพทย์ และป้ายนำทางของแผนกนี้ต้องตั้งใหม่</small></div>}
-  </div>
-  <div className="addField"><span>ห้องตรวจของแผนกนี้ <small className="muted">ชั้น {c.level} มี {n} ห้อง แบ่งกัน {m} แผนก</small></span>
-   {floorBusy ? <p className="unitNote">มีการเพิ่ม/ลบแผนกบนชั้นนี้ที่ยังไม่บันทึก — บันทึกก่อน แล้วจึงแบ่งห้องใหม่</p> : <>
-    <div className="roomCount"><button type="button" className="iconBtn" aria-label="ลดห้องตรวจ" disabled={counts[i]<=1} onClick={()=>change(-1)}><Minus size={15}/></button>
-     <b>{counts[i]} ห้อง</b><button type="button" className="iconBtn" aria-label="เพิ่มห้องตรวจ" disabled={counts.every((x,k)=>k===i || x<=1)} onClick={()=>change(1)}><Plus size={15}/></button></div>
-    <div className="shareBar">{floorClinics.map((x,k)=><span key={x.key} className={k===i?'new':''} style={{flex:counts[k]}}><b>{x.key===c.key ? name || x.dept : x.dept}</b><small>{counts[k]} ห้อง</small></span>)}</div></>}
-   <div className="roomNames">{rooms.map(num=>{ const id = `opd-${num}`;
-    return <label key={id}><span>ห้อง {num}</span><input value={roomNames[id] ?? ''} maxLength={30} placeholder={`ห้องตรวจ ${num}`} onChange={e=>onRoomName(id,e.target.value)}/></label>; })}</div>
-   <small className="muted">ชื่อห้องใช้แสดงในหน้าคิว จอทีวี และตารางแพทย์ · ว่างไว้ = ชื่อเดิม · รหัสห้อง (opd-{c.level}xx) ไม่เปลี่ยน</small>
-  </div>
-  <div className="addActions"><button type="button" className="btn" onClick={onDone} disabled={dup || empty}>เสร็จ</button></div>
- </div>;
-}
-
-function UnitChips({group,off,onToggle,note,bare}:{group:UnitGroup;off:Set<string>;onToggle:(id:string,g:UnitGroup)=>void;note?:string;bare?:boolean}) {
- return <div className={'unitLine'+(bare?' bare':'')}>{!bare && <span className="unitTitle">{group.title}</span>}
-  <div className="unitChips">{group.units.map(u=>{ const isOn = !off.has(u.id);
-   return <button key={u.id} className={'unitChip'+(isOn?' on':' off')} aria-pressed={isOn} title={isOn?'กดเพื่อปิด':'กดเพื่อเปิด'} onClick={()=>onToggle(u.id,group)}>
-    <i/>{u.label}{!isOn && <em>ปิด</em>}</button>; })}</div>
-  {note && <p className="unitNote" role="status">{note}</p>}</div>;
-}
-
-function AddDept({depts,clinics,onAdd,onCancel}:{depts:CustomDept[];clinics:Clinic[];onAdd:(d:CustomDept)=>void;onCancel:()=>void}) {
- const [name,setName] = useState('');
- const namesOn = (level:number) => [...(buildingStats.opd?.floors.find(f=>f.level===level)?.depts ?? []).slice(0,builtInDeptCount(level)),...depts.filter(d=>d.level===level).map(d=>d.name)];
- const fits = (level:number) => namesOn(level).length<ROOMS_PER_FLOOR && depts.filter(d=>d.level===level).length<3;
- const [level,setLevel] = useState(()=>CLINIC_FLOORS.find(fits) ?? 0);
- const n = name.trim(), taken = !!n && ([...clinics.map(c=>c.dept),...depts.map(d=>d.name)].includes(n));
- const after = level ? [...namesOn(level),n || 'แผนกใหม่'] : [], share = roomShare(ROOMS_PER_FLOOR,after.length), before = roomShare(ROOMS_PER_FLOOR,after.length-1);
- const ok = !!n && !taken && !!level && fits(level);
- return <div className="addDept">
-  <div className="addDeptHead"><b>เพิ่มแผนกใหม่</b><button className="iconBtn" aria-label="ปิด" onClick={onCancel}><X size={16}/></button></div>
-  <label className="addField"><span>ชื่อแผนก</span><input autoFocus value={name} maxLength={30} placeholder="เช่น ผิวหนัง, จิตเวช, ทันตกรรม" onChange={e=>setName(e.target.value)}
-   onKeyDown={e=>{ if (e.key==='Enter' && ok) onAdd({name:n,level}); if (e.key==='Escape') onCancel(); }}/></label>
-  {taken && <p className="unitNote">มีแผนกชื่อนี้แล้ว</p>}
-  <div className="addField"><span>อยู่ชั้น</span><div className="floorPick">{CLINIC_FLOORS.map(l=>{ const can = fits(l);
-   return <button key={l} className={level===l?'on':''} disabled={!can} onClick={()=>setLevel(l)}><b>ชั้น {l}</b><small>{can ? `${namesOn(l).length} แผนก` : 'เต็มแล้ว'}</small></button>; })}</div></div>
-  {level>0 && <div className="sharePreview"><small>ห้องตรวจ {ROOMS_PER_FLOOR} ห้องบนชั้น {level} จะแบ่งใหม่เป็น</small>
-   <div className="shareBar">{after.map((d,i)=><span key={i} className={i===after.length-1?'new':share[i]<before[i]?'less':''} style={{flex:share[i]}}><b>{d}</b><small>{i<before.length && before[i]!==share[i] ? `${before[i]} → ${share[i]} ห้อง` : `${share[i]} ห้อง`}</small></span>)}</div></div>}
-  <div className="addActions"><button className="btn ghost" onClick={onCancel}>ยกเลิก</button><button className="btn" disabled={!ok} onClick={()=>onAdd({name:n,level})}>เพิ่ม</button></div>
- </div>;
 }
 
 // ---- Staff accounts (administrators only) -------------------------------------------------------------------

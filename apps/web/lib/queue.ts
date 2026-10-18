@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { io, type Socket } from 'socket.io-client';
 import { apiSocket } from './api-url';
 import { NO_SHOW, generatePatients, livePatients, opdClinics, patientAt, patientToken, servicePlace, stationSpot, type LiveVisit, type Patient, type PatientState, type StepKind } from './patients';
-import { doctorName, findRoom, isOff, layoutRevision, roomDutyAt, setLayout, setServiceHours, waitingSpot, type Layout, type Spot } from './scene-data';
+import { doctorName, findRoom, isOff, layoutRevision, roomDutyAt, setServiceHours, waitingSpot, type Layout, type Spot } from './scene-data';
 import { buildingShort, fDepartment, fDepartments, fGroup, fGroups, facilityRevision, onFacility, pointFloor, pointLabel, pointsOf, storeFacility } from './facility';
 import { useFacility } from './use-facility';
 
@@ -243,7 +243,7 @@ onFacility(()=>{ rebuildServices(); rebuildPorters(); });
 export type AssistMode = 'off'|'suggest'|'auto';
 export type QueueRules = {mode:AssistMode; cap:number; stallMin:number; slowFactor:number; imbalance:number};
 // hours: OPD service hours the simulated day is built on · demoOffset: minutes every screen adds to the real clock (testing).
-// layout: departments added and departments / rooms / counters switched off (see setLayout in scene-data).
+// layout: the old departments page's settings (the facility model replaced it; kept so older settings still read).
 export type QueueSettings = {system:QueueRules; groups:Record<string,Partial<QueueRules>>; stations:Record<string,{cap?:number}>; hours?:{opdOpen:number; opdClose:number}; demoOffset?:number; layout?:Layout; dataMode?:DataMode; updatedAt?:string; updatedBy?:string};
 // demo: the simulated day (default) · live: only real patients taken into the queue (visits), no simulation.
 export type DataMode = 'demo'|'live';
@@ -254,7 +254,7 @@ export const DEFAULT_SETTINGS:QueueSettings = {system:DEFAULT_RULES,groups:{},st
 // and regenerates when worldKey changes (a new facility arrives with a new revision).
 export const worldKey = (s:QueueSettings) => JSON.stringify([s.hours ?? null,facilityRevision()]);
 let liveMode = false;
-export function applyWorld(s:QueueSettings) { setServiceHours(s.hours); setLayout(s.layout); liveMode = s.dataMode==='live'; }
+export function applyWorld(s:QueueSettings) { setServiceHours(s.hours); liveMode = s.dataMode==='live'; }
 export const isLive = (s:QueueSettings) => s.dataMode==='live';
 // The patients every screen starts from: the simulated day, or (live mode) today's real visits. Live patients
 // depend on the log (each step starts when the previous one was finished), so they are rebuilt with it.
