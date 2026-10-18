@@ -336,6 +336,10 @@ em{font-style:normal}
 .btn:hover{background:#2b86ff}
 .btn.ghost{background:#fff;color:#1677ff;border:1px solid #c9daf0}
 .btn.ghost:hover{background:#eef5ff}
+/* A button that cannot be pressed looks it (it used to stay full colour, so a grey-out read as "nothing happens") */
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn:disabled:hover{background:#1677ff}
+.btn.ghost:disabled:hover{background:#fff}
 .linkBtn.dark{color:#1677ff;display:inline-flex;align-items:center;gap:4px;font-weight:600;text-decoration:none}
 .linkBtn.dark:disabled{color:#a9b6c4;cursor:default}
 .muted{color:#7a8ca0}
@@ -2350,6 +2354,8 @@ a.liffChoice{text-decoration:none;padding:10px 16px}
 .rowActs{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
 .rowActs .iconBtn{width:34px;height:34px;text-decoration:none}
 .iconBtn:hover{border-color:#1677ff;background:#eef5ff}
+.iconBtn:disabled{opacity:.4;cursor:not-allowed}
+.iconBtn:disabled:hover{border-color:#d9e2ea;background:#fff}
 .iconBtn.danger{color:#dc2626}.iconBtn.danger:hover{border-color:#dc2626;background:#fef2f2}
 .iconBtn.ok{color:#fff;background:#16a34a;border-color:#16a34a}.iconBtn.ok:hover{background:#15803d;border-color:#15803d}
 .tblSearch{display:flex;align-items:center;gap:8px;margin-left:auto;min-width:min(320px,100%);flex:0 1 360px;padding:0 10px;height:40px;border:1.5px solid #d5e0ec;border-radius:10px;background:#fff;color:#64748b}
@@ -2655,3 +2661,20 @@ a.liffChoice{text-decoration:none;padding:10px 16px}
 .facLibPic img{max-width:100%;max-height:100%;object-fit:contain}
 .facLibActs{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;align-items:center}
 .facLibActs .btn{height:30px}
+.pickHint{margin-right:auto;align-self:center;color:#b45309;font-size:12.5px;font-weight:600}
+/* Booking / appointment window: check the HN first */
+@keyframes spin{to{transform:rotate(360deg)}}
+.spin{animation:spin .8s linear infinite;vertical-align:-2px}
+.hnStep{display:flex;flex-direction:column;gap:8px;min-width:0}
+.hnRow{display:flex;gap:8px}
+.hnRow .bookHn{flex:1;min-width:0}
+.hnRow .btn{height:40px}
+.hnCard{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border-radius:12px;font-size:13px}
+.hnCard>div{display:flex;flex-direction:column;gap:3px;min-width:0}
+.hnCard small{color:#475569}
+.hnCard ul{margin:4px 0 0;padding-left:16px;color:#334155}
+.hnCard.ok{background:#ecfdf5;color:#065f46}.hnCard.ok>svg{color:#059669;flex:none}
+.hnCard.new{background:#fffbeb;color:#92400e}.hnCard.new>svg{color:#d97706;flex:none}
+.hnSure{display:flex;gap:6px;align-items:center;margin-top:4px;font-weight:600;color:#78350f;cursor:pointer}
+.hnFirst{margin:4px 0;padding:14px;border:1px dashed #cbd5e1;border-radius:12px;text-align:center;color:#64748b;font-size:13px}
+.cmdNote .spin{margin-right:4px}

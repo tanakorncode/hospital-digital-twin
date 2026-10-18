@@ -187,3 +187,21 @@ test('days on offer: only those with a doctor session and a place left, per doct
   assert.deepEqual(days({ providerCode: 'D002' }), ['2026-11-03']);
   assert.deepEqual((api.gateway.apptDays(staff, { clinicCode: EYE }) as { days: string[] }).days, [], 'no sessions');
 });
+
+test('before booking, staff check the HN: new here or seen before, what is still to come, LINE linked', () => {
+  const { api, staff, make } = setup();
+  type P = R & { patient?: { known: boolean; lineLinked: boolean; appointments: { code: string; clinicName: string; startsAt: string }[]; bookings: unknown[] } };
+  const check = (hn: unknown) => api.gateway.patientByHn(staff, { hn }) as P;
+  assert.deepEqual(check('65-777777').patient, { known: false, lineLinked: false, appointments: [], bookings: [] }, 'new here');
+  assert.equal(check('x').code, 'VALIDATION_ERROR');
+  assert.equal(check('').code, 'VALIDATION_ERROR');
+  const a = make('65-777777','2026-11-05').appointment!; // past the 24-hour cancel cut-off, so it can be cancelled below
+  const p = check('65-777777').patient!;
+  assert.equal(p.known, true);
+  assert.deepEqual(p.appointments.map((x) => [x.code, x.clinicName]), [[a.code, 'อายุรกรรมทั่วไป']]);
+  // A cancelled appointment is not "to come".
+  assert.equal((api.gateway.cancelAppt(staff, { appointmentId: a.id, reason: 'ผู้ป่วยแจ้ง' }) as R).ok, true);
+  assert.deepEqual(check('65-777777').patient!.appointments, []);
+  assert.ok(api.audit.list().some((e) => e.action === 'patient.search.hn'));
+  assert.equal((api.gateway.patientByHn({ handshake: { auth: {}, headers: {} }, data: {} } as never, { hn: '65-777777' }) as R).code, 'AUTH_REQUIRED');
+});

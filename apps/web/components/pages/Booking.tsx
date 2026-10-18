@@ -1,6 +1,7 @@
 'use client';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CalendarPlus, CheckCircle2, LogIn, RefreshCw, Search, X } from 'lucide-react';
+import { CalendarPlus, CheckCircle2, Loader2, LogIn, RefreshCw, Search, X } from 'lucide-react';
+import { useHnCheck } from './HnCheck';
 import { CheckInCard, type CheckInResult } from '../CheckInCard';
 import { opdClinics, type Clinic } from '../../lib/patients';
 import { actionKey, covers, type AuthUser, type QueueSync } from '../../lib/queue';
@@ -200,7 +201,8 @@ export function BookingTab({api,rev,user,features}:{api:Api; rev:number; user?:A
 }
 
 function NewBooking({api,clinics,policies,onClose,onMade}:{api:Api; clinics:Clinic[]; policies:Policy[]; onClose:()=>void; onMade:(b:Booking)=>void}) {
- const [hn,setHn] = useState('');
+ // First the HN (checked), then clinic, day and time.
+ const hnc = useHnCheck(api), hn = hnc.hn;
  const [svc,setSvc] = useState(clinics[0]?.key ?? '');
  const [date,setDate] = useState('');
  const [days,setDays] = useState<string[]|null>(null); // only days with a place left — no empty weekends / holidays
@@ -238,18 +240,23 @@ function NewBooking({api,clinics,policies,onClose,onMade}:{api:Api; clinics:Clin
     <small className="muted">{made.serviceName} · {dayOf(made.startsAt)} {timeOf(made.startsAt)}–{timeOf(made.endsAt)}</small>
     <p className="cmdNote">แจ้งรหัสนี้ให้ผู้ป่วย · วันนัดให้มาเช็กอินที่ตู้หรือเคาน์เตอร์ก่อนเวลา</p>
     <div className="qrActs"><button className="btn" onClick={onClose}>เสร็จ</button></div></div> : <>
-    <div className="visitRow"><span>HN ของผู้ป่วย</span><input className="bookHn" value={hn} maxLength={20} autoFocus inputMode="text" placeholder="เช่น 65-123456" onChange={e=>setHn(e.target.value)}/></div>
+    <div className="visitRow"><span>HN ของผู้ป่วย</span>{hnc.view}</div>
+    {!hnc.ready ? <p className="hnFirst">ตรวจ HN ก่อน แล้วจึงเลือกคลินิก วันที่ และเวลา</p> : <>
     <div className="visitRow"><span>คลินิก</span><div className="visitClinics">{clinics.map(c=><button key={c.key} className={c.key===svc?'on':''} aria-pressed={c.key===svc} onClick={()=>setSvc(c.key)}>
      <b>{c.letter}</b><span>{c.dept}</span><small>ชั้น {c.level}</small></button>)}</div></div>
     <div className="visitRow"><span>วันที่ <small className="muted">(จองล่วงหน้าได้ {p?.advanceDays ?? 14} วัน)</small></span>
-     {days===null ? <p className="cmdNote">กำลังโหลด…</p> : days.length ? <div className="segBtns">{days.map(d=><button key={d} className={d===date?'on':''} aria-pressed={d===date} onClick={()=>setDate(d)}>{dayOf(d)}</button>)}</div>
-      : <p className="cmdNote">คลินิกนี้ยังไม่มีวันที่เปิดให้จอง หรือเต็มทุกวัน · ผู้ดูแลระบบสร้างช่วงเวลาได้ที่ ตั้งค่า → การจองล่วงหน้า</p>}</div>
+     {days===null ? <p className="cmdNote"><Loader2 size={14} className="spin"/> กำลังโหลด…</p> : days.length ? <div className="segBtns">{days.map(d=><button key={d} className={d===date?'on':''} aria-pressed={d===date} onClick={()=>setDate(d)}>{dayOf(d)}</button>)}</div>
+      : <p className="serviceNote">คลินิกนี้ยังไม่มีวันที่เปิดให้จอง หรือเต็มทุกวัน · ผู้ดูแลระบบสร้างช่วงเวลาได้ที่ ตั้งค่า → การจองล่วงหน้า</p>}</div>
     <div className="visitRow"><span>ช่วงเวลา</span>
-     {slots===null ? <p className="cmdNote">กำลังโหลด…</p> : slots.length ? <div className="segBtns">{slots.map(s=><button key={s.id} className={s.id===slotId?'on':''} aria-pressed={s.id===slotId} onClick={()=>setSlotId(s.id)}>
+     {slots===null ? <p className="cmdNote"><Loader2 size={14} className="spin"/> กำลังโหลดเวลาที่ว่าง…</p> : slots.length ? <div className="segBtns">{slots.map(s=><button key={s.id} className={s.id===slotId?'on':''} aria-pressed={s.id===slotId} onClick={()=>setSlotId(s.id)}>
       {timeOf(s.startsAt)}–{timeOf(s.endsAt)} <small>ว่าง {s.remaining}</small></button>)}</div> : <p className="cmdNote">ไม่มีช่วงที่ยังว่างในวันนี้ · ลองวันอื่น</p>}</div>
+    </>}
     {error && <p className="loginError" role="alert">{error}</p>}
-    <footer><button className="btn ghost" onClick={onClose}>ยกเลิก</button>
-     <button className="btn" disabled={busy || !hn.trim() || !slot} onClick={()=>void submit()}>{busy?'กำลังจอง…':slot?`ยืนยันจอง ${timeOf(slot.startsAt)}`:'เลือกช่วงเวลา'}</button></footer>
+    <footer>{/* What is still missing, so the button never just stays grey without a reason */}
+     {!busy && <small className="pickHint">{hnc.missing ? hnc.missing
+       : days && !days.length ? 'คลินิกนี้ยังไม่มีวันให้จอง' : !slot ? 'เลือกช่วงเวลาด้านบน' : ''}</small>}
+     <button className="btn ghost" onClick={onClose}>ยกเลิก</button>
+     <button className="btn" disabled={busy || !hnc.ready || !slot} onClick={()=>void submit()}>{busy && <Loader2 size={15} className="spin"/>}{busy?'กำลังจอง…':slot?`ยืนยันจอง ${timeOf(slot.startsAt)}`:'ยืนยันจอง'}</button></footer>
    </>}
   </div>
  </div></ModalPortal>;

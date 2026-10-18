@@ -890,6 +890,25 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
     });
   }
 
+  // Before booking for an HN: what this system knows of it — seen before or new here, its appointments / bookings still
+  // to come (in the clinics this user covers), LINE linked. Not a patient register: HIS stays the source of identity.
+  @SubscribeMessage('patient:hn')
+  patientByHn(@ConnectedSocket() client: Socket, @MessageBody() body: { hn?: unknown }) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (overLimit(client, 'command')) return SLOW;
+    return attempt(() => {
+      const known = this.booking.knowsHN(body?.hn), hn = (body!.hn as string).trim();
+      const appointments = this.appts.list({ hn }).filter((a) => covers(me, a.clinicCode));
+      const bookings = this.booking.list({ hn }).filter((b) => covers(me, b.serviceCode));
+      const now = this.appts.now().getTime(), ahead = (x: { status: string; startsAt: string }) => x.status === 'CONFIRMED' && new Date(x.startsAt).getTime() > now - 3600_000;
+      this.audit.record({ ...actor(me), action: 'patient.search.hn', targetType: 'patient-search', meta: { known, appointments: appointments.length, bookings: bookings.length } });
+      return { ok: true, patient: { known, lineLinked: this.identity.status(hn).linked,
+        appointments: appointments.filter(ahead).map((a) => ({ code: a.code, clinicCode: a.clinicCode, clinicName: a.clinicName, providerName: a.providerName, startsAt: a.startsAt })),
+        bookings: bookings.filter(ahead).map((b) => ({ code: b.code, serviceName: b.serviceName, startsAt: b.startsAt })) } };
+    });
+  }
+
   // ---- Linking a patient's LINE account (stage 2.5) ---------------------------------------------------------------
   // At the counter: the patient shows the one-time QR from LINE, staff check the ID card as today, then confirm with the
   // HN. Staff can see whether a patient is linked (never the LINE id) and end a link with a reason.

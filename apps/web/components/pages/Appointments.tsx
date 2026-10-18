@@ -1,6 +1,7 @@
 'use client';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CalendarPlus, Check, CheckCircle2, LogIn, MoveRight, RefreshCw, Search, X } from 'lucide-react';
+import { CalendarPlus, Check, CheckCircle2, Loader2, LogIn, MoveRight, RefreshCw, Search, X } from 'lucide-react';
+import { useHnCheck } from './HnCheck';
 import { opdClinics, type Clinic } from '../../lib/patients';
 import { findRoom, isOff, type Room } from '../../lib/scene-data';
 import { buildingShort } from '../../lib/facility';
@@ -149,6 +150,12 @@ export function ApptTab({api,rev,user,features}:{api:Api; rev:number; user?:Auth
  const clinics = useMemo(()=>opdClinics().filter(c=>covers(user,c.key)),[user]);
  const {policies} = usePolicies(api,rev);
  const open = clinics.filter(c=>policies.some(p=>p.clinicCode===c.key && p.enabled));
+ // Open clinics without a single free appointment time (no doctor's schedule yet): said up front, not only in the picker.
+ const openKey = open.map(c=>c.key).join(',');
+ const [unscheduled,setUnscheduled] = useState<string[]>([]);
+ useEffect(()=>{ let live = true; const keys = openKey ? openKey.split(',') : [];
+  void Promise.all(keys.map(k=>api<{ok:boolean; days?:string[]}>('appt:days',{clinicCode:k}).then(r=>r.ok && !(r.days ?? []).length ? k : ''))).then(x=>{ if (live) setUnscheduled(x.filter(Boolean)); });
+  return ()=>{ live = false; }; },[api,openKey,rev]);
  const [date,setDate] = useState(today);
  const [clinic,setClinic] = useState('');
  const [find,setFind] = useState('');
@@ -192,6 +199,8 @@ export function ApptTab({api,rev,user,features}:{api:Api; rev:number; user?:Auth
  return <div className="bookTab">
   {!on && <p className="serviceNote">ระบบนัดแพทย์ยังปิดอยู่ · ผู้ดูแลระบบเปิดได้ที่ ตั้งค่า → นัดแพทย์ (ดูรายการเดิมได้ตามปกติ)</p>}
   {/* Switched on, but no clinic takes appointments yet: say why "นัดผู้ป่วย" cannot be pressed, and what to do. */}
+  {on && open.length>0 && unscheduled.length===open.length && <p className="serviceNote">คลินิกที่เปิดนัด ({open.length} แห่ง) ยังไม่มีตารางออกตรวจของแพทย์ จึงยังไม่มีเวลาให้นัด · ผู้ดูแลระบบสร้างได้ที่ ตั้งค่า → นัดแพทย์ → ตารางออกตรวจของแพทย์</p>}
+  {on && open.length>0 && unscheduled.length>0 && unscheduled.length<open.length && <p className="cmdNote">ยังไม่มีเวลาให้นัด: {open.filter(c=>unscheduled.includes(c.key)).map(clinicName).join(', ')} (ยังไม่มีตารางแพทย์ หรือเต็ม)</p>}
   {on && !open.length && <p className="serviceNote">ยังไม่มีคลินิกที่เปิดให้นัด จึงนัดผู้ป่วยไม่ได้ · ผู้ดูแลระบบตั้งได้ที่ ตั้งค่า → นัดแพทย์: (1) กด "เปิด" ที่คลินิก (2) สร้างตารางออกตรวจของแพทย์</p>}
   <div className="bookBar">
    <button className="btn" disabled={!on || !open.length} title={!on ? 'ระบบนัดแพทย์ยังปิดอยู่' : !open.length ? 'ยังไม่มีคลินิกที่เปิดให้นัด' : undefined} onClick={()=>setPicker({mode:'new'})}><CalendarPlus size={15}/> นัดผู้ป่วย</button>
@@ -241,7 +250,8 @@ export function ApptTab({api,rev,user,features}:{api:Api; rev:number; user?:Auth
 
 // Make an appointment (HN, clinic, day, doctor's slot) — or move one (same clinic).
 function ApptPicker({api,clinics,policies,move,onClose,onDone}:{api:Api; clinics:Clinic[]; policies:Policy[]; move?:Appt; onClose:()=>void; onDone:(text:string, day?:string)=>void}) {
- const [hn,setHn] = useState('');
+ // First the HN (checked), then clinic, day and time; moving an appointment keeps its patient.
+ const hnc = useHnCheck(api), hn = hnc.hn, hnReady = !!move || hnc.ready;
  const [clinic,setClinic] = useState(move?.clinicCode ?? clinics[0]?.key ?? '');
  const [date,setDate] = useState(()=>move ? new Date(move.startsAt).toLocaleDateString('sv-SE') : addDays(today(),7));
  const [slots,setSlots] = useState<Slot[]|null>(null);
@@ -286,21 +296,26 @@ function ApptPicker({api,clinics,policies,move,onClose,onDone}:{api:Api; clinics
     <small className="muted">{made.clinicName} · {made.providerName} · {dayOf(made.startsAt)} {timeOf(made.startsAt)}</small>
     <p className="cmdNote">แจ้งรหัสนี้ให้ผู้ป่วย · วันนัดเช็กอินที่ตู้ด้วยรหัส AP หรือที่เคาน์เตอร์</p>
     <div className="qrActs"><button className="btn" onClick={onClose}>เสร็จ</button></div></div> : <>
-    {!move && <div className="visitRow"><span>HN ของผู้ป่วย</span><input className="bookHn" value={hn} maxLength={20} autoFocus placeholder="เช่น 65-123456" onChange={e=>setHn(e.target.value)}/></div>}
+    {!move && <div className="visitRow"><span>HN ของผู้ป่วย</span>{hnc.view}</div>}
+    {!hnReady ? <p className="hnFirst">ตรวจ HN ก่อน แล้วจึงเลือกคลินิก วันที่ และเวลา</p> : <>
     {!move && <div className="visitRow"><span>คลินิก</span><div className="visitClinics">{clinics.map(c=><button key={c.key} className={c.key===clinic?'on':''} aria-pressed={c.key===clinic} onClick={()=>setClinic(c.key)}>
      <b>{c.letter}</b><span>{c.dept}</span><small>ชั้น {c.level}</small></button>)}</div></div>}
     <div className="visitRow"><span>วันที่ <small className="muted">(นัดล่วงหน้าได้ {p?.advanceDays ?? 90} วัน)</small></span>
      <span className="apptDate"><DatePicker value={date} min={today()} max={addDays(today(),p?.advanceDays ?? 90)} onChange={setDate} aria-label="วันนัด" className="dpFilter"/>
       <button className="btn ghost sm" disabled={!prevDay} onClick={()=>prevDay && setDate(prevDay)}>‹ วันว่างก่อนหน้า</button><button className="btn ghost sm" disabled={!nextDay} onClick={()=>nextDay && setDate(nextDay)}>วันว่างถัดไป ›</button></span></div>
     <div className="visitRow"><span>แพทย์และเวลา</span>
-     {slots===null ? <p className="cmdNote">กำลังโหลด…</p> : byDoctor.length ? byDoctor.map(([doc,list])=><div key={doc} className="apptDoc"><b>{doc}</b>
+     {slots===null ? <p className="cmdNote"><Loader2 size={14} className="spin"/> กำลังโหลดเวลาที่ว่าง…</p> : byDoctor.length ? byDoctor.map(([doc,list])=><div key={doc} className="apptDoc"><b>{doc}</b>
       <div className="segBtns">{list.map(s=>{ const current = !!move && s.startsAt===move.startsAt && s.providerName===move.providerName;
        return <button key={s.id} className={s.id===slotId?'on':''} aria-pressed={s.id===slotId} disabled={current} onClick={()=>setSlotId(s.id)}>{timeOf(s.startsAt)} <small>{current?'(เดิม)':`ว่าง ${s.remaining}`}</small></button>; })}</div></div>)
       : days.length ? <p className="cmdNote">ไม่มีช่วงนัดที่ยังว่างในวันนี้ · ลองวันอื่น</p>
-      : <p className="cmdNote">คลินิกนี้ยังไม่มีช่วงนัดที่ว่างเลย (ยังไม่มีตารางออกตรวจของแพทย์ หรือเต็มหมดแล้ว) · ผู้ดูแลระบบสร้างตารางได้ที่ ตั้งค่า → นัดแพทย์</p>}</div>
+      : <p className="serviceNote">คลินิกนี้ยังไม่มีช่วงนัดที่ว่างเลย — ยังไม่มีตารางออกตรวจของแพทย์ หรือเต็มหมดแล้ว · ผู้ดูแลระบบสร้างตารางได้ที่ ตั้งค่า → นัดแพทย์ → ตารางออกตรวจของแพทย์</p>}</div>
+    </>}
     {error && <p className="loginError" role="alert">{error}</p>}
-    <footer><button className="btn ghost" onClick={onClose}>ยกเลิก</button>
-     <button className="btn" disabled={busy || (!move && !hn.trim()) || !slot} onClick={()=>void submit()}>{busy?'กำลังบันทึก…':slot?`${move?'ยืนยันเลื่อนเป็น':'ยืนยันนัด'} ${timeOf(slot.startsAt)}`:'เลือกแพทย์และเวลา'}</button></footer>
+    <footer>{/* What is still missing, so the button never just stays grey without a reason */}
+     {!busy && <small className="pickHint">{!move && hnc.missing ? hnc.missing
+       : !days.length ? 'คลินิกนี้ยังไม่มีเวลาให้นัด' : !slot ? 'เลือกเวลาจาก "แพทย์และเวลา" ด้านบน' : ''}</small>}
+     <button className="btn ghost" onClick={onClose}>ยกเลิก</button>
+     <button className="btn" disabled={busy || !hnReady || !slot} onClick={()=>void submit()}>{busy && <Loader2 size={15} className="spin"/>}{busy?'กำลังบันทึก…':slot?`${move?'ยืนยันเลื่อนเป็น':'ยืนยันนัด'} ${timeOf(slot.startsAt)}`:move?'ยืนยันเลื่อน':'ยืนยันนัด'}</button></footer>
    </>}
   </div>
  </div></ModalPortal>;

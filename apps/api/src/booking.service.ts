@@ -187,6 +187,11 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
 
   // ---- patients ---------------------------------------------------------------------------------------------------
   // At the counter: staff have checked the patient's identity (ID card, as today) and type the HN.
+  // Whether this HN has been used here before (booked, given an appointment, linked to LINE). Throws on a malformed HN.
+  knowsHN(hn: unknown): boolean {
+    if (typeof hn !== 'string' || !HN_RE.test(hn.trim())) throw bad('HN ไม่ถูกต้อง (ตัวเลข ตัวอักษรอังกฤษ และ - ยาว 3–20 ตัว)');
+    return !!this.store.db.prepare('SELECT 1 FROM patient_profiles WHERE external_patient_id = ?').get(hn.trim());
+  }
   profileForHN(hn: unknown): string {
     if (typeof hn !== 'string' || !HN_RE.test(hn.trim())) throw bad('HN ไม่ถูกต้อง');
     const value = hn.trim(), at = this.now().toISOString();
