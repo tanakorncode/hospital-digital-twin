@@ -225,3 +225,20 @@ test('moving a building on the grounds plan takes its indoor kiosks along', asyn
   assert.ok(Math.abs(lobby.map!.x-(before.x+2))<0.01 && Math.abs(lobby.map!.z-(before.z-1.5))<0.01,'moved with the building');
   assert.deepEqual(gate.map,gateBefore,'kiosks outdoors stay');
 });
+
+test('directions on an automatic floor: out of the room by its door, along the corridor, in by the target\'s door', () => {
+  const f = structuredClone(template()), plan = planFloor(f,'opd-2')!, [c0,c1] = plan.corridor!, cz = (c0+c1)/2;
+  const a = plan.rooms[0], b = plan.rooms[4], from = roomPoint(a,roomFrame(a).across*0.7,1), to = roomPoint(b,roomFrame(b).across*0.7,1);
+  const path = floorRoute(plan,from,to);
+  assert.deepEqual(path[0],from); assert.deepEqual(path.at(-1),to);
+  // Crosses each room's front wall only within its doorway.
+  for (const r of [a,b]) { const [g0,g1] = doorSpan(r);
+    for (let k=0; k<path.length-1; k++) { const p = path[k], q = path[k+1];
+      if ((p.z-r.z1)*(q.z-r.z1)<0) { const x = p.x+(q.x-p.x)*(r.z1-p.z)/(q.z-p.z), at = roomLocal(r,{x,z:r.z1}).a; if (x>=r.x0 && x<=r.x1) assert.ok(at>=g0-1e-9 && at<=g1+1e-9,`${r.point.id} through the doorway`); } } }
+  assert.ok(path.some(p=>Math.abs(p.z-cz)<1e-9),'along the corridor');
+  // From the lift (in the corridor) to a counter: down the corridor, then up to it, as before.
+  const counter = plan.counters[0].at, route = floorRoute(plan,plan.lift,counter);
+  const r3 = (p:number[]) => [+p[0].toFixed(3),+p[1].toFixed(3)], expect = [[plan.lift.x,plan.lift.z],[plan.lift.x,cz],[counter.x,cz],[counter.x,counter.z]].map(r3)
+    .filter((p,k,l)=>k===0 || p[0]!==l[k-1][0] || p[1]!==l[k-1][1]); // the lift stands on the corridor's middle line
+  assert.deepEqual(route.map(p=>r3([p.x,p.z])),expect);
+});

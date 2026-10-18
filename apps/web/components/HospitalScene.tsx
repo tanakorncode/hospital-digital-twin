@@ -241,7 +241,7 @@ type Sign = {text:string;pos:V3;kind:SignKind;roomId?:string};
 // Placed = a position plus the yaw it faces (0 = +z, toward the default camera).
 type Placed = {p:V3;rot:number};
 type V4 = [number,number,number,number];
-type Plan = {level:number;rooms:{id:string;x0:number;x1:number;z0:number;z1:number}[];walls:{p:V3;s:V3}[];chairs:(V3|V4)[];beds:(V3|V4)[];desks:(V3|V4)[];counters:V3[];machines:V3[];plants:V3[];people:Person[];zones:Zone[];signs:Sign[];corridor:[number,number]|null;bg?:{imageId:string; x0:number; z0:number; x1:number; z1:number; opacity:number};y:number;
+type Plan = {level:number;rooms:{id:string;x0:number;x1:number;z0:number;z1:number}[];walls:{p:V3;s:V3}[];chairs:(V3|V4)[];beds:(V3|V4)[];desks:(V3|V4)[];counters:V3[];machines:V3[];plants:V3[];people:Person[];zones:Zone[];signs:Sign[];corridor:[number,number]|null;lift?:V3;bg?:{imageId:string; x0:number; z0:number; x1:number; z1:number; opacity:number};y:number;
  monitors:Placed[];poles:V3[];bags:V3[];vitals:Placed[];screens:Placed[];wheelchairs:Placed[]};
 // Where a room is on its floor (building-local), from the floor's layout.
 const roomRect = (room:Room) => ({x0:room.x0,x1:room.x1,z0:room.z0,z1:room.z1});
@@ -262,6 +262,8 @@ function planLayout(b:BuildingSpec,level:number):Plan {
  // The floor's layout (lib/floor-layout.ts): room and waiting-area rectangles, the corridor when laid out automatically.
  const plan = floorPlan(b.id,level), roomFront = plan?.roomFront ?? -hd+b.depth*0.42, front0 = plan?.front0 ?? roomFront+1.2;
  p.corridor = plan ? plan.corridor : [roomFront,front0]; p.bg = plan?.background;
+ // The lift / stairs, where the floor's layout has them (directions on the patients' floor plan start there too).
+ if (plan) { p.lift = [plan.lift.x,y,plan.lift.z]; p.signs.push({text:'ลิฟต์ / บันได',pos:[plan.lift.x,y+1.05,plan.lift.z],kind:'area'}); }
  const rooms = floorRooms(b.id,level), walled = new Set<string>();
  rooms.forEach((room,k)=>{
   // Furniture is placed from the door: a = along the door wall, d = in from the back wall; yaw turns it to face the door.
@@ -377,6 +379,16 @@ function Equipment({L}:{L:Plan}) {
 
 // Boxes at points; a 4th number turns the box (and its offset) about the vertical axis — furniture in a room whose
 // door is not at the front.
+// A lift: a shaft with its doors, on a teal plate.
+function Lift({p}:{p:V3}) {
+ return <group position={p}>
+  <mesh rotation-x={-Math.PI/2} position={[0,0.008,0]}><planeGeometry args={[0.9,0.9]}/><meshStandardMaterial color="#0f766e" transparent opacity={0.35}/></mesh>
+  <Box p={[0,0.45,0]} s={[0.62,0.9,0.5]} color="#cbd5e1"/>
+  <Box p={[-0.12,0.4,0.255]} s={[0.22,0.72,0.02]} color="#64748b" metalness={0.4} roughness={0.4}/>
+  <Box p={[0.12,0.4,0.255]} s={[0.22,0.72,0.02]} color="#64748b" metalness={0.4} roughness={0.4}/>
+  <Box p={[0,0.86,0.26]} s={[0.18,0.06,0.02]} color="#0f766e" emissive="#14b8a6" emissiveIntensity={0.6}/>
+ </group>;
+}
 function BoxSet({items,size,color,offset=[0,0,0],cast=true}:{items:(V3|V4)[];size:V3;color:string;offset?:V3;cast?:boolean}) {
  if (!items.length) return null;
  return <Instances key={items.length} limit={items.length} castShadow={cast} receiveShadow><boxGeometry args={size}/><meshStandardMaterial color={color}/>
@@ -515,6 +527,7 @@ function FloorPlan({b,level,tint,hidden,hour,selectedRoom,selectedDept,onPickPer
   <Box p={[0,y-0.06,0]} s={[b.width,0.1,b.depth]} color="#dde3e8"/>
   <Box p={[0,y-0.005,0]} s={[b.width-0.2,0.01,b.depth-0.2]} color="#f2eee6" cast={false}/>
   {L.bg && <FloorPicture bg={L.bg} y={y+0.004}/>}
+  {L.lift && <Lift p={L.lift}/>}
   {L.corridor && <Box p={[0,y,(c0+c1)/2]} s={[b.width-0.3,0.01,c1-c0]} color="#d9e6f2" cast={false}/>}
   {tint!=='none' && L.zones.map((z,i)=><mesh key={i} rotation-x={-Math.PI/2} position={[(z.x0+z.x1)/2,y+0.012,(z.z0+z.z1)/2]}>
    <planeGeometry args={[z.x1-z.x0-0.16,z.z1-z.z0-0.16]}/><meshBasicMaterial color={tint==='density'?densityColor(depts[i]?.queue??0):z.dept.color} transparent opacity={tint==='density'?0.45:0.32} depthWrite={false}/>

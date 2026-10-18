@@ -156,9 +156,9 @@ function seatGrid(a:FRect, booths:boolean):Spot2[] {
   return grid;
 }
 
-// A walking route on a floor laid out by hand (building-local): out of the room through its door, around the other
-// rooms, in through the target room's door. On a grid (0.25), four directions, turns cost extra, so the line keeps to
-// a few straight legs. Without a way through, a plain line.
+// A walking route on a floor (building-local): out of the room through its door, to the target, in through the target
+// room's door. Laid out automatically: along the corridor. By hand: around the other rooms, on a grid (0.25), four
+// directions, turns cost extra, so the line keeps to a few straight legs; without a way through, a plain line.
 export function floorRoute(plan:FloorPlan, from:Spot2, to:Spot2):Spot2[] {
   const G = 0.25, hw = plan.W/2, hd = plan.D/2, nx = Math.max(1,Math.round(plan.W/G)), nz = Math.max(1,Math.round(plan.D/G));
   const inRoom = (p:Spot2) => plan.rooms.find(r=>p.x>r.x0 && p.x<r.x1 && p.z>r.z0 && p.z<r.z1);
@@ -166,6 +166,11 @@ export function floorRoute(plan:FloorPlan, from:Spot2, to:Spot2):Spot2[] {
   const a = inRoom(from), b = inRoom(to);
   const head = a && a!==b ? [from,door(a,-0.3),door(a,0.4)] : [from], tail = b && a!==b ? [door(b,0.4),door(b,-0.3),to] : [to];
   if (a && a===b) return [from,to];
+  if (plan.corridor) { // out to the corridor (through the door), along it, in (through the door)
+    const cz = (plan.corridor[0]+plan.corridor[1])/2, s = head[head.length-1], t = tail[0];
+    const out = [...head.slice(0,-1),{x:s.x,z:s.z},{x:s.x,z:cz},{x:t.x,z:cz},{x:t.x,z:t.z},...tail.slice(1)];
+    return out.filter((p,k)=>k===0 || Math.hypot(p.x-out[k-1].x,p.z-out[k-1].z)>1e-9);
+  }
   const s = head[head.length-1], t = tail[0];
   const cell = (p:Spot2) => [Math.min(nx-1,Math.max(0,Math.floor((p.x+hw)/G))),Math.min(nz-1,Math.max(0,Math.floor((p.z+hd)/G)))] as const;
   const centre = (i:number, j:number):Spot2 => ({x:-hw+(i+0.5)*G,z:-hd+(j+0.5)*G});

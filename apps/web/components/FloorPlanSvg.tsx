@@ -24,9 +24,9 @@ export default function FloorPlanSvg({buildingId,level,highlightRoom,highlightZo
  const bands = (plan?.bands ?? []).map(bd=>({...w(bd),name:bd.name}));
  // zoneAt: highlight the waiting area that contains this point (a little slack towards the counters).
  const zone = highlightZone ?? (zoneAt ? (i=>i<0 ? undefined : i)(bands.findIndex(bd=>inside(zoneAt,{...bd,z0:bd.z0-0.2}))) : undefined);
- // Route: out to the corridor, along it, then into the room / to the counter; laid out by hand, out of doors and around rooms.
- const path = route ? (()=>{ if (!corr && plan) return floorRoute(plan,{x:route.from.x-b.x,z:route.from.z-b.z},{x:route.to.x-b.x,z:route.to.z-b.z}).map(p=>({x:p.x+b.x,z:p.z+b.z}));
-  if (!corr) return [route.from,route.to]; const cz = b.z+(corr[0]+corr[1])/2; return [route.from,{x:route.from.x,z:cz},{x:route.to.x,z:cz},route.to]; })() : [];
+ // Route: out of the room by its door, along the corridor (laid out by hand: around the rooms), in by the target's door.
+ const path = route ? (()=>{ if (plan) return floorRoute(plan,{x:route.from.x-b.x,z:route.from.z-b.z},{x:route.to.x-b.x,z:route.to.z-b.z}).map(p=>({x:p.x+b.x,z:p.z+b.z}));
+  return [route.from,route.to]; })() : [];
  const lift = liftSpot(buildingId,level);
  return <svg className="planSvg" viewBox={`${x0-pad} ${z0-pad} ${b.width+pad*2} ${b.depth+pad*2}`} style={{height}} role="img" aria-label="ผังชั้น">
   <defs><marker id="planArrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="4" markerHeight="4" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#1677ff"/></marker></defs>
