@@ -2589,3 +2589,17 @@ a.liffChoice{text-decoration:none;padding:10px 16px}
 /* Add rows: the button is as tall as the fields beside it (40px). */
 .facAddPoints .btn{box-sizing:border-box;min-height:40px;padding:0 14px;border-radius:10px;font-size:13.5px}
 .facPointEdit .rowActs .btn{box-sizing:border-box;min-height:40px;padding:0 14px;border-radius:10px}
+/* Floor preview header with its 2D / 3D switch */
+.facPreviewHead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;font-size:12.5px}
+.facPreviewHead b{color:#0f2340;font-size:13px}
+.facPreviewHead .facViews{margin-left:auto}
+.facViews.sm button{padding:4px 12px;font-size:12px}
+.facPreview3d{height:340px;border-radius:10px;overflow:hidden;background:#f4f7fb}
+.facPreview3d.loading{display:grid;place-items:center;color:#7a8ca0;font-size:13px}
+.fac3dLabel{padding:1px 6px;border-radius:6px;background:#ffffffe6;color:#334155;font-size:10.5px;font-weight:600;white-space:nowrap;pointer-events:none;box-shadow:0 1px 3px #0b1d3322}
+.fac3dLabel.hi{background:#1677ff;color:#fff}
+.fac3dLabel.off{color:#94a3b8}
+.fac3dLabel.band{background:transparent;box-shadow:none;color:#64748b;font-weight:700}
+.fac3dTag{transform:translate(-8px,-100%);padding:3px 10px;border-radius:999px;background:#1677ff;color:#fff;font-size:11.5px;font-weight:700;white-space:nowrap;pointer-events:none;box-shadow:0 4px 12px #1677ff55}
+.facPreview3d{position:relative}
+.fac3dLabels{position:absolute;inset:0;pointer-events:none;z-index:1;overflow:hidden}
