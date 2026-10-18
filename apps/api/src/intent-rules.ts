@@ -1,3 +1,4 @@
+import { buildingName, floorName } from './facility-names';
 import type { Destination } from './wayfinding.service';
 
 // Deterministic understanding of a short Thai question — shared by the LINE chatbot (line-bot.ts) and the Digital
@@ -7,9 +8,9 @@ export type Category = 'emergency' | 'clinical' | 'personal' | 'queue' | 'hours'
 
 export const normalize = (raw: string) => raw.trim().replace(/\s+/g, ' ').slice(0, 200);
 
-export const BUILDING_TH: Record<string, string> = { opd: 'อาคารผู้ป่วยนอก (OPD)', er: 'อาคารฉุกเฉิน', diagnostics: 'อาคารศูนย์การแพทย์', inpatient: 'อาคารผู้ป่วยใน', support: 'อาคารสนับสนุน' };
-export const buildingTh = (id: string) => BUILDING_TH[id] ?? `อาคาร ${id}`;
-export const whereTh = (p: { buildingId: string; level: number }) => `${buildingTh(p.buildingId)} ชั้น ${p.level}`;
+// Building and floor by the facility's names (facility-names.ts).
+export const buildingTh = (id: string) => buildingName(id);
+export const whereTh = (p: { buildingId: string; level: number }) => `${buildingName(p.buildingId)} ${floorName(p.buildingId, p.level)}`;
 
 // "Where is …": the public place with the longest name found in the message (so "ห้องยา" beats "ยา").
 export function placeIn(text: string, places: Destination[]): Destination | undefined {

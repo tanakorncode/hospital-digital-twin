@@ -521,4 +521,12 @@ export const MIGRATIONS: Migration[] = [
       ALTER TABLE facility_service_groups ADD COLUMN options_json TEXT;
     `,
   },
+  {
+    version: 14,
+    name: 'wayfinding places linked to departments',
+    sql: `
+      -- A place (QR sign) for a department on a floor: where its waiting area is drawn follows the facility.
+      ALTER TABLE destinations ADD COLUMN department_id TEXT;
+    `,
+  },
 ];

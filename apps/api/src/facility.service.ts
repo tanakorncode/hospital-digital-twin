@@ -3,6 +3,7 @@ import { DbService } from './db.service';
 import { AppError } from './errors';
 import { indexFacility, pointInUse, departmentInUse, roomRef, stationLabel, usable, validateFacility, type Department, type Facility, type FacilityData, type FacilityIndex, type Issue,
   type ServicePoint } from './facility-model';
+import { setFacilityNames } from './facility-names';
 import { sampleFacility } from './facility-template';
 import type { Layout, QueueSettings } from './queue.service';
 
@@ -68,6 +69,16 @@ export class FacilityService {
     if (typeof ref !== 'string') return undefined;
     const p = this.ix.point.get(ref) ?? this.ix.point.get(`room:${ref}`), g = p && this.ix.group.get(p.groupId);
     return p && g && g.departmentId === departmentId && g.pointKind === 'room' && g.steps.includes('exam') && pointInUse(this.ix, p.id) ? p : undefined;
+  }
+  floorAt(buildingId: string, level: number) { return this.cur.floors.find((f) => f.buildingId === buildingId && f.level === level && !f.retiredAt); }
+  // The departments with a waiting band on a floor, in band order (as the map draws them: department order).
+  bandsOn(buildingId: string, level: number): string[] {
+    const f = this.floorAt(buildingId, level); if (!f) return [];
+    const ids = new Set<string>(), live = (id: string) => { const d = this.ix.department.get(id); return !!d && !d.retiredAt; };
+    for (const g of this.cur.groups) if (!g.retiredAt && g.pointKind !== 'kiosk' && g.floorId === f.id && live(g.departmentId)) ids.add(g.departmentId);
+    for (const p of this.cur.points) { const g = this.ix.group.get(p.groupId); if (!p.retiredAt && g && !g.retiredAt && g.pointKind !== 'kiosk' && p.floorId === f.id && live(g.departmentId)) ids.add(g.departmentId); }
+    const order = new Map(this.cur.departments.map((d, i) => [d.id, i]));
+    return [...ids].sort((a, c) => order.get(a)! - order.get(c)!);
   }
   // The name of a queue station as patients read it ("ห้องตรวจ 201", "ช่องจ่ายยา 3"); undefined = not in the model.
   stationName(id: string): string | undefined { return stationLabel(this.ix, id); }
@@ -250,6 +261,15 @@ export class FacilityService {
     const v = db.prepare('SELECT version, published_at FROM facility_versions ORDER BY version DESC LIMIT 1').get() as { version: number; published_at: string };
     this.cur = { ...data, version: v.version, publishedAt: v.published_at };
     this.ix = indexFacility(this.cur);
+    const ix = this.ix;
+    setFacilityNames({
+      building: (id) => ix.building.get(id)?.name,
+      floor: (b, level) => this.floorAt(b, level)?.name,
+      entrance: () => { const reg = this.cur.groups.find((g) => !g.retiredAt && g.steps.includes('registration')), f = reg?.floorId ? ix.floor.get(reg.floorId) : undefined;
+        const bid = f?.buildingId ?? this.cur.buildings.find((b) => !b.retiredAt)?.id; if (!bid) return undefined;
+        const ground = this.cur.floors.filter((x) => x.buildingId === bid && !x.retiredAt).sort((a, c) => a.level - c.level)[0];
+        return { buildingId: bid, level: ground?.level ?? 1, nameTh: `ทางเข้าหลัก ${ix.building.get(bid)?.name ?? ''}`.trim() }; },
+    });
   }
 }
 

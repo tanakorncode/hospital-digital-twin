@@ -2604,3 +2604,4 @@ a.liffChoice{text-decoration:none;padding:10px 16px}
 .facPreview3d{position:relative}
 .fac3dLabels{position:absolute;inset:0;pointer-events:none;z-index:1;overflow:hidden}
 .facLegend.seat{background:#d5dde7;width:8px;height:7px}
+.wayProblem{display:flex;align-items:center;gap:4px;margin-top:3px;color:#b45309;font-size:12px;font-weight:600}

@@ -371,13 +371,13 @@ export const kioskStatusLabel:Record<KioskStatus,string> = {online:'ออนไ
 export const kioskY = (k:Kiosk) => k.level ? floorY(k.level) : 0;
 
 // ---- Department directory: where every department is (building, floor, rooms) — the map's search uses it. ----
-export type DeptPlace = {name:string; buildingId:string; place:string; level:number; deptIndex:number; rooms:string; floorDesc:string; off:boolean};
+export type DeptPlace = {name:string; deptId:string; buildingId:string; place:string; level:number; deptIndex:number; rooms:string; floorDesc:string; off:boolean};
 export const placeName = (b:BuildingSpec) => b.name.match(/\((.+)\)/)?.[1] ?? b.name;
 export function deptDirectory():DeptPlace[] {
   return buildings.flatMap(b=>(buildingStats[b.id]?.floors ?? []).slice().sort((x,y)=>x.level-y.level).flatMap(f=>f.depts.map((name,i)=>{
     const nums = floorRooms(b.id,f.level).filter(r=>r.deptIndex===i).map(r=>r.number);
     const rooms = !nums.length ? '' : nums.length===1 ? `ห้อง ${nums[0]}` : `ห้อง ${nums[0]}–${nums[nums.length-1]}`;
-    return {name,buildingId:b.id,place:`${placeName(b)} ชั้น ${f.level}`,level:f.level,deptIndex:i,rooms,floorDesc:f.desc,off:isOff(`dept:${name}`)};
+    return {name,deptId:floorBands(b.id,f.level)[i]?.deptId ?? '',buildingId:b.id,place:`${placeName(b)} ชั้น ${f.level}`,level:f.level,deptIndex:i,rooms,floorDesc:f.desc,off:isOff(`dept:${name}`)};
   })));
 }
 // Name matches first (start of the name before anywhere in it), then departments on a floor whose description matches.

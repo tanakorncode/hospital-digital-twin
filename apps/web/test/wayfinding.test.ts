@@ -15,9 +15,9 @@ test('directions: same floor, another floor, another building — lifts named, t
   assert.deepEqual(directions(eye, eye), ['คุณอยู่ที่นี่แล้ว']);
 });
 
-test('the department directory becomes places with printable codes, one per department per floor', () => {
+test('the department directory becomes one place per department per floor, each naming its department', () => {
   const list = directoryPlaces();
   assert.ok(list.length > 10);
-  assert.ok(list.every((d) => /^[A-Z0-9][A-Z0-9-]{1,31}$/.test(d.code)), 'codes the API accepts');
-  assert.equal(new Set(list.map((d) => d.code)).size, list.length, 'no two places share a code');
+  assert.ok(list.every((d) => d.departmentId), 'linked to the facility (the server makes the printable codes)');
+  assert.equal(new Set(list.map((d) => `${d.departmentId}@${d.buildingId}:${d.level}`)).size, list.length, 'no department twice on a floor');
 });

@@ -5,7 +5,7 @@ import { buildingStats, buildings, deptDirectory } from './scene-data';
 
 // Wayfinding (stage 2.8): public places with stable codes that QR signs carry, and plain-Thai directions between them.
 // Places only — a sign or this page never holds anything about a patient.
-export type Destination = {code:string; nameTh:string; buildingId:string; level:number; zoneIndex?:number; roomId?:string; landmarkTh?:string;
+export type Destination = {code:string; nameTh:string; buildingId:string; level:number; zoneIndex?:number; roomId?:string; departmentId?:string; problem?:string; landmarkTh?:string;
  descriptionTh?:string; isPublic:boolean; status:'ACTIVE'|'RETIRED'; replacedBy?:string};
 type Res<T> = ({ok:true} & T) | {ok:false; code?:string; reason:string};
 async function get<T>(path:string):Promise<Res<T>> {
@@ -42,7 +42,8 @@ export function directions(from:Destination|undefined, to:Destination):string[] 
 }
 
 // The department directory as places (for "import" in Settings): one per department per floor, code like OPD-2A.
-export function directoryPlaces():Omit<Destination,'status'|'isPublic'>[] {
- return deptDirectory().map(d=>({code:`${d.buildingId.toUpperCase()}-${d.level}${String.fromCharCode(65+d.deptIndex)}`,nameTh:d.name,buildingId:d.buildingId,level:d.level,zoneIndex:d.deptIndex,
+// One place per department on each floor (the server skips departments that already have one there and makes the codes).
+export function directoryPlaces():Omit<Destination,'status'|'isPublic'|'code'>[] {
+ return deptDirectory().map(d=>({nameTh:d.name,buildingId:d.buildingId,level:d.level,zoneIndex:d.deptIndex,departmentId:d.deptId,
   descriptionTh:d.rooms ? `${d.rooms}` : undefined}));
 }

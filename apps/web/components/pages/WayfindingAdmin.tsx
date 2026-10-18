@@ -2,8 +2,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import QRCode from 'qrcode';
-import { Ban, Download, ExternalLink, Link2, Pencil, Plus, Printer, Search, X } from 'lucide-react';
-import { buildings, buildingStats } from '../../lib/scene-data';
+import { Ban, Download, ExternalLink, Link2, Pencil, Plus, Printer, Search, X, AlertTriangle } from 'lucide-react';
+import { buildings, buildingStats, floorBands } from '../../lib/scene-data';
 import type { QueueSync } from '../../lib/queue';
 import { directoryPlaces, signUrl, whereText, type Destination } from '../../lib/wayfinding';
 import { Select } from '../Select';
@@ -13,7 +13,8 @@ import { ModalPortal } from '../ModalPortal';
 // A sign's QR is only this page's address and the place code — nothing else. Retire a place with where it moved to,
 // so signs already on the wall keep leading somewhere useful.
 type Api = QueueSync['api'];
-type Draft = {code:string; nameTh:string; buildingId:string; level:number; zoneIndex?:number; landmarkTh:string; descriptionTh:string; isPublic:boolean};
+// departmentId: the department this place is for — its waiting area on the floor (from the facility) is where the sign leads.
+type Draft = {code:string; nameTh:string; buildingId:string; level:number; zoneIndex?:number; departmentId?:string; landmarkTh:string; descriptionTh:string; isPublic:boolean};
 // A new place starts in the first building, floor 1.
 const empty = ():Draft => ({code:'',nameTh:'',buildingId:buildings[0]?.id ?? '',level:1,landmarkTh:'',descriptionTh:'',isPublic:true});
 
@@ -32,7 +33,7 @@ export function WayfindingAdminPane({api,features,setFeature}:{api:Api; features
  const say = (r:{ok:boolean; reason?:string}, ok:string) => { setMsg(r.ok ? {text:ok} : {text:r.reason ?? 'บันทึกไม่สำเร็จ',bad:true}); if (r.ok) void load(); return r.ok; };
  const importAll = async () => { const r = await api<{ok:boolean; reason?:string; added?:number; kept?:number}>('wayfinding:import',{list:directoryPlaces()});
   say(r,`เพิ่มจุดหมายใหม่ ${r.added ?? 0} จุด${r.kept?` · มีอยู่แล้ว ${r.kept} จุด (คงไว้ตามที่แก้)`:''}`); };
- const save = async () => { if (!edit) return; const r = await api('wayfinding:save',{...edit,zoneIndex:edit.zoneIndex ?? null}); if (say(r,`บันทึก ${edit.nameTh} แล้ว`)) setEdit(null); };
+ const save = async () => { if (!edit) return; const r = await api('wayfinding:save',{...edit,zoneIndex:edit.zoneIndex ?? null,departmentId:edit.departmentId ?? null}); if (say(r,`บันทึก ${edit.nameTh} แล้ว`)) setEdit(null); };
  const doRetire = async () => { if (!retire) return; const r = await api('wayfinding:retire',{code:retire.code,replacedBy:retire.to || undefined});
   if (say(r,`เลิกใช้ ${retire.code} แล้ว${retire.to?` · ป้ายเดิมพาไป ${retire.to}`:''}`)) setRetire(null); };
  const active = list.filter(d=>d.status==='ACTIVE');
@@ -43,7 +44,7 @@ export function WayfindingAdminPane({api,features,setFeature}:{api:Api; features
  const copyLink = async (d:Destination) => { try { await navigator.clipboard.writeText(signUrl(d.code)); setMsg({text:`คัดลอกลิงก์ของ ${d.nameTh} แล้ว`}); } catch { setMsg({text:'คัดลอกไม่สำเร็จ',bad:true}); } };
  const on = !!features.phase2.wayfinding;
  const floors = (bid:string) => buildingStats[bid]?.floors ?? [];
- const zones = edit ? floors(edit.buildingId).find(f=>f.level===edit.level)?.depts ?? [] : [];
+ const zones = edit ? floorBands(edit.buildingId,edit.level) : [];
  return <section className="setCard">
   <div className={'bookSwitch'+(on?' on':'')}><div><b>QR นำทาง {on?'เปิดใช้งาน':'ปิดอยู่'}</b>
    <small>ป้าย QR ตามจุดต่าง ๆ — สแกนแล้วเห็น "คุณอยู่ที่นี่" และทางไปจุดบริการ · เมนูแผนที่ใน LINE ใช้ข้อมูลชุดนี้ · ใน QR มีแค่รหัสจุด ไม่มีข้อมูลผู้ป่วย</small></div>
@@ -59,9 +60,10 @@ export function WayfindingAdminPane({api,features,setFeature}:{api:Api; features
    <div className="slotPlanGrid">
     <label>รหัส (พิมพ์บนป้าย เปลี่ยนไม่ได้){isNew ? <input value={edit.code} maxLength={32} placeholder="เช่น OPD-PHARMACY" onChange={e=>setEdit({...edit,code:e.target.value.toUpperCase()})}/> : <b className="bookCode">{edit.code}</b>}</label>
     <label className="wide">ชื่อที่ผู้ป่วยเห็น<input value={edit.nameTh} maxLength={60} onChange={e=>setEdit({...edit,nameTh:e.target.value})}/></label>
-    <label>อาคาร<Select value={edit.buildingId} onChange={v=>setEdit({...edit,buildingId:v,level:1,zoneIndex:undefined})} options={buildings.map(b=>({value:b.id,label:b.name}))}/></label>
-    <label>ชั้น<Select value={edit.level} onChange={v=>setEdit({...edit,level:v,zoneIndex:undefined})} options={floors(edit.buildingId).map(f=>({value:f.level,label:`ชั้น ${f.level}`}))}/></label>
-    <label>โซนบนผัง<Select value={edit.zoneIndex ?? -1} onChange={v=>setEdit({...edit,zoneIndex:v<0 ? undefined : v})} options={[{value:-1,label:'ไม่ระบุ'},...zones.map((z,i)=>({value:i,label:z}))]}/></label>
+    <label>อาคาร<Select value={edit.buildingId} onChange={v=>setEdit({...edit,buildingId:v,level:floors(v).slice(-1)[0]?.level ?? 1,zoneIndex:undefined,departmentId:undefined})} options={buildings.map(b=>({value:b.id,label:b.name}))}/></label>
+    <label>ชั้น<Select value={edit.level} onChange={v=>setEdit({...edit,level:v,zoneIndex:undefined,departmentId:undefined})} options={floors(edit.buildingId).map(f=>({value:f.level,label:`ชั้น ${f.level}`,sub:f.desc}))}/></label>
+    <label>แผนก (พื้นที่รอบนผัง)<Select value={edit.departmentId ?? ''} onChange={v=>{ const i = zones.findIndex(z=>z.deptId===v); setEdit({...edit,departmentId:v || undefined,zoneIndex:i>=0 ? i : undefined}); }}
+     options={[{value:'',label:'ไม่ผูกแผนก (เช่น ลิฟต์ ห้องน้ำ)'},...zones.map(z=>({value:z.deptId,label:z.name}))]}/></label>
     <label className="wide">จุดสังเกต<input value={edit.landmarkTh} maxLength={120} placeholder="เช่น ตรงข้ามลิฟต์ฝั่งซ้าย" onChange={e=>setEdit({...edit,landmarkTh:e.target.value})}/></label>
     <label className="wide">รายละเอียด<input value={edit.descriptionTh} maxLength={200} placeholder="เช่น ห้อง 201–206" onChange={e=>setEdit({...edit,descriptionTh:e.target.value})}/></label>
     <label className="lineCheck"><input type="checkbox" checked={edit.isPublic} onChange={e=>setEdit({...edit,isPublic:e.target.checked})}/> ให้ผู้ป่วยค้นหาได้</label>
@@ -71,9 +73,9 @@ export function WayfindingAdminPane({api,features,setFeature}:{api:Api; features
   {list.length ? <div className="tableWrap tall"><table className="dataTable compact"><thead><tr><th/><th>รหัส</th><th>ชื่อ</th><th>ที่ตั้ง</th><th>จุดสังเกต</th><th>สถานะ</th><th/></tr></thead>
    <tbody>{shown.map(d=><tr key={d.code} className={d.status==='RETIRED'?'muted':''}>
     <td>{d.status==='ACTIVE' && <input type="checkbox" aria-label={`เลือก ${d.nameTh} เพื่อพิมพ์`} checked={picked.has(d.code)} onChange={()=>setPicked(p=>{ const n = new Set(p); if (n.has(d.code)) n.delete(d.code); else n.add(d.code); return n; })}/>}</td>
-    <td><b className="bookCode">{d.code}</b></td><td>{d.nameTh}{!d.isPublic && <small className="muted"> · เฉพาะเจ้าหน้าที่</small>}</td><td>{whereText(d)}</td><td><small>{d.landmarkTh ?? ''}</small></td>
+    <td><b className="bookCode">{d.code}</b></td><td>{d.nameTh}{!d.isPublic && <small className="muted"> · เฉพาะเจ้าหน้าที่</small>}{d.problem && <small className="wayProblem"><AlertTriangle size={12}/> {d.problem}</small>}</td><td>{whereText(d)}</td><td><small>{d.landmarkTh ?? ''}</small></td>
     <td>{d.status==='ACTIVE' ? 'ใช้งาน' : `เลิกใช้${d.replacedBy?` → ${d.replacedBy}`:''}`}</td>
-    <td>{d.status==='ACTIVE' && <span className="rowActs"><button className="iconBtn" title="แก้ไข" aria-label={`แก้ไข ${d.nameTh}`} onClick={()=>{ setIsNew(false); setEdit({code:d.code,nameTh:d.nameTh,buildingId:d.buildingId,level:d.level,zoneIndex:d.zoneIndex,landmarkTh:d.landmarkTh ?? '',descriptionTh:d.descriptionTh ?? '',isPublic:d.isPublic}); }}><Pencil size={14}/></button>
+    <td>{d.status==='ACTIVE' && <span className="rowActs"><button className="iconBtn" title="แก้ไข" aria-label={`แก้ไข ${d.nameTh}`} onClick={()=>{ setIsNew(false); setEdit({code:d.code,nameTh:d.nameTh,buildingId:d.buildingId,level:d.level,zoneIndex:d.zoneIndex,departmentId:d.departmentId,landmarkTh:d.landmarkTh ?? '',descriptionTh:d.descriptionTh ?? '',isPublic:d.isPublic}); }}><Pencil size={14}/></button>
         <button className="iconBtn" title="คัดลอกลิงก์ของจุดนี้ (ลิงก์เดียวกับในป้าย QR)" aria-label={`คัดลอกลิงก์ของ ${d.nameTh}`} onClick={()=>void copyLink(d)}><Link2 size={14}/></button>
         <a className="iconBtn" href={signUrl(d.code)} target="_blank" rel="noreferrer" title="เปิดหน้าที่ป้าย QR พาไป" aria-label={`เปิดหน้าของ ${d.nameTh}`}><ExternalLink size={14}/></a>
         <button className="iconBtn danger" title="เลิกใช้" aria-label={`เลิกใช้ ${d.nameTh}`} onClick={()=>setRetire({code:d.code,to:''})}><Ban size={14}/></button></span>}</td></tr>)}</tbody></table></div>

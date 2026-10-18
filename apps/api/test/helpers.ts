@@ -41,7 +41,7 @@ export function makeApi() {
   const visits = new VisitsService(db, facility);
   const audit = new AuditService(db), features = new FeaturesService(db), idempotency = new IdempotencyService(db);
   const booking = new BookingService(db, facility), appts = new AppointmentService(db, facility), checkin = new CheckInService(db, booking, visits, appts), identity = new PatientIdentityService(db, booking);
-  const notify = new NotificationService(db, features, identity, visits, facility), wayfinding = new WayfindingService(db);
+  const notify = new NotificationService(db, features, identity, visits, facility), wayfinding = new WayfindingService(db, facility);
   const queue = new QueueService(db, visits), tickets = new TicketsService(db), line = new LineService(db, tickets, notify, wayfinding, features);
   const retention = new RetentionService(db, audit);
   const kiosks = new KioskDeviceService(db), reception = new ReceptionService(db, wayfinding, queue);
