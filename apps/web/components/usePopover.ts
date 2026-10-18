@@ -17,9 +17,11 @@ export function usePopover({width,needs}:{width:number; needs:number}) {
  const show = useCallback(()=>{ place(); setOpen(true); },[place]);
  const close = useCallback((focus=true)=>{ setOpen(false); if (focus) anchor.current?.focus(); },[]);
  useEffect(()=>{ if (!open) return;
-  const outside = (e:MouseEvent) => { const t = e.target as Node; if (!pop.current?.contains(t) && !anchor.current?.contains(t)) setOpen(false); };
-  window.addEventListener('scroll',place,true); window.addEventListener('resize',place); document.addEventListener('mousedown',outside);
-  return ()=>{ window.removeEventListener('scroll',place,true); window.removeEventListener('resize',place); document.removeEventListener('mousedown',outside); };
+  // Any press outside — mouse, pen or finger — caught on the way down (capture), so an element that stops the event
+  // (a plan, a card's own handler) cannot keep the popup open.
+  const outside = (e:PointerEvent) => { const t = e.target as Node; if (!pop.current?.contains(t) && !anchor.current?.contains(t)) setOpen(false); };
+  window.addEventListener('scroll',place,true); window.addEventListener('resize',place); document.addEventListener('pointerdown',outside,true);
+  return ()=>{ window.removeEventListener('scroll',place,true); window.removeEventListener('resize',place); document.removeEventListener('pointerdown',outside,true); };
  },[open,place]);
  return {open,pos,anchor,pop,show,close};
 }
