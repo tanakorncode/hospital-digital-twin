@@ -2633,3 +2633,5 @@ a.liffChoice{text-decoration:none;padding:10px 16px}
 .facEdSel .btn{height:30px}
 .facEdDoor{display:inline-flex;align-items:center;gap:4px;margin-left:6px}
 .facEdDoor .btn.on{background:#1677ff;color:#fff;border-color:#1677ff}
+.facUndo{display:inline-flex;gap:2px;margin-left:auto}
+.facUndo .iconBtn:disabled{opacity:.35;cursor:default}

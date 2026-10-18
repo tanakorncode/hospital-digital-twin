@@ -23,9 +23,10 @@ export type PlanRoom = {point:FPoint; group:FGroup; deptId:string; index:number;
 export type PlanCounter = {point:FPoint; group:FGroup; index:number; count:number; booth:boolean; at:Spot2};
 export type PlanBed = {point:FPoint; group:FGroup; room?:PlanRoom; ward:boolean; at:Spot2};
 // corridor: the band between the rooms and the waiting areas (z from … to), when the floor is laid out automatically.
-// manual: rooms and areas placed by hand. background: the floor-plan picture under the plan, if any.
+// manual: rooms and areas placed by hand. background: the floor-plan picture under the plan, if any. lift: where the lift /
+// stairs are (set on the floor, else the front-left corner by the corridor).
 export type FloorPlan = {floorId:string; buildingId:string; level:number; buildingKind:string; cx:number; cz:number; W:number; D:number; roomFront:number; front0:number;
-  corridor:[number,number]|null; manual:boolean; background?:FFloorLayout['background']; bands:PlanBand[]; rooms:PlanRoom[]; counters:PlanCounter[]; beds:PlanBed[]};
+  corridor:[number,number]|null; manual:boolean; background?:FFloorLayout['background']; lift:Spot2; bands:PlanBand[]; rooms:PlanRoom[]; counters:PlanCounter[]; beds:PlanBed[]};
 
 // Inside a room, from where its door is: `across` along the door wall (from the left, looking out of the door), `deep`
 // from the back wall towards the door. yaw turns things drawn for a front-door room (door 's') to face this room's door.
@@ -126,7 +127,7 @@ export function planFloor(data:Data, floorId:string):FloorPlan|null {
     return {deptId:id,name:dept.get(id)!.name,index:i,x0:a.x0,x1:a.x1,z0:a.z0,z1:a.z1,seats};
   });
   return {floorId,buildingId:b.id,level:floor.level,buildingKind:kind,cx:b.map.x,cz:b.map.z,W,D,roomFront,front0,corridor:manual ? null : [roomFront,front0],manual,
-    background:L.background,bands,rooms,counters,beds};
+    background:L.background,lift:L.lift ? {x:L.lift.x,z:L.lift.z} : {x:-hw+0.6,z:roomFront+0.6},bands,rooms,counters,beds};
 }
 // The most chairs a band of this floor can hold (the number the settings page caps a group's seats at).
 export function seatCapacity(plan:FloorPlan, deptId:string) {
@@ -138,4 +139,47 @@ function seatGrid(a:FRect, booths:boolean):Spot2[] {
   const grid:Spot2[] = [];
   for (let z=a.z0+(booths ? 2 : CORRIDOR); z<a.z1-0.3; z+=SEAT_DZ) for (let x=a.x0+0.45; x<a.x1-0.3; x+=SEAT_DX) grid.push({x,z});
   return grid;
+}
+
+// A walking route on a floor laid out by hand (building-local): out of the room through its door, around the other
+// rooms, in through the target room's door. On a grid (0.25), four directions, turns cost extra, so the line keeps to
+// a few straight legs. Without a way through, a plain line.
+export function floorRoute(plan:FloorPlan, from:Spot2, to:Spot2):Spot2[] {
+  const G = 0.25, hw = plan.W/2, hd = plan.D/2, nx = Math.max(1,Math.round(plan.W/G)), nz = Math.max(1,Math.round(plan.D/G));
+  const inRoom = (p:Spot2) => plan.rooms.find(r=>p.x>r.x0 && p.x<r.x1 && p.z>r.z0 && p.z<r.z1);
+  const door = (r:PlanRoom, d:number) => { const f = roomFrame(r); return roomPoint(r,Math.min(DOORWAY,f.across)/2,f.deep+d); };
+  const a = inRoom(from), b = inRoom(to);
+  const head = a && a!==b ? [from,door(a,-0.3),door(a,0.4)] : [from], tail = b && a!==b ? [door(b,0.4),door(b,-0.3),to] : [to];
+  if (a && a===b) return [from,to];
+  const s = head[head.length-1], t = tail[0];
+  const cell = (p:Spot2) => [Math.min(nx-1,Math.max(0,Math.floor((p.x+hw)/G))),Math.min(nz-1,Math.max(0,Math.floor((p.z+hd)/G)))] as const;
+  const centre = (i:number, j:number):Spot2 => ({x:-hw+(i+0.5)*G,z:-hd+(j+0.5)*G});
+  const blocked = new Uint8Array(nx*nz);
+  for (let j=0; j<nz; j++) for (let i=0; i<nx; i++) { const c = centre(i,j);
+    if (plan.rooms.some(r=>c.x>r.x0-0.1 && c.x<r.x1+0.1 && c.z>r.z0-0.1 && c.z<r.z1+0.1)) blocked[j*nx+i] = 1; }
+  const [si,sj] = cell(s), [ti,tj] = cell(t), start = sj*nx+si, goal = tj*nx+ti;
+  blocked[start] = 0; blocked[goal] = 0;
+  // A* over (cell, heading): cost 1 a step, +2 a turn.
+  const cost = new Float64Array(nx*nz*4).fill(Infinity), prev = new Int32Array(nx*nz*4).fill(-1), open:number[] = [];
+  const dirs = [[1,0],[-1,0],[0,1],[0,-1]], h = (k:number) => Math.abs(k%nx-ti)+Math.abs(Math.floor(k/nx)-tj);
+  for (let d=0; d<4; d++) { cost[start*4+d] = 0; open.push(start*4+d); }
+  let found = -1;
+  while (open.length) {
+    let bi = 0; for (let k=1; k<open.length; k++) if (cost[open[k]]+h(open[k]>>2)<cost[open[bi]]+h(open[bi]>>2)) bi = k;
+    const st = open[bi]; open[bi] = open[open.length-1]; open.pop();
+    const c = st>>2, d0 = st&3; if (c===goal) { found = st; break; }
+    const ci = c%nx, cj = Math.floor(c/nx);
+    for (let d=0; d<4; d++) { const ni = ci+dirs[d][0], nj = cj+dirs[d][1]; if (ni<0 || nj<0 || ni>=nx || nj>=nz) continue;
+      const n = nj*nx+ni; if (blocked[n]) continue;
+      const k = n*4+d, v = cost[st]+1+(d===d0 ? 0 : 2); if (v<cost[k]) { cost[k] = v; prev[k] = st; open.push(k); } }
+  }
+  if (found<0) return [...head,...tail];
+  const cells:Spot2[] = []; for (let st = found; st>=0; st = prev[st]) cells.push(centre((st>>2)%nx,Math.floor((st>>2)/nx)));
+  cells.reverse();
+  // Keep the corners only, and start / end exactly where asked.
+  const pts = [s,...cells.slice(1,-1),t], out:Spot2[] = [pts[0]];
+  for (let k=1; k<pts.length-1; k++) { const p = out[out.length-1], q = pts[k], r = pts[k+1];
+    if (Math.abs((q.x-p.x)*(r.z-q.z)-(q.z-p.z)*(r.x-q.x))>1e-9) out.push(q); }
+  out.push(pts[pts.length-1]);
+  return [...head.slice(0,-1),...out,...tail.slice(1)];
 }

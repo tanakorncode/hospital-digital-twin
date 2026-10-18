@@ -28,11 +28,12 @@ export type Floor = { id: string; buildingId: string; level: number; name: strin
 //   manual: every room and waiting area where it was put (rooms: point id → rectangle + the wall its door is in;
 //     areas: department id → rectangle); anything not placed yet stands where the automatic layout puts it.
 //   background: a floor-plan picture (facility image id) laid under the plan, stretched over x0…x1 × z0…z1.
+//   lift: where the lift / stairs are (directions on the patient's floor plan start there); not set = the front-left corner.
 export type FloorRect = { x0: number; z0: number; x1: number; z1: number };
 export type DoorSide = 'n' | 's' | 'e' | 'w';
 export type FloorLayout = { mode?: 'auto' | 'manual'; roomDepth?: number; bandOrder?: string[]; bandWeights?: Record<string, number>; roomOrder?: string[];
   roomWeights?: Record<string, number>; rooms?: Record<string, FloorRect & { door: DoorSide }>; areas?: Record<string, FloorRect>;
-  background?: FloorRect & { imageId: string; opacity: number } };
+  background?: FloorRect & { imageId: string; opacity: number }; lift?: { x: number; z: number } };
 export type Features = { booking: boolean; appointments: boolean; walkIn: boolean };
 // queuePrefix: the letter(s) of the department's queue numbers (unique). firstGroupId: where a patient waits after
 // registering / checking in (the department's first step).
@@ -127,7 +128,7 @@ const isRetired = (v: unknown) => v === undefined || (typeof v === 'string' && v
 const isColor = (v: unknown) => typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v);
 const isRect = (r: unknown) => Array.isArray(r) && r.length === 4 && r.every((n) => isNum(n, -500, 500));
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
-const LAYOUT_KEYS = ['mode', 'roomDepth', 'bandOrder', 'bandWeights', 'roomOrder', 'roomWeights', 'rooms', 'areas', 'background'];
+const LAYOUT_KEYS = ['mode', 'roomDepth', 'bandOrder', 'bandWeights', 'roomOrder', 'roomWeights', 'rooms', 'areas', 'background', 'lift'];
 // A floor's layout: its shape, and every rectangle inside the building (min 0.8 across). Unknown ids are left alone —
 // a department or room taken out of the draft must not make the floor unpublishable; the layout just skips it.
 function layoutProblem(l: unknown, w: number, d: number): string | undefined {
@@ -146,6 +147,8 @@ function layoutProblem(l: unknown, w: number, d: number): string | undefined {
   if (bg !== undefined && !(isObj(bg) && typeof bg.imageId === 'string' && ID_RE.test(bg.imageId) && isNum(bg.opacity, 0.1, 1)
     && isNum(bg.x0, -500, 500) && isNum(bg.x1, -500, 500) && isNum(bg.z0, -500, 500) && isNum(bg.z1, -500, 500) && (bg.x1 as number) > (bg.x0 as number) && (bg.z1 as number) > (bg.z0 as number)))
     return 'ภาพผังพื้นหลังไม่ถูกต้อง';
+  const lift = l.lift;
+  if (lift !== undefined && !(isObj(lift) && Object.keys(lift).length === 2 && isNum(lift.x, -w / 2 - e, w / 2 + e) && isNum(lift.z, -d / 2 - e, d / 2 + e))) return 'ตำแหน่งลิฟต์/บันไดต้องอยู่ในอาคาร';
   return undefined;
 }
 

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 import { sampleFacility as template } from '../../api/src/facility-template';
 import { facility, setFacility, type Facility } from '../lib/facility';
-import { CORRIDOR, SEAT_DX, SEAT_DZ, floorFrame, planFloor, seatCapacity } from '../lib/floor-layout';
+import { CORRIDOR, SEAT_DX, SEAT_DZ, floorFrame, floorRoute, planFloor, roomFrame, roomPoint, seatCapacity } from '../lib/floor-layout';
 import { layoutFloor } from '../lib/floor-preview';
 import { erBedSpots, erResusSpots, wardBeds } from '../lib/patients';
 import { allStations } from '../lib/queue';
@@ -160,4 +160,37 @@ test('a floor laid out by hand: the map, the patients and the preview agree once
     assert.ok(near(p.x,s.spot.x-b.x) && near(p.z,s.spot.z-b.z),s.id);
   }
   for (const r of mapRooms) { const at = allStations().find(s=>s.id===r.pointId)?.spot; if (at) assert.ok(inside({x:at.x-b.x,z:at.z-b.z},r),`${r.pointId} patient inside its room`); }
+});
+
+test('the lift: by the corridor at the front-left, or where it was put on the floor', () => {
+  const f = structuredClone(template()), floor = f.floors.find(x=>x.id==='opd-2')!;
+  let plan = planFloor(f,'opd-2')!;
+  assert.ok(near(plan.lift.x,-plan.W/2+0.6) && near(plan.lift.z,-plan.D/2+plan.D*0.42+0.6),'where it always was');
+  floor.layout = {lift:{x:3,z:-1}};
+  plan = planFloor(f,'opd-2')!;
+  assert.deepEqual(plan.lift,{x:3,z:-1});
+});
+
+test('directions on a floor laid out by hand: out of the door, around the rooms, in through the target\'s door', () => {
+  const f = structuredClone(template()), floor = f.floors.find(x=>x.id==='opd-4')!;
+  const auto = planFloor(f,'opd-4')!, hw = auto.W/2, hd = auto.D/2;
+  // A row of rooms across the middle with their doors facing the front; the lift behind them.
+  const rooms:Record<string,{x0:number; z0:number; x1:number; z1:number; door:'n'|'s'|'e'|'w'}> = {};
+  auto.rooms.forEach((r,k)=>{ const w = (auto.W-2)/auto.rooms.length; rooms[r.point.id] = {x0:-hw+k*w,z0:-1.5,x1:-hw+(k+1)*w,z1:1.5,door:'s'}; });
+  floor.layout = {mode:'manual',rooms,lift:{x:0,z:-hd+0.6}};
+  const plan = planFloor(f,'opd-4')!, target = plan.rooms[3], inside = roomPoint(target,roomFrame(target).across/2,1);
+  const path = floorRoute(plan,plan.lift,inside);
+  assert.deepEqual(path[0],plan.lift); assert.deepEqual(path.at(-1),inside);
+  // Every step of the way: in the building, and inside no room except the target (entered at its door).
+  const strictlyIn = (p:{x:number; z:number}, r:{x0:number; x1:number; z0:number; z1:number}) => p.x>r.x0+1e-6 && p.x<r.x1-1e-6 && p.z>r.z0+1e-6 && p.z<r.z1-1e-6;
+  for (let k=0; k<path.length-1; k++) for (let u=0; u<=1; u+=0.02) {
+    const p = {x:path[k].x+(path[k+1].x-path[k].x)*u,z:path[k].z+(path[k+1].z-path[k].z)*u};
+    assert.ok(Math.abs(p.x)<=hw+1e-6 && Math.abs(p.z)<=hd+1e-6,'inside the building');
+    for (const r of plan.rooms) if (r!==target) assert.ok(!strictlyIn(p,r),`through ${r.point.id} at ${p.x.toFixed(2)},${p.z.toFixed(2)}`);
+  }
+  // It goes round the end of the row (the gap on the right) and comes in from the front, where the door is.
+  assert.ok(path.some(p=>p.x>plan.rooms.at(-1)!.x1),'round the end of the row');
+  assert.ok(path.at(-3)!.z>target.z1,'from in front of the door');
+  // A few straight legs, not a staircase.
+  assert.ok(path.length<=10,`${path.length} points`);
 });

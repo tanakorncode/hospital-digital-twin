@@ -1,6 +1,7 @@
 'use client';
 import { buildings, floorPlan, floorRooms, isOff } from '../lib/scene-data';
 import { facilityImageUrl } from '../lib/api-url';
+import { floorRoute } from '../lib/floor-layout';
 
 // Light 2D plan of one floor, drawn from the floor's layout as the 3D scene is (lib/floor-layout.ts: rooms, the corridor
 // when laid out automatically, one waiting area per department). Small enough for a phone: used for wayfinding on the patient's
@@ -8,7 +9,9 @@ import { facilityImageUrl } from '../lib/api-url';
 export type PlanPoint = {x:number; z:number};
 export type PlanDot = PlanPoint & {tone:'me'|'called'|'next'|'target'; label?:string; num?:string}; // num: drawn inside the dot (queue order)
 const LIFT_LABEL = 'ลิฟต์ / บันได';
-export const liftSpot = (buildingId:string):PlanPoint => { const b = buildings.find(x=>x.id===buildingId)!; return {x:b.x-b.width/2+0.6,z:b.z-b.depth/2+b.depth*0.42+0.6}; };
+// Where the lift / stairs are on a floor (set in Settings → the floor; else by the corridor at the front-left).
+export const liftSpot = (buildingId:string, level?:number):PlanPoint => { const b = buildings.find(x=>x.id===buildingId)!, plan = level!==undefined ? floorPlan(buildingId,level) : undefined;
+  return plan ? {x:b.x+plan.lift.x,z:b.z+plan.lift.z} : {x:b.x-b.width/2+0.6,z:b.z-b.depth/2+b.depth*0.42+0.6}; };
 const inside = (p:PlanPoint, r:{x0:number; x1:number; z0:number; z1:number}) => p.x>=r.x0 && p.x<=r.x1 && p.z>=r.z0 && p.z<=r.z1;
 
 export default function FloorPlanSvg({buildingId,level,highlightRoom,highlightZone,zoneAt,dots=[],route,showLift,height=220}:{buildingId:string;level:number;highlightRoom?:string;highlightZone?:number;zoneAt?:PlanPoint;
@@ -21,9 +24,10 @@ export default function FloorPlanSvg({buildingId,level,highlightRoom,highlightZo
  const bands = (plan?.bands ?? []).map(bd=>({...w(bd),name:bd.name}));
  // zoneAt: highlight the waiting area that contains this point (a little slack towards the counters).
  const zone = highlightZone ?? (zoneAt ? (i=>i<0 ? undefined : i)(bands.findIndex(bd=>inside(zoneAt,{...bd,z0:bd.z0-0.2}))) : undefined);
- // Route: out to the corridor, along it, then into the room / to the counter; without a corridor, across then along.
- const path = route ? (()=>{ if (!corr) return [route.from,{x:route.to.x,z:route.from.z},route.to]; const cz = b.z+(corr[0]+corr[1])/2; return [route.from,{x:route.from.x,z:cz},{x:route.to.x,z:cz},route.to]; })() : [];
- const lift = liftSpot(buildingId);
+ // Route: out to the corridor, along it, then into the room / to the counter; laid out by hand, out of doors and around rooms.
+ const path = route ? (()=>{ if (!corr && plan) return floorRoute(plan,{x:route.from.x-b.x,z:route.from.z-b.z},{x:route.to.x-b.x,z:route.to.z-b.z}).map(p=>({x:p.x+b.x,z:p.z+b.z}));
+  if (!corr) return [route.from,route.to]; const cz = b.z+(corr[0]+corr[1])/2; return [route.from,{x:route.from.x,z:cz},{x:route.to.x,z:cz},route.to]; })() : [];
+ const lift = liftSpot(buildingId,level);
  return <svg className="planSvg" viewBox={`${x0-pad} ${z0-pad} ${b.width+pad*2} ${b.depth+pad*2}`} style={{height}} role="img" aria-label="ผังชั้น">
   <defs><marker id="planArrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="4" markerHeight="4" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#1677ff"/></marker></defs>
   <rect x={x0} y={z0} width={b.width} height={b.depth} rx={0.3} className="pBld"/>

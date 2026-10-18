@@ -209,7 +209,7 @@ const bName = (b:string) => { const x = fBuilding(b); return x ? x.name.replace(
 // "You are here → there": same floor draws the walk; another floor (or building) starts at the lift with the steps written out.
 function WayFinder({way}:{way:Way}) {
   const {from,to} = way, sameFloor = !!from && from.b===to.b && from.level===to.level;
-  const start = sameFloor ? from! : from ? {...liftSpot(to.b),label:'เริ่มที่ลิฟต์'} : undefined;
+  const start = sameFloor ? from! : from ? {...liftSpot(to.b,to.level),label:'เริ่มที่ลิฟต์'} : undefined;
   const floorText = `${bName(to.b)} ชั้น ${to.level}`;
   return <div className="qsWay">
     <b>{way.title}</b>

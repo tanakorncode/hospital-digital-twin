@@ -300,7 +300,7 @@ test('a floor can be laid out: proportions, rooms and waiting areas placed by ha
   assert.deepEqual(validateFacility(d).issues, []);
   // By hand: rooms with their door side, areas; ids no longer in the facility are left alone, not refused.
   floor.layout = { mode: 'manual', rooms: { 'room:opd-201': { x0: -b.width / 2, z0: -b.depth / 2, x1: -b.width / 2 + 3, z1: -b.depth / 2 + 3, door: 'e' }, 'gone:1': { x0: 0, z0: 0, x1: 1, z1: 1, door: 's' } },
-    areas: { 'opd-2-0': { x0: -2, z0: 0, x1: 2, z1: b.depth / 2 } } };
+    areas: { 'opd-2-0': { x0: -2, z0: 0, x1: 2, z1: b.depth / 2 } }, lift: { x: b.width / 2 - 1, z: 0 } };
   assert.deepEqual(validateFacility(d).issues, []);
   // Out of the building, too small, a bad door, a weight out of range: refused.
   const bad = (layout: unknown, what: string) => { const x = clone(d); x.floors.find((f) => f.id === 'opd-2')!.layout = layout as never;
@@ -311,6 +311,7 @@ test('a floor can be laid out: proportions, rooms and waiting areas placed by ha
   bad({ bandWeights: { 'opd-2-0': 50 } }, 'weight');
   bad({ roomDepth: 0.95 }, 'room depth');
   bad({ colour: 'red' }, 'unknown setting');
+  bad({ lift: { x: b.width, z: 0 } }, 'lift outside the building');
   // Rooms on top of each other: a warning, not a refusal.
   const x = clone(d), lay = x.floors.find((f) => f.id === 'opd-2')!.layout!;
   lay.rooms!['room:opd-202'] = { ...lay.rooms!['room:opd-201'], door: 's' };

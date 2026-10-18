@@ -1,6 +1,6 @@
 'use client';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { AlertTriangle, ArchiveRestore, Building2, ChevronDown, ChevronRight, ChevronUp, History, Layers, MapPin, Pencil, Plus, Search, Trash2, Undo2, X } from 'lucide-react';
+import { AlertTriangle, ArchiveRestore, Building2, ChevronDown, ChevronRight, ChevronUp, History, Layers, MapPin, Pencil, Plus, Redo2, Search, Trash2, Undo2, X } from 'lucide-react';
 import { facility, type BuildingKind, type DepartmentType, type Facility, type FBuilding, type FDepartment, type FFloor, type FGroup, type FPoint, type PointKind } from '../../lib/facility';
 import { useFacility } from '../../lib/use-facility';
 import { stepText, type StepKind } from '../../lib/patients';
@@ -79,14 +79,25 @@ export function FacilityPane({api,online,canEdit,head}:{api?:Api; online:boolean
   const [confirm,setConfirm] = useState<Confirm|null>(null);
   const [toast,setToast] = useState('');
   const dirty = !same(data,strip(cur));
+  // Undo / redo over this session's edits (the draft before each change; quick successive changes — typing, a slider —
+  // count as one). Cleared when the page starts over from the published facility or a stored draft.
+  const past = useRef<Data[]>([]), future = useRef<Data[]>([]), lastEdit = useRef(0), dataRef = useRef(data);
+  const [, setHist] = useState(0);
+  dataRef.current = data;
+  const resetHistory = () => { past.current = []; future.current = []; setHist(h=>h+1); };
+  const commitData = (next:Data) => { const now = Date.now();
+    if (now-lastEdit.current>800 || !past.current.length) { past.current.push(dataRef.current); if (past.current.length>100) past.current.shift(); }
+    lastEdit.current = now; future.current = []; dataRef.current = next; setData(next); setHist(h=>h+1); };
+  const undo = useCallback(()=>{ const prev = past.current.pop(); if (!prev) return; future.current.push(dataRef.current); dataRef.current = prev; lastEdit.current = 0; setData(prev); setHist(h=>h+1); },[]);
+  const redo = useCallback(()=>{ const next = future.current.pop(); if (!next) return; past.current.push(dataRef.current); dataRef.current = next; lastEdit.current = 0; setData(next); setHist(h=>h+1); },[]);
 
   // Start from this administrator's draft (if any), else the published facility.
   useEffect(()=>{ if (!editable || loaded) return;
     void api!('facility:draft:get',{}).then(r=>{ const d = (r as {draft?:{data:Data; baseVersion:number}|null}).draft;
-      if (d) { setData(structuredClone(d.data)); setBase(d.baseVersion); } setLoaded(true); }); },[editable,loaded,api]);
+      if (d) { setData(structuredClone(d.data)); setBase(d.baseVersion); } resetHistory(); setLoaded(true); }); },[editable,loaded,api]); // eslint-disable-line react-hooks/exhaustive-deps
   // Nothing edited yet (or just published): follow the published facility.
   const justPublished = useRef(false);
-  useEffect(()=>{ if (!dirty || !editable || justPublished.current) { justPublished.current = false; setData(strip(facility())); setBase(facility().version); setImpact(null); } },[rev]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(()=>{ if (!dirty || !editable || justPublished.current) { justPublished.current = false; setData(strip(facility())); setBase(facility().version); setImpact(null); resetHistory(); } },[rev]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Save the draft and check it shortly after each change.
   const timer = useRef<ReturnType<typeof setTimeout>|null>(null);
@@ -102,9 +113,16 @@ export function FacilityPane({api,online,canEdit,head}:{api?:Api; online:boolean
     return ()=>{ if (timer.current) clearTimeout(timer.current); };
   },[data,editable,loaded]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const update = useCallback((fn:(d:Data)=>void)=>{ if (!editable) return; setData(prev=>{ const next = structuredClone(prev); fn(next); return next; }); },[editable]);
+  // Every edit goes through here (or apply), so it can be undone.
+  const update = useCallback((fn:(d:Data)=>void)=>{ if (!editable) return; const next = structuredClone(dataRef.current); fn(next); commitData(next); },[editable]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Ctrl/⌘+Z undo, Ctrl/⌘+Shift+Z or Ctrl+Y redo — except while typing in a field (the field undoes its own text).
+  useEffect(()=>{ if (!editable) return;
+    const k = (e:KeyboardEvent) => { if (!(e.ctrlKey || e.metaKey)) return; const t = e.target as HTMLElement|null;
+      if (t && (t.closest('input,textarea,select,[contenteditable=true]'))) return;
+      const key = e.key.toLowerCase(); if (key==='z' && !e.shiftKey) { e.preventDefault(); undo(); } else if ((key==='z' && e.shiftKey) || key==='y') { e.preventDefault(); redo(); } };
+    window.addEventListener('keydown',k); return ()=>window.removeEventListener('keydown',k); },[editable,undo,redo]);
   // A change whose result is needed right away (the id of what was added): made once, outside React's updater.
-  const apply = (fn:(d:Data)=>string) => { const next = structuredClone(data), id = fn(next); setData(next); return id; };
+  const apply = (fn:(d:Data)=>string) => { const next = structuredClone(dataRef.current), id = fn(next); commitData(next); return id; };
   const issuesAt = useMemo(()=>{ const m = new Map<string,Issue[]>(); for (const i of impact?.issues ?? []) if (i.at) m.set(i.at,[...(m.get(i.at) ?? []),i]); return m; },[impact]);
   const notify = (t:string) => { setToast(t); setTimeout(()=>setToast(''),3500); };
 
@@ -154,9 +172,9 @@ export function FacilityPane({api,online,canEdit,head}:{api?:Api; online:boolean
     notify(`เผยแพร่เวอร์ชัน ${(r as {version?:number}).version} แล้ว · ทุกหน้าจอใช้ผังใหม่`); setDialog(null); setImpact(null); return true;
   };
   const discard = () => setConfirm({title:'ทิ้งร่างนี้',detail:'กลับไปใช้ผังที่เผยแพร่อยู่',facts:['การแก้ไขทั้งหมดในร่างจะหายไป'],action:'ทิ้งร่าง',danger:true,
-    run:async ()=>{ await api?.('facility:draft:discard',{}); setData(strip(facility())); setBase(facility().version); setImpact(null); setSaveState('idle'); }});
+    run:async ()=>{ await api?.('facility:draft:discard',{}); setData(strip(facility())); setBase(facility().version); setImpact(null); setSaveState('idle'); resetHistory(); }});
   const restart = () => setConfirm({title:'เริ่มร่างใหม่จากเวอร์ชันล่าสุด',detail:`มีผู้เผยแพร่เวอร์ชัน ${cur.version} ระหว่างที่คุณแก้ร่างจากเวอร์ชัน ${base}`,facts:['ร่างนี้จะถูกทิ้ง แล้วเริ่มจากผังล่าสุด'],action:'เริ่มใหม่',
-    run:async ()=>{ await api?.('facility:draft:discard',{}); setData(strip(facility())); setBase(facility().version); setImpact(null); }});
+    run:async ()=>{ await api?.('facility:draft:discard',{}); setData(strip(facility())); setBase(facility().version); setImpact(null); resetHistory(); }});
 
   const changes = impact?.changes.length ?? (dirty ? 1 : 0);
   const errors = impact?.issues.filter(i=>i.level==='error').length ?? 0;
@@ -227,10 +245,12 @@ export function FacilityPane({api,online,canEdit,head}:{api?:Api; online:boolean
             <span className="muted">{data.buildings.filter(b=>!b.retiredAt).length} อาคาร · {data.floors.filter(f=>!f.retiredAt).length} ชั้น · {data.departments.filter(d=>!d.retiredAt).length} แผนก · {data.groups.filter(g=>!g.retiredAt).length} กลุ่มบริการ · {data.points.filter(p=>!p.retiredAt).length} ห้อง/ช่อง/เตียง</span></div>}
       </div>
     </div>
-    {editable && dirty && <div className="saveBar facBar">
+    {editable && (dirty || future.current.length>0) && <div className="saveBar facBar">
       <span><b>ร่าง · {impact ? `${changes} การเปลี่ยน` : 'กำลังตรวจ…'}{errors ? ` · ต้องแก้ ${errors} ข้อ` : ''}</b>
         <small>{saveState==='saving' ? 'กำลังบันทึกร่าง…' : saveState==='error' ? 'บันทึกร่างไม่สำเร็จ' : 'บันทึกร่างแล้ว · ยังไม่มีผลกับหน้าจอใดจนกว่าจะเผยแพร่'}</small></span>
-      <button className="btn ghost" onClick={discard}>ทิ้งร่าง</button>
+      <span className="facUndo"><button className="iconBtn" onClick={undo} disabled={!past.current.length} title="ย้อนกลับ (Ctrl+Z)" aria-label="ย้อนกลับ"><Undo2 size={17}/></button>
+        <button className="iconBtn" onClick={redo} disabled={!future.current.length} title="ทำซ้ำ (Ctrl+Shift+Z)" aria-label="ทำซ้ำ"><Redo2 size={17}/></button></span>
+      <button className="btn ghost" onClick={discard} disabled={!dirty}>ทิ้งร่าง</button>
       <button className="btn" onClick={()=>setDialog('impact')}>ดูผลกระทบและเผยแพร่</button>
     </div>}
     {toast && <div className="facToast" role="status">{toast}</div>}

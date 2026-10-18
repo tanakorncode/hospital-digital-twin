@@ -14,9 +14,10 @@ import { facilityImageUrl as imageUrl } from '../../lib/api-url';
 //   จัดเอง: every room and waiting area where you put it — drag to move, the corner to resize, pick the wall its door
 //     is in; arrow keys nudge the selected one (Shift: further). Counters, chairs and beds follow their area.
 //   ภาพผังพื้นหลัง: a floor-plan picture under the plan, to trace the real floor.
+//   ลิฟต์/บันได: drag the lift mark to where the lift is — directions on the patients' floor plan start there.
 type Data = Omit<Facility,'version'|'publishedAt'>;
 type Api = (event:string, body:unknown)=>Promise<{ok:boolean; reason?:string} & Record<string,unknown>>;
-type Target = {kind:'room'|'area'|'bg'; id:string};
+type Target = {kind:'room'|'area'|'bg'|'lift'; id:string};
 type Drag = {t:Target; mode:'move'|'size'; start:{x:number; z:number}; orig:FRect} | {t:Target; mode:'split'; list:'rooms'|'bands'; i:number; start:{x:number; z:number}; widths:number[]};
 const Preview3D = dynamic(()=>import('./FacilityPreview3D'),{ssr:false,loading:()=><div className="facPreview3d loading">กำลังโหลดภาพ 3 มิติ…</div>});
 const SNAP = 0.25, snap = (v:number) => Math.round(v/SNAP)*SNAP, MIN = 0.8, MIN_W = 1;
@@ -53,9 +54,10 @@ export function FloorEditor({data,floor,editable,update,api}:{data:Data; floor:F
   // Where things are now (rooms and areas of the plan; what was placed by hand is in the layout).
   const roomRect = (id:string) => { const r = plan.rooms.find(x=>x.point.id===id); return r ? {x0:r.x0,z0:r.z0,x1:r.x1,z1:r.z1,door:r.door} : undefined; };
   const areaRect = (id:string) => { const a = plan.bands.find(x=>x.deptId===id); return a ? {x0:a.x0,z0:a.z0,x1:a.x1,z1:a.z1} : undefined; };
-  const rectOf = (t:Target):FRect|undefined => t.kind==='room' ? roomRect(t.id) : t.kind==='area' ? areaRect(t.id) : layout.background;
+  const LIFT = 0.35, lift = plan.lift; // the lift mark: a small square around the lift's spot
+  const rectOf = (t:Target):FRect|undefined => t.kind==='room' ? roomRect(t.id) : t.kind==='area' ? areaRect(t.id) : t.kind==='lift' ? {x0:lift.x-LIFT,z0:lift.z-LIFT,x1:lift.x+LIFT,z1:lift.z+LIFT} : layout.background;
   const withRect = (l:FFloorLayout, t:Target, r:FRect):FFloorLayout => t.kind==='room' ? {...l,rooms:{...l.rooms,[t.id]:{...r,door:l.rooms?.[t.id]?.door ?? roomRect(t.id)?.door ?? 's'}}}
-    : t.kind==='area' ? {...l,areas:{...l.areas,[t.id]:r}} : {...l,background:{...l.background!,...r}};
+    : t.kind==='area' ? {...l,areas:{...l.areas,[t.id]:r}} : t.kind==='lift' ? {...l,lift:{x:round2((r.x0+r.x1)/2),z:round2((r.z0+r.z1)/2)}} : {...l,background:{...l.background!,...r}};
   // Everything where the plan has it now, written down: the start of a hand-made layout.
   const placedAll = (l:FFloorLayout, p = plan):FFloorLayout => ({...l,mode:'manual',
     rooms:Object.fromEntries(p.rooms.map(r=>[r.point.id,{x0:round2(r.x0),z0:round2(r.z0),x1:round2(r.x1),z1:round2(r.z1),door:r.door}])),
@@ -91,7 +93,7 @@ export function FloorEditor({data,floor,editable,update,api}:{data:Data; floor:F
   const end = () => { if (drag) commit(); };
   const nudge = (e:RKeyboardEvent, t:Target) => {
     if (e.key==='Enter' || e.key===' ') { e.preventDefault(); setSel(t); return; }
-    if (!editable || !(manual || t.kind==='bg')) return; const step = e.shiftKey ? 1 : SNAP;
+    if (!editable || !(manual || t.kind==='bg' || t.kind==='lift')) return; const step = e.shiftKey ? 1 : SNAP;
     const d = ({ArrowLeft:[-step,0],ArrowRight:[step,0],ArrowUp:[0,-step],ArrowDown:[0,step]} as Record<string,[number,number]>)[e.key]; if (!d) return;
     e.preventDefault(); setSel(t); const r = rectOf(t); if (!r) return;
     save(withRect(layout,t,clampRect({x0:r.x0+d[0],z0:r.z0+d[1],x1:r.x1+d[0],z1:r.z1+d[1]},t.kind!=='bg'))); };
@@ -131,7 +133,7 @@ export function FloorEditor({data,floor,editable,update,api}:{data:Data; floor:F
   const bg = layout.background, sx = sel && rectOf(sel);
   const placed = manual ? plan.rooms.map(r=>({id:r.point.id,r})) : [];
   const clash = new Set<string>(); placed.forEach((a,i)=>placed.slice(i+1).forEach(c=>{ if (overlaps(a.r,c.r)) { clash.add(a.id); clash.add(c.id); } }));
-  const selName = sel?.kind==='room' ? L.rooms.find(r=>r.id===sel.id)?.name : sel?.kind==='area' ? L.bands.find(a=>a.id===sel.id)?.name : sel?.kind==='bg' ? 'ภาพผังพื้นหลัง' : '';
+  const selName = sel?.kind==='room' ? L.rooms.find(r=>r.id===sel.id)?.name : sel?.kind==='area' ? L.bands.find(a=>a.id===sel.id)?.name : sel?.kind==='bg' ? 'ภาพผังพื้นหลัง' : sel?.kind==='lift' ? 'ลิฟต์ / บันได' : '';
   const isSel = (t:Target) => sel?.kind===t.kind && sel.id===t.id;
   const handle = (t:Target, r:FRect) => editable && isSel(t) && (manual || t.kind==='bg') && <rect x={r.x1-0.32} y={r.z1-0.32} width="0.64" height="0.64" rx="0.12" fill="#1677ff" stroke="#fff" strokeWidth="0.08"
     style={{cursor:'nwse-resize'}} aria-label="ลากเพื่อปรับขนาด" onPointerDown={e=>begin(e,t,'size')}/>;
@@ -191,21 +193,29 @@ export function FloorEditor({data,floor,editable,update,api}:{data:Data; floor:F
         aria-label="ลากเพื่อปรับความกว้างห้อง" onPointerDown={e=>beginSplit(e,'rooms',i)}/>)}
       {editable && !manual && plan.bands.slice(0,-1).map((a,i)=><rect key={`bs${i}`} className="facEdSplit" x={a.x1-0.16} y={a.z0+0.3} width="0.32" height={Math.max(0.4,a.z1-a.z0-0.6)} rx="0.12"
         aria-label="ลากเพื่อปรับความกว้างพื้นที่รอ" onPointerDown={e=>beginSplit(e,'bands',i)}/>)}
+      {/* The lift / stairs: where directions to this floor start */}
+      {(()=>{ const t:Target = {kind:'lift',id:'lift'}, s = isSel(t);
+        return <g><rect x={lift.x-LIFT} y={lift.z-LIFT} width={LIFT*2} height={LIFT*2} rx="0.12" fill={s?'#1677ff':'#0f766e'} stroke="#fff" strokeWidth="0.06" tabIndex={0} role="button"
+          aria-label="ลิฟต์ / บันได — ลากเพื่อย้าย" style={{cursor:editable?'move':'pointer'}} onPointerDown={e=>begin(e,t,'move')} onKeyDown={e=>nudge(e,t)}/>
+          <path d={`M${lift.x-0.17} ${lift.z-0.04}l0.12-0.2l0.12 0.2zM${lift.x-0.07} ${lift.z+0.04}l0.12 0.2l0.12-0.2z`} fill="#fff" pointerEvents="none"/>
+          <text x={lift.x+LIFT+0.12} y={lift.z+fs*0.35} fontSize={fs*0.85} fill="#0f766e" fontWeight="700" pointerEvents="none">ลิฟต์</text></g>; })()}
       {bg && sel?.kind==='bg' && <><rect x={bg.x0} y={bg.z0} width={bg.x1-bg.x0} height={bg.z1-bg.z0} fill="none" stroke="#1677ff" strokeWidth="0.08" strokeDasharray="0.3 0.2" pointerEvents="none"/>{handle(sel,bg)}</>}
     </svg>}
     {sel && sx && view==='2d' && <div className="facEdSel">
-      <b>{selName}</b><span className="muted">กว้าง {round2(sx.x1-sx.x0)} × ลึก {round2(sx.z1-sx.z0)}</span>
-      {sel.kind!=='bg' && !manual && editable && <><button className="btn ghost sm" onClick={()=>shift(sel,-1)} aria-label="ย้ายไปทางซ้าย"><ArrowLeft size={14}/></button>
+      <b>{selName}</b>{sel.kind==='lift' ? <span className="muted">จุดเริ่มเส้นทางเมื่อผู้ป่วยมาจากชั้นอื่น</span> : <span className="muted">กว้าง {round2(sx.x1-sx.x0)} × ลึก {round2(sx.z1-sx.z0)}</span>}
+      {sel.kind==='lift' && editable && layout.lift && <button className="btn ghost sm" onClick={()=>{ const {lift:_, ...rest} = layout; save(rest); }}>ตำแหน่งเดิม</button>}
+      {(sel.kind==='room' || sel.kind==='area') && !manual && editable && <><button className="btn ghost sm" onClick={()=>shift(sel,-1)} aria-label="ย้ายไปทางซ้าย"><ArrowLeft size={14}/></button>
         <button className="btn ghost sm" onClick={()=>shift(sel,1)} aria-label="ย้ายไปทางขวา"><ArrowRight size={14}/></button></>}
       {sel.kind==='room' && manual && editable && <span className="facEdDoor"><span>ประตูอยู่ด้าน</span>{DOORS.map(d=><button key={d.v} className={'btn ghost sm'+(roomRect(sel.id)?.door===d.v?' on':'')}
         aria-pressed={roomRect(sel.id)?.door===d.v} onClick={()=>setDoor(sel.id,d.v)}>{d.label}</button>)}</span>}
-      {sel.kind!=='bg' && manual && editable && (sel.kind==='room' ? layout.rooms?.[sel.id] : layout.areas?.[sel.id]) &&
+      {(sel.kind==='room' || sel.kind==='area') && manual && editable && (sel.kind==='room' ? layout.rooms?.[sel.id] : layout.areas?.[sel.id]) &&
         <button className="btn ghost sm" onClick={()=>unplace(sel)} title="ให้ระบบวางตามผังอัตโนมัติ">วางอัตโนมัติ</button>}
     </div>}
     <figcaption>{view==='3d' ? 'ลากเพื่อหมุน เลื่อนล้อเพื่อซูม' : !editable ? 'คลิกห้องหรือพื้นที่รอเพื่อดูขนาด'
       : manual ? 'ลากห้อง/พื้นที่รอเพื่อย้าย · ลากมุมสีฟ้าเพื่อปรับขนาด · เลือกแล้วใช้ลูกศรขยับ (Shift = 1 ช่อง) · เส้นสีฟ้า = ประตู · เคาน์เตอร์ เก้าอี้ และเตียงตามพื้นที่รอของแผนก'
       : 'ลากแถบระหว่างห้องหรือระหว่างพื้นที่รอเพื่อปรับความกว้าง · คลิกเพื่อเลือกแล้วย้ายซ้าย/ขวา · อยากวางเองทุกห้อง เลือก "จัดเอง"'}
       {bg && editable && view==='2d' && ' · ปรับภาพผัง: คลิกที่ภาพ แล้วลากเพื่อย้าย ลากมุมเพื่อปรับขนาด'}
+      {editable && view==='2d' && ' · ลากป้ายลิฟต์สีเขียวไปที่ลิฟต์จริง'}
       {clash.size>0 && <b className="facErr"> · มีห้องวางทับกัน</b>}</figcaption>
   </figure>;
 }
