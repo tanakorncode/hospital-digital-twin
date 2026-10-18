@@ -100,7 +100,7 @@ export function SessionPlanner({api,clinics,say,fixed,onMade,existing=[]}:{api:A
  const [dates,setDates] = useState<string[]>([]); // the days picked on the calendar
  const [times,setTimes] = useState<Record<string,Range[]>>({}); // each day's hours (not set = the default)
  const [bulk,setBulk] = useState(DEFAULT_HOURS); // "the same hours for every day"
- const [listMode,setListMode] = useState<'view'|'edit'>('edit'); // the picked days: an easy read, or the rows to edit
+ const [modeSet,setListMode] = useState<'view'|'edit'|null>(null); // the days listed: an easy read, or the rows to edit (not chosen: a read until days are picked)
  const [openWeeks,setOpenWeeks] = useState<Set<string>|null>(null); // weeks shown open (null = the default: all when few days, else the first)
  const [minutes,setMinutes] = useState(15);
  const [capacity,setCapacity] = useState(2);
@@ -125,17 +125,21 @@ export function SessionPlanner({api,clinics,say,fixed,onMade,existing=[]}:{api:A
   setActing(id); const r = await api<{ok:boolean; reason?:string; cancelled?:number}>('appt:session:set',{sessionId:id,status,...(status==='CANCELLED' ? {reason} : {})}); setActing('');
   setDone({text:r.ok ? (status==='CANCELLED' ? `ยกเลิกตารางแล้ว${r.cancelled ? ` · ยกเลิกนัด ${r.cancelled} รายพร้อมแจ้งผู้ป่วย` : ''}` : status==='CLOSED' ? 'ปิดรับนัดเพิ่มแล้ว' : 'เปิดรับนัดแล้ว') : r.reason ?? 'ไม่สำเร็จ',bad:!r.ok});
   // A day whose last session was cancelled leaves the list (so it is not offered new hours by mistake).
-  if (r.ok) { setCancelFor(null); setReason(''); if (status==='CANCELLED' && day && (made[day] ?? []).length<=1 && !times[day]?.length) setDates(ds=>ds.filter(x=>x!==day)); onMade?.(); } };
+  if (r.ok) { setCancelFor(null); setReason(''); if (status==='CANCELLED' && day && (made[day] ?? []).length<=1 && !times[day]?.length) { setDates(ds=>ds.filter(x=>x!==day)); setTimes(t=>({...t,[day]:[]})); } onMade?.(); } };
  const clinicLabel = (k:string) => { const c = clinics.find(x=>x.key===k); return c ? `${c.letter} · ${c.dept}` : k; };
  const marks = useMemo(()=>Object.fromEntries(Object.entries(made).map(([d,l])=>[d,l.map(x=>`${x.start}–${x.end}`).join(', ')])),[made]);
  const clashWithMade = (d:string, x:{start:string; end:string}) => (made[d] ?? []).find(m=>toMin(x.start)<toMin(m.end) && toMin(m.start)<toMin(x.end));
  // New hours for a day: 08:00–16:00 to start with — none for a day that already has sessions (add them if wanted).
  const rangesOf = (d:string) => times[d] ?? (made[d] ? [] : [{id:0,...DEFAULT_HOURS}]);
  const setRanges = (d:string, fn:(r:Range[])=>Range[]) => setTimes(t=>({...t,[d]:fn(t[d] ?? (made[d] ? [] : [{id:++blockSeq,...DEFAULT_HOURS}]))}));
- const allSame = () => setTimes(Object.fromEntries(dates.filter(d=>!made[d]).map(d=>[d,[{id:++blockSeq,...bulk}]]))); // days without sessions
+ const allSame = () => setTimes(t=>({...t,...Object.fromEntries(dates.filter(d=>!made[d]).map(d=>[d,[{id:++blockSeq,...bulk}]]))})); // the new days
  // What it will make
  const slotsOf = (r:{start:string; end:string}) => { const len = toMin(r.end)-toMin(r.start); return len>0 ? Math.floor(len/minutes) : 0; };
- const rows = dates.map(d=>({date:d,ranges:rangesOf(d)}));
+ // Listed: every day with sessions from today (shown straight away), and the new days picked on the calendar.
+ const markedDays = Object.keys(made).filter(d=>d>=today()).sort();
+ const listDays = [...new Set([...markedDays,...dates])].sort();
+ const listMode = modeSet ?? (dates.length ? 'edit' : 'view');
+ const rows = listDays.map(d=>({date:d,ranges:rangesOf(d)}));
  const sessionsN = rows.reduce((n,r)=>n+r.ranges.length,0), total = rows.reduce((n,r)=>n+r.ranges.reduce((m,x)=>m+slotsOf(x)*capacity,0),0);
  const rowProblem = (r:typeof rows[number]) => { for (const x of r.ranges) { if (toMin(x.end)<=toMin(x.start)) return 'เวลาเลิกต้องหลังเวลาเริ่ม'; if (!slotsOf(x)) return 'สั้นกว่าหนึ่งช่วงนัด'; }
   for (let a=0; a<r.ranges.length; a++) for (let b=a+1; b<r.ranges.length; b++) if (toMin(r.ranges[a].start)<toMin(r.ranges[b].end) && toMin(r.ranges[b].start)<toMin(r.ranges[a].end)) return 'ช่วงเวลาซ้อนกัน';
@@ -144,12 +148,12 @@ export function SessionPlanner({api,clinics,say,fixed,onMade,existing=[]}:{api:A
  // The picked days by week (Monday first), each week open or folded to one summary line.
  const weekOf = (d:string) => { const x = new Date(`${d}T12:00:00`); x.setDate(x.getDate()-(x.getDay()+6)%7); return x.toLocaleDateString('sv-SE'); };
  const weeks = [...rows.reduce((m,r)=>{ const k = weekOf(r.date); m.set(k,[...(m.get(k) ?? []),r]); return m; },new Map<string,typeof rows>()).entries()];
- const isOpen = (k:string, list:typeof rows) => list.some(r=>rowProblem(r)) || (openWeeks ? openWeeks.has(k) : dates.length<=7 || k===weeks[0]?.[0]);
+ // Open: a week with a problem or a newly picked day (so a pick is seen at once), else as chosen / the default.
+ const isOpen = (k:string, list:typeof rows) => list.some(r=>rowProblem(r) || (!made[r.date] && dates.includes(r.date))) || (openWeeks ? openWeeks.has(k) : listDays.length<=7 || k===weeks[0]?.[0]);
  const toggleWeek = (k:string) => setOpenWeeks(o=>{ const n = new Set(o ?? weeks.filter(([w,l])=>isOpen(w,l)).map(([w])=>w)); if (n.has(k)) n.delete(k); else n.add(k); return n; });
  const hoursText = (list:typeof rows) => [...new Set(list.flatMap(r=>r.ranges.map(x=>`${x.start}–${x.end}`)))].join(', ');
- const markedDays = Object.keys(made).filter(d=>d>=today()).sort();
  const missing = !pName ? 'กรอกชื่อแพทย์' : !pCode ? 'กรอกรหัสแพทย์' : !/^[A-Za-z0-9ก-๙._-]{1,20}$/.test(pCode) ? 'รหัสแพทย์ใช้ตัวอักษร ตัวเลข . _ - ไม่เกิน 20 ตัว (ไม่มีช่องว่าง)'
-  : !dates.length ? 'เลือกวันที่ออกตรวจในปฏิทิน' : bad ? `${dayOf(bad.date)}: ${rowProblem(bad)}` : !sessionsN ? 'ยังไม่มีเวลาใหม่ให้สร้าง — เพิ่มช่วงเวลาในวันที่เลือก หรือเลือกวันที่ยังไม่มีตาราง' : '';
+  : !rows.length ? 'เลือกวันที่ออกตรวจในปฏิทิน' : bad ? `${dayOf(bad.date)}: ${rowProblem(bad)}` : !sessionsN ? (dates.length ? 'ยังไม่มีเวลาใหม่ให้สร้าง — กด "เพิ่มเวลาใหม่ในวันนี้" หรือเลือกวันที่ยังไม่มีตาราง' : 'เพิ่มตารางใหม่: คลิกวันที่ในปฏิทิน (คลิกวันเริ่มแล้ววันสิ้นสุด = ทั้งช่วง)') : '';
  // The same hours on many days go to the API as one block with those dates.
  const blocksOut = () => { const m = new Map<string,{start:string; end:string; dates:string[]}>();
   for (const r of rows) for (const x of r.ranges) { const k = `${x.start}-${x.end}`, g = m.get(k) ?? {start:x.start,end:x.end,dates:[]}; g.dates.push(r.date); m.set(k,g); }
@@ -177,11 +181,11 @@ export function SessionPlanner({api,clinics,say,fixed,onMade,existing=[]}:{api:A
    </div></section>
   {/* The days on a calendar, then each day's hours */}
   <section className="schedStep"><h5><b className="schedNum">2</b>วันและเวลาออกตรวจ <small>ปฏิทินคือตารางของแพทย์: จุดเขียว = มีตารางแล้ว · เลือกวันเพื่อดู/จัดการตารางเดิม หรือตั้งเวลาใหม่ (เริ่มต้น 08:00–16:00)</small></h5>
-   {markedDays.length>0 && <div className="schedMadeBar"><span><i className="schedCalMade"/> มีตารางอยู่แล้ว {markedDays.length} วัน ({dayOf(markedDays[0])} – {dayOf(markedDays[markedDays.length-1])})</span>
-    <button type="button" className="linkBtn dark" onClick={()=>{ setDates(ds=>[...new Set([...ds,...markedDays])].sort()); setListMode('view'); }}>แสดงวันที่มีตารางทั้งหมด</button></div>}
-   <ScheduleCalendar value={dates} onChange={u=>{ setDates(u); setListMode('edit'); }} min={today()} marks={marks}/>{/* picking on the calendar: to the rows to edit */}
-   {dates.length>0 && <div className="schedDaysList">
-    <div className="schedListHead"><b>วันที่เลือก ({dates.length} วัน)</b>
+   {/* Picking on the calendar goes to the rows to edit; a day that has sessions opens its week there */}
+   <ScheduleCalendar value={dates} onChange={u=>{ setDates(u); setListMode('edit'); }} min={today()} marks={marks}
+    onPick={d=>{ setListMode('edit'); setOpenWeeks(o=>new Set([...(o ?? weeks.filter(([w,l])=>isOpen(w,l)).map(([w])=>w)),weekOf(d)])); }}/>
+   {rows.length>0 && <div className="schedDaysList">
+    <div className="schedListHead"><b>ตารางออกตรวจ ({markedDays.length} วันที่มีตาราง{dates.filter(d=>!made[d]).length ? ` · เพิ่มใหม่ ${dates.filter(d=>!made[d]).length} วัน` : ''})</b>
      <span className="facViews sm" role="tablist" aria-label="มุมมองรายการ">{([['view','ดูภาพรวม'],['edit','แก้ไข / เพิ่ม']] as const).map(([v,t])=>
       <button key={v} type="button" role="tab" aria-selected={listMode===v} className={listMode===v?'on':''} onClick={()=>setListMode(v)}>{t}</button>)}</span></div>
     {listMode==='view' ? <div className="tableWrap"><table className="dataTable schedView"><thead><tr><th>วันที่</th><th>ตารางที่มีอยู่แล้ว</th><th>เวลาใหม่ (ยังไม่บันทึก)</th></tr></thead>
@@ -228,7 +232,7 @@ export function SessionPlanner({api,clinics,say,fixed,onMade,existing=[]}:{api:A
        {problem && <small className="facErr">{problem}</small>}
        {made[r.date] && (()=>{ const clash = r.ranges.map(x=>clashWithMade(r.date,x)).find(Boolean);
         return clash ? <small className="schedMadeWarn">เวลาใหม่ซ้อนกับ {clash.start}–{clash.end} ที่มีอยู่แล้ว — ช่วงที่ซ้อนจะถูกข้าม</small> : null; })()}</div>
-      <button type="button" className="iconBtn schedDayDel" aria-label={`เอา ${dayOf(r.date)} ออกจากรายการ`} title={made[r.date] ? 'เอาออกจากรายการ (ตารางเดิมยังอยู่ — ยกเลิกได้ที่ปุ่มยกเลิก)' : 'เอาวันนี้ออก'} onClick={()=>setDates(ds=>ds.filter(x=>x!==r.date))}><Trash2 size={15}/></button>
+      {!made[r.date] && <button type="button" className="iconBtn schedDayDel" aria-label={`เอา ${dayOf(r.date)} ออก`} title="เอาวันนี้ออก (ยังไม่ได้สร้าง)" onClick={()=>setDates(ds=>ds.filter(x=>x!==r.date))}><Trash2 size={15}/></button>}
      </div>; })}</div>; })}</div></>}</div>}
    <div className="schedRow slim">
     <label><span>แบ่งเป็นช่วงนัด ช่วงละ <InfoTip title="ช่วงนัด คืออะไร">เวลาออกตรวจจะถูกแบ่งเป็นช่วงสั้นๆ ให้ผู้ป่วยเลือกเวลานัด

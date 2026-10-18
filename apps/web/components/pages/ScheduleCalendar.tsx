@@ -12,7 +12,8 @@ const iso = (d:Date) => d.toLocaleDateString('sv-SE');
 const monthName = (d:Date) => d.toLocaleDateString('th-TH',{month:'long',year:'numeric'});
 
 // onChange gets updates from the latest list (quick clicks in a row each count).
-export function ScheduleCalendar({value,onChange,min,marks={}}:{value:string[]; onChange:Dispatch<SetStateAction<string[]>>; min:string; marks?:Record<string,string>}) {
+// onPick: a click on a day that already has sessions — not a pick, the page shows that day instead.
+export function ScheduleCalendar({value,onChange,min,marks={},onPick}:{value:string[]; onChange:Dispatch<SetStateAction<string[]>>; min:string; marks?:Record<string,string>; onPick?:(d:string)=>void}) {
   const [mode,setMode] = useState<'range'|'single'>('range');
   const [anchor,setAnchor] = useState<string|null>(null), [hover,setHover] = useState<string|null>(null); // a range's first day, waiting for its last
   const [start,setStart] = useState(()=>{ const d = new Date(`${min}T12:00:00`); d.setDate(1); return d; });
@@ -25,6 +26,7 @@ export function ScheduleCalendar({value,onChange,min,marks={}}:{value:string[]; 
   const between = (a:string, b:string) => { const [x,y] = a<b ? [a,b] : [b,a], out:string[] = [];
     for (let d = new Date(`${x}T12:00:00`); iso(d)<=y; d.setDate(d.getDate()+1)) if (iso(d)>=min) out.push(iso(d)); return out; };
   const click = (d:string) => {
+    if (marks[d] && onPick && !value.includes(d)) { onPick(d); setAnchor(null); return; } // a day with sessions: show it
     if (value.includes(d)) { onChange(cur=>cur.filter(x=>x!==d)); setAnchor(null); return; } // a chosen day: out
     if (mode==='range' && anchor && anchor!==d) { const span = between(anchor,d); onChange(cur=>[...new Set([...cur,...span])].sort()); setAnchor(null); return; }
     onChange(cur=>[...cur,d].sort()); setAnchor(mode==='range' ? d : null);
