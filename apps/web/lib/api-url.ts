@@ -4,7 +4,7 @@
 //   relays socket.io to the API (app/sio/route.ts) — over HTTP long-polling, so one tunnel serves both.
 // NEXT_PUBLIC_API_URL, when set, always wins: a URL of a deployed API, or "same-origin" (one domain, reverse proxy).
 // Where the browser reaches the API's REST routes (/api/v1 …): the same choices as for the socket. Through a tunnel
-// (polling relay) the page's own origin is used — the reverse proxy in front of it must send /api to the API.
+// (polling relay) the page's own origin is used — Next relays /api/v1 to the API (next.config.ts rewrites).
 export function apiBase():string {
   const env = process.env.NEXT_PUBLIC_API_URL;
   if (env==='same-origin') return '';

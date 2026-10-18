@@ -58,6 +58,25 @@ export class FacilityService {
       .run(id, label, info.mime, info.width, info.height, buf, this.now().toISOString(), by);
     return { id, ...info };
   }
+  // Every picture, newest first, and whether a published version or someone's draft still points at it.
+  images(): { id: string; name: string; mime: string; width: number; height: number; size: number; uploadedAt: string; uploadedBy: string; uploadedByName?: string; referenced: boolean }[] {
+    const db = this.store.db, refs = (id: string) => {
+      const like = `%"imageId":"${id}"%`;
+      return !!db.prepare('SELECT 1 FROM facility_versions WHERE snapshot_json LIKE ? LIMIT 1').get(like) || !!db.prepare('SELECT 1 FROM facility_drafts WHERE data_json LIKE ? LIMIT 1').get(like);
+    };
+    const rows = db.prepare(`SELECT i.id, i.name, i.mime, i.width, i.height, length(i.bytes) AS size, i.uploaded_at, i.uploaded_by, u.name AS by_name
+      FROM facility_images i LEFT JOIN users u ON ('user:' || u.id) = i.uploaded_by ORDER BY i.uploaded_at DESC`).all() as Row[];
+    return rows.map((r) => strip({ id: r.id as string, name: r.name as string, mime: r.mime as string, width: r.width as number, height: r.height as number, size: r.size as number,
+      uploadedAt: r.uploaded_at as string, uploadedBy: r.uploaded_by as string, uploadedByName: opt(r.by_name as string | null), referenced: refs(r.id as string) }));
+  }
+  // Deleting is for pictures nothing points at (no published version, no draft) — anything else stays, so history
+  // and rollback keep their floor plans.
+  deleteImage(id: unknown): void {
+    const img = this.images().find((x) => x.id === id);
+    if (!img) throw new AppError('RESOURCE_NOT_FOUND', 'ไม่พบภาพ');
+    if (img.referenced) throw new AppError('INVALID_STATE_TRANSITION', 'ภาพนี้ยังถูกใช้ในผังที่เผยแพร่ (หรือเวอร์ชันเก่า) หรือในร่าง — ลบไม่ได้');
+    this.store.db.prepare('DELETE FROM facility_images WHERE id = ?').run(img.id);
+  }
   image(id: unknown): { mime: string; bytes: Uint8Array } | undefined {
     if (typeof id !== 'string' || !/^img_[A-Za-z0-9_-]{6,20}$/.test(id)) return undefined;
     const r = this.store.db.prepare('SELECT mime, bytes FROM facility_images WHERE id = ?').get(id) as { mime: string; bytes: Uint8Array } | undefined;

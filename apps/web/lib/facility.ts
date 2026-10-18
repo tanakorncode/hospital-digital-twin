@@ -14,7 +14,7 @@ export type FBuilding = {id:string; name:string; shortName:string; kind:Building
 export type FRect = {x0:number; z0:number; x1:number; z1:number};
 export type FDoor = 'n'|'s'|'e'|'w';
 export type FFloorLayout = {mode?:'auto'|'manual'; roomDepth?:number; bandOrder?:string[]; bandWeights?:Record<string,number>; roomOrder?:string[];
-  roomWeights?:Record<string,number>; rooms?:Record<string,FRect & {door:FDoor; doorAt?:number}>; areas?:Record<string,FRect>; background?:FRect & {imageId:string; opacity:number}; lift?:{x:number; z:number}};
+  roomWeights?:Record<string,number>; doors?:Record<string,number>; rooms?:Record<string,FRect & {door:FDoor; doorAt?:number}>; areas?:Record<string,FRect>; background?:FRect & {imageId:string; opacity:number}; lift?:{x:number; z:number}};
 export type FFloor = {id:string; buildingId:string; level:number; name:string; description:string; layout?:FFloorLayout; active:boolean; retiredAt?:string};
 export type FDepartment = {id:string; name:string; shortName?:string; type:DepartmentType; queuePrefix?:string; features:{booking:boolean; appointments:boolean; walkIn:boolean};
   firstGroupId?:string; active:boolean; retiredAt?:string};

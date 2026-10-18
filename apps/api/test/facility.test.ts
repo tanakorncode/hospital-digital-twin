@@ -296,7 +296,7 @@ test('a floor can be laid out: proportions, rooms and waiting areas placed by ha
   const { api, admin, data } = setup();
   const d = data(), floor = d.floors.find((f) => f.id === 'opd-2')!, b = d.buildings.find((x) => x.id === floor.buildingId)!.map;
   // Automatic, with other proportions.
-  floor.layout = { roomDepth: 0.5, bandOrder: ['opd-2-2'], bandWeights: { 'opd-2-0': 2 }, roomWeights: { 'room:opd-201': 1.5 } };
+  floor.layout = { roomDepth: 0.5, bandOrder: ['opd-2-2'], bandWeights: { 'opd-2-0': 2 }, roomWeights: { 'room:opd-201': 1.5 }, doors: { 'room:opd-201': 0.5 } };
   assert.deepEqual(validateFacility(d).issues, []);
   // By hand: rooms with their door side, areas; ids no longer in the facility are left alone, not refused.
   floor.layout = { mode: 'manual', rooms: { 'room:opd-201': { x0: -b.width / 2, z0: -b.depth / 2, x1: -b.width / 2 + 3, z1: -b.depth / 2 + 3, door: 'e', doorAt: 0.5 }, 'gone:1': { x0: 0, z0: 0, x1: 1, z1: 1, door: 's' } },
@@ -313,6 +313,7 @@ test('a floor can be laid out: proportions, rooms and waiting areas placed by ha
   bad({ roomDepth: 0.95 }, 'room depth');
   bad({ colour: 'red' }, 'unknown setting');
   bad({ lift: { x: b.width, z: 0 } }, 'lift outside the building');
+  bad({ doors: { 'room:opd-201': 2 } }, 'doorway position (automatic)');
   // Rooms on top of each other: a warning, not a refusal.
   const x = clone(d), lay = x.floors.find((f) => f.id === 'opd-2')!.layout!;
   lay.rooms!['room:opd-202'] = { ...lay.rooms!['room:opd-201'], door: 's' };
@@ -348,4 +349,28 @@ test('floor-plan pictures: administrators upload PNG / JPEG / WebP, anyone can f
   assert.match(headers['Cache-Control'], /immutable/);
   assert.deepEqual([...body!], [...png]);
   assert.throws(() => new FacilityController(api.facility).image('img_nope00', { setHeader: () => {}, end: () => {} }), /ไม่พบภาพ/);
+  // The list, and deleting: only a picture nothing points at.
+  type L = R & { images?: { id: string; referenced: boolean; uploadedByName?: string; size: number }[] };
+  const second = (api.gateway.facilityImageUpload(admin, { name: 'b.png', bytes: png }) as R & { image?: { id: string } }).image!.id;
+  let list = (api.gateway.facilityImages(admin) as L).images!;
+  assert.deepEqual(list.map((i) => i.id).sort(), [r.image!.id, second].sort());
+  assert.ok(list.every((i) => !i.referenced && i.uploadedByName && i.size === 64));
+  assert.equal((api.gateway.facilityImages(staff) as R).code, 'FORBIDDEN');
+  const d = clone(api.facility.current()), b = d.buildings.find((x) => x.id === 'opd')!.map;
+  d.floors.find((f) => f.id === 'opd-1')!.layout = { background: { imageId: r.image!.id, x0: -b.width / 2, z0: -b.depth / 2, x1: b.width / 2, z1: b.depth / 2, opacity: 0.6 } };
+  assert.equal((api.gateway.facilityPublish(admin, { data: d }) as R).ok, true);
+  assert.equal((api.gateway.facilityImageDelete(admin, { id: r.image!.id }) as R).code, 'INVALID_STATE_TRANSITION', 'published: kept');
+  // Taken off the floor again: an old version still shows it, so it stays.
+  delete d.floors.find((f) => f.id === 'opd-1')!.layout;
+  assert.equal((api.gateway.facilityPublish(admin, { data: d }) as R).ok, true);
+  assert.equal((api.gateway.facilityImageDelete(admin, { id: r.image!.id }) as R).code, 'INVALID_STATE_TRANSITION', 'in an old version: kept');
+  // In someone's draft: kept.
+  const dd = clone(api.facility.current()); dd.floors.find((f) => f.id === 'opd-2')!.layout = { background: { imageId: second, x0: -1, z0: -1, x1: 1, z1: 1, opacity: 0.5 } };
+  assert.equal((api.gateway.facilityDraftSave(admin, { data: dd }) as R).ok, true);
+  assert.equal((api.gateway.facilityImageDelete(admin, { id: second }) as R).code, 'INVALID_STATE_TRANSITION', 'in a draft: kept');
+  api.gateway.facilityDraftDiscard(admin);
+  list = (api.gateway.facilityImageDelete(admin, { id: second }) as L).images!;
+  assert.deepEqual(list.map((i) => i.id), [r.image!.id], 'unused: deleted');
+  assert.ok(api.audit.list().some((e) => e.action === 'facility.image.delete' && e.targetId === second));
+  assert.equal((api.gateway.facilityImageDelete(admin, { id: 'img_nope00' }) as R).code, 'RESOURCE_NOT_FOUND');
 });

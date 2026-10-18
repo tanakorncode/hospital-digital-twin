@@ -24,7 +24,8 @@ export type Floor = { id: string; buildingId: string; level: number; name: strin
 // map units from the building's centre: x across (−width/2 … width/2), z from the back wall (−depth/2) to the front.
 //   automatic: rooms along the back wall, a corridor, one waiting area per department at the front —
 //     roomDepth: share of the depth the rooms take · bandOrder / roomOrder: left → right (department / point ids; the
-//     rest follow in their usual order) · bandWeights / roomWeights: relative widths (1 = the usual share)
+//     rest follow in their usual order) · bandWeights / roomWeights: relative widths (1 = the usual share) ·
+//     doors: point id → where the room's doorway is along its front wall (0…1 from the left; not set = at the left)
 //   manual: every room and waiting area where it was put (rooms: point id → rectangle + the wall its door is in, and
 //     doorAt: where along that wall the doorway's middle is, 0…1 from the left looking out — not set = at the left;
 //     areas: department id → rectangle); anything not placed yet stands where the automatic layout puts it.
@@ -33,7 +34,7 @@ export type Floor = { id: string; buildingId: string; level: number; name: strin
 export type FloorRect = { x0: number; z0: number; x1: number; z1: number };
 export type DoorSide = 'n' | 's' | 'e' | 'w';
 export type FloorLayout = { mode?: 'auto' | 'manual'; roomDepth?: number; bandOrder?: string[]; bandWeights?: Record<string, number>; roomOrder?: string[];
-  roomWeights?: Record<string, number>; rooms?: Record<string, FloorRect & { door: DoorSide; doorAt?: number }>; areas?: Record<string, FloorRect>;
+  roomWeights?: Record<string, number>; doors?: Record<string, number>; rooms?: Record<string, FloorRect & { door: DoorSide; doorAt?: number }>; areas?: Record<string, FloorRect>;
   background?: FloorRect & { imageId: string; opacity: number }; lift?: { x: number; z: number } };
 export type Features = { booking: boolean; appointments: boolean; walkIn: boolean };
 // queuePrefix: the letter(s) of the department's queue numbers (unique). firstGroupId: where a patient waits after
@@ -129,7 +130,7 @@ const isRetired = (v: unknown) => v === undefined || (typeof v === 'string' && v
 const isColor = (v: unknown) => typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v);
 const isRect = (r: unknown) => Array.isArray(r) && r.length === 4 && r.every((n) => isNum(n, -500, 500));
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
-const LAYOUT_KEYS = ['mode', 'roomDepth', 'bandOrder', 'bandWeights', 'roomOrder', 'roomWeights', 'rooms', 'areas', 'background', 'lift'];
+const LAYOUT_KEYS = ['mode', 'roomDepth', 'bandOrder', 'bandWeights', 'roomOrder', 'roomWeights', 'rooms', 'areas', 'background', 'lift', 'doors'];
 // A floor's layout: its shape, and every rectangle inside the building (min 0.8 across). Unknown ids are left alone —
 // a department or room taken out of the draft must not make the floor unpublishable; the layout just skips it.
 function layoutProblem(l: unknown, w: number, d: number): string | undefined {
@@ -144,6 +145,7 @@ function layoutProblem(l: unknown, w: number, d: number): string | undefined {
   if (l.mode !== undefined && l.mode !== 'auto' && l.mode !== 'manual') return 'การจัดผังชั้นไม่ถูกต้อง';
   if (l.roomDepth !== undefined && !isNum(l.roomDepth, 0.2, 0.7)) return 'ความลึกของแถวห้องต้องอยู่ระหว่าง 20–70% ของความลึกอาคาร';
   if (!ids(l.bandOrder) || !ids(l.roomOrder) || !weights(l.bandWeights) || !weights(l.roomWeights)) return 'ลำดับ/สัดส่วนความกว้างในผังชั้นไม่ถูกต้อง';
+  if (l.doors !== undefined && !(isObj(l.doors) && Object.keys(l.doors).length <= 400 && Object.entries(l.doors).every(([k, n]) => ID_RE.test(k) && isNum(n, 0, 1)))) return 'ตำแหน่งช่องประตูไม่ถูกต้อง';
   if (!rects(l.rooms, true) || !rects(l.areas, false)) return 'ห้องหรือพื้นที่รอต้องอยู่ในอาคาร และกว้างอย่างน้อย 0.8';
   const bg = l.background;
   if (bg !== undefined && !(isObj(bg) && typeof bg.imageId === 'string' && ID_RE.test(bg.imageId) && isNum(bg.opacity, 0.1, 1)

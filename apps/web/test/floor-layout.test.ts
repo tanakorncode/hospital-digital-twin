@@ -242,3 +242,14 @@ test('directions on an automatic floor: out of the room by its door, along the c
     .filter((p,k,l)=>k===0 || p[0]!==l[k-1][0] || p[1]!==l[k-1][1]); // the lift stands on the corridor's middle line
   assert.deepEqual(route.map(p=>r3([p.x,p.z])),expect);
 });
+
+test('an automatic floor can move a room\'s doorway too (floor.layout.doors)', () => {
+  const f = structuredClone(template()), floor = f.floors.find(x=>x.id==='opd-2')!, id = planFloor(f,'opd-2')!.rooms[1].point.id;
+  floor.layout = {doors:{[id]:0.5}};
+  const plan = planFloor(f,'opd-2')!, r = plan.rooms.find(x=>x.point.id===id)!, [g0,g1] = doorSpan(r), W = roomFrame(r).across;
+  assert.equal(r.doorAt,0.5); assert.ok(Math.abs((g0+g1)/2-W/2)<1e-9,'in the middle');
+  assert.equal(plan.rooms.find(x=>x.point.id!==id)!.doorAt,undefined,'other rooms: at the left');
+  // Placed by hand, the room's own doorway counts (the automatic list is ignored).
+  floor.layout = {mode:'manual',doors:{[id]:0.9},rooms:{[id]:{x0:r.x0,z0:r.z0,x1:r.x1,z1:r.z1,door:'s'}}};
+  assert.equal(planFloor(f,'opd-2')!.rooms.find(x=>x.point.id===id)!.doorAt,undefined);
+});

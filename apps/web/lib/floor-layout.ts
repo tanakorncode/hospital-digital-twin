@@ -109,8 +109,8 @@ export function planFloor(data:Data, floorId:string):FloorPlan|null {
   const roomKind = (p:FPoint, g:FGroup):PlanRoomKind => { const k:FRoomKind|undefined = p.roomKind;
     return k==='lab' ? 'office' : k ?? (g.steps.includes('exam') ? 'exam' : kind==='er' ? 'treatment' : kind==='inpatient' ? 'ward' : 'office'); };
   const rooms:PlanRoom[] = roomIds.map((id,k)=>{ const p = byId.get(id)!, g = group.get(p.groupId)!, placed = manual ? L.rooms?.[id] : undefined;
-    const r = placed ?? {x0:roomSpan[k][0],x1:roomSpan[k][1],z0:-hd,z1:roomFront,door:'s' as Door};
-    return {point:p,group:g,deptId:g.departmentId,index:k,count:roomIds.length,x0:r.x0,x1:r.x1,z0:r.z0,z1:r.z1,w:r.x1-r.x0,door:r.door,...(placed?.doorAt!==undefined ? {doorAt:placed.doorAt} : {}),kind:roomKind(p,g)}; });
+    const r = placed ?? {x0:roomSpan[k][0],x1:roomSpan[k][1],z0:-hd,z1:roomFront,door:'s' as Door}, doorAt = placed ? placed.doorAt : L.doors?.[id];
+    return {point:p,group:g,deptId:g.departmentId,index:k,count:roomIds.length,x0:r.x0,x1:r.x1,z0:r.z0,z1:r.z1,w:r.x1-r.x0,door:r.door,...(doorAt!==undefined ? {doorAt} : {}),kind:roomKind(p,g)}; });
   const roomOf = new Map(rooms.map(r=>[r.point.id,r]));
   // Counters / booths along the top of their waiting area, in each group's own order
   const counters:PlanCounter[] = [];

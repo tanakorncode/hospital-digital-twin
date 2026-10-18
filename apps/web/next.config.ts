@@ -10,6 +10,11 @@ const nextConfig: NextConfig = {
   ...(process.env.NEXT_OUTPUT==='standalone' ? {output:'standalone' as const, outputFileTracingRoot:path.join(__dirname,'../..')} : {}),
   // Dev server: allow pages to be opened through these tunnel hosts.
   allowedDevOrigins: ['*.ngrok-free.dev', '*.ngrok-free.app', '*.ngrok.app', '*.ngrok.io'],
+  // REST (/api/v1 …: the facility, its floor-plan pictures, QR wayfinding, patient pages) through this same origin too, for
+  // pages opened through a tunnel. Behind the deployed reverse proxy /api never reaches Next, so this changes nothing there.
+  async rewrites() {
+    return { beforeFiles: [], afterFiles: [], fallback: [{ source: '/api/v1/:path*', destination: `${process.env.API_INTERNAL_URL ?? 'http://localhost:4000'}/api/v1/:path*` }] };
+  },
   // socket.io asks for "/sio/?…": keep the trailing slash instead of redirecting it away.
   skipTrailingSlashRedirect: true,
   // Security headers for every page. The camera stays available to this site only (QR scanning at the console).

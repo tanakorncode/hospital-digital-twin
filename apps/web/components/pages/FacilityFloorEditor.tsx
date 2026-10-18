@@ -1,7 +1,8 @@
 'use client';
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as RKeyboardEvent, type PointerEvent as RPointerEvent } from 'react';
 import dynamic from 'next/dynamic';
-import { ArrowLeft, ArrowRight, ImagePlus, Maximize, RotateCcw, Trash2 } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Images, ImagePlus, Maximize, RotateCcw, Trash2, X } from 'lucide-react';
+import { ModalPortal } from '../ModalPortal';
 import type { Facility, FDoor, FFloor, FFloorLayout, FRect } from '../../lib/facility';
 import { layoutFloor } from '../../lib/floor-preview';
 import { DOORWAY, planFloor, roomFrame, roomLocal, roomPoint, roomWalls } from '../../lib/floor-layout';
@@ -13,7 +14,8 @@ import { facilityImageUrl as imageUrl } from '../../lib/api-url';
 //     areas to make one wider; pick one and move it left / right; set how deep the rooms are.
 //   จัดเอง: every room and waiting area where you put it — drag to move, the corner to resize, pick the wall its door
 //     is in; arrow keys nudge the selected one (Shift: further). Counters, chairs and beds follow their area.
-//   ภาพผังพื้นหลัง: a floor-plan picture under the plan, to trace the real floor.
+//   ภาพผังพื้นหลัง: a floor-plan picture under the plan, to trace the real floor (คลังภาพผัง: reuse one uploaded before,
+//     or delete pictures nothing uses).
 //   ลิฟต์/บันได: drag the lift mark to where the lift is — directions on the patients' floor plan start there.
 //   ตู้คิว: queue-ticket kiosks on this floor, dragged to where they stand.
 // Grips are sized in screen pixels (bigger for a finger), so the plan works on a tablet too.
@@ -41,6 +43,7 @@ export function FloorEditor({data,floor,editable,update,api}:{data:Data; floor:F
   const [drag,setDrag] = useState<Drag|null>(null);
   const [live,setLive] = useState<FFloorLayout|null>(null); // the layout while dragging, before it goes into the draft
   const [busy,setBusy] = useState(''), [problem,setProblem] = useState('');
+  const [library,setLibrary] = useState(false);
   const [liveKiosk,setLiveKiosk] = useState<{id:string; x:number; z:number}|null>(null); // a kiosk while dragged (building-local)
   // Plan units per screen pixel, and whether the pointer is a finger: grips are at least 24 px (44 px by touch).
   const [upp,setUpp] = useState(0.05), [coarse,setCoarse] = useState(false);
@@ -92,7 +95,7 @@ export function FloorEditor({data,floor,editable,update,api}:{data:Data; floor:F
     setDrag({t,mode,start:toWorld(e),orig:{x0:r.x0,z0:r.z0,x1:r.x1,z1:r.z1}});
   };
   // Drag the doorway along its wall.
-  const beginDoor = (e:RPointerEvent, id:string) => { e.stopPropagation(); setSel({kind:'room',id}); if (!editable || !manual) return; const r = roomRect(id); if (!r) return;
+  const beginDoor = (e:RPointerEvent, id:string) => { e.stopPropagation(); setSel({kind:'room',id}); if (!editable) return; const r = roomRect(id); if (!r) return;
     (e.target as Element).setPointerCapture(e.pointerId); setDrag({t:{kind:'room',id},mode:'door',start:toWorld(e),orig:r}); };
   const beginSplit = (e:RPointerEvent, list:'rooms'|'bands', i:number) => {
     e.stopPropagation(); if (!editable) return; (e.target as Element).setPointerCapture(e.pointerId);
@@ -137,7 +140,9 @@ export function FloorEditor({data,floor,editable,update,api}:{data:Data; floor:F
     [ids[i],ids[j]] = [ids[j],ids[i]];
     const wKey = t.kind==='room' ? 'roomWeights' : 'bandWeights', weights = layout[wKey];
     save(t.kind==='room' ? {...layout,roomOrder:ids,roomWeights:weights} : {...layout,bandOrder:ids,bandWeights:weights}); };
-  const withDoorAt = (l:FFloorLayout, id:string, at:number):FFloorLayout => { const r = roomRect(id)!; return {...l,rooms:{...l.rooms,[id]:{x0:r.x0,z0:r.z0,x1:r.x1,z1:r.z1,door:r.door,doorAt:at}}}; };
+  // The doorway's place: on the room placed by hand, or (automatic) in the floor's door list.
+  const withDoorAt = (l:FFloorLayout, id:string, at:number):FFloorLayout => { const r = roomRect(id)!;
+    return l.mode==='manual' ? {...l,rooms:{...l.rooms,[id]:{x0:r.x0,z0:r.z0,x1:r.x1,z1:r.z1,door:r.door,doorAt:at}}} : {...l,doors:{...l.doors,[id]:at}}; };
   // Doorway at the start, middle or end of its wall as seen on the plan (left → right, or top → bottom).
   const doorPlace = (id:string, where:'start'|'mid'|'end') => { const r = roomRect(id); if (!r) return; const W = roomFrame(r).across, g = Math.min(DOORWAY,W)/2/W;
     const forward = r.door==='s' || r.door==='w', at = where==='mid' ? 0.5 : (where==='start')===forward ? g : 1-g; save(withDoorAt(layout,id,round2(at))); };
@@ -145,6 +150,9 @@ export function FloorEditor({data,floor,editable,update,api}:{data:Data; floor:F
   const setDoor = (id:string, door:FDoor) => { const r = roomRect(id); if (r) save({...layout,rooms:{...layout.rooms,[id]:{x0:r.x0,z0:r.z0,x1:r.x1,z1:r.z1,door}}}); };
   const unplace = (t:Target) => { if (t.kind==='room') { const {[t.id]:_, ...rest} = layout.rooms ?? {}; save({...layout,rooms:rest}); } else if (t.kind==='area') { const {[t.id]:_, ...rest} = layout.areas ?? {}; save({...layout,areas:rest}); } };
   // A floor-plan picture: made smaller in the browser when it is big (longest side 3000 px, WebP), then uploaded.
+  // Put a picture under this floor, fitted into the building, keeping its shape.
+  const useImage = (id:string, iw:number, ih:number) => { const k = Math.min(W/iw,D/ih), w = iw*k, d = ih*k;
+    save({...layout,background:{imageId:id,x0:round2(-w/2),z0:round2(-d/2),x1:round2(w/2),z1:round2(d/2),opacity:layout.background?.opacity ?? 0.6}}); setSel({kind:'bg',id}); };
   const upload = async (f:File) => {
     if (!api) return; setProblem(''); setBusy('กำลังอัปโหลดภาพ…');
     try {
@@ -155,9 +163,7 @@ export function FloorEditor({data,floor,editable,update,api}:{data:Data; floor:F
         c.getContext('2d')!.drawImage(bmp,0,0,c.width,c.height); blob = await new Promise<Blob>((ok,no)=>c.toBlob(x=>x ? ok(x) : no(new Error('ย่อภาพไม่สำเร็จ')),'image/webp',0.85)); }
       const r = await api('facility:image:upload',{name:f.name,bytes:await blob.arrayBuffer()}) as {ok:boolean; reason?:string; image?:{id:string; width:number; height:number}};
       if (!r.ok || !r.image) throw new Error(r.reason ?? 'อัปโหลดไม่สำเร็จ');
-      // Fit the picture into the building, keeping its shape.
-      const k = Math.min(W/r.image.width,D/r.image.height), w = r.image.width*k, d = r.image.height*k;
-      save({...layout,background:{imageId:r.image.id,x0:round2(-w/2),z0:round2(-d/2),x1:round2(w/2),z1:round2(d/2),opacity:0.6}}); setSel({kind:'bg',id:r.image.id});
+      useImage(r.image.id,r.image.width,r.image.height);
     } catch (e) { setProblem(e instanceof Error ? e.message : 'อัปโหลดไม่สำเร็จ'); }
     setBusy(''); if (file.current) file.current.value = '';
   };
@@ -185,6 +191,7 @@ export function FloorEditor({data,floor,editable,update,api}:{data:Data; floor:F
       <span className="facEdSep"/>
       <input ref={file} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={e=>{ const f = e.target.files?.[0]; if (f) void upload(f); }}/>
       <button className="btn ghost sm" disabled={!api || !!busy} onClick={()=>file.current?.click()}><ImagePlus size={14}/> {bg ? 'เปลี่ยนภาพผัง' : 'ใส่ภาพผังพื้นหลัง'}</button>
+      <button className="btn ghost sm" disabled={!api} onClick={()=>setLibrary(true)}><Images size={14}/> คลังภาพผัง</button>
       {bg && <>
         <label className="facEdRange"><span>ความเข้มภาพ</span><input type="range" min={10} max={100} step={5} value={Math.round(bg.opacity*100)}
           onChange={e=>setLive({...(floor.layout ?? {}),background:{...bg,opacity:Number(e.target.value)/100}})} onPointerUp={commit} onKeyUp={commit} onBlur={commit}/></label>
@@ -216,7 +223,7 @@ export function FloorEditor({data,floor,editable,update,api}:{data:Data; floor:F
           stroke={bad?'#dc2626':s?'#1677ff':'#94a3b8'} strokeWidth={s||bad?0.1:0.05} tabIndex={0} role="button" aria-label={`${r.name}${bad?' (ทับห้องอื่น)':''}`}
           style={{cursor:canMove?'move':'pointer'}} onPointerDown={e=>begin(e,t,'move')} onKeyDown={e=>nudge(e,t)}/>
           <line x1={dr.x0} y1={dr.z0} x2={dr.x1} y2={dr.z1} stroke="#1677ff" strokeWidth="0.14" strokeLinecap="round" opacity="0.75" pointerEvents="none"/>
-          {canMove && <line x1={dr.x0} y1={dr.z0} x2={dr.x1} y2={dr.z1} stroke="transparent" strokeWidth={touchPad(0.45,Math.max(0.45,Math.min(r.w,r.d)*0.4))} style={{cursor:r.door==='s'||r.door==='n'?'ew-resize':'ns-resize'}}
+          {editable && <line x1={dr.x0} y1={dr.z0} x2={dr.x1} y2={dr.z1} stroke="transparent" strokeWidth={touchPad(0.45,Math.max(0.45,Math.min(r.w,r.d)*0.4))} style={{cursor:r.door==='s'||r.door==='n'?'ew-resize':'ns-resize'}}
             aria-label={`ช่องประตู ${r.name} — ลากเพื่อเลื่อน`} onPointerDown={e=>beginDoor(e,r.id)}/>}
           <text x={at.x} y={at.z+fs*0.35} fontSize={fs} textAnchor="middle" fill={s?'#1677ff':'#334155'} fontWeight={s?700:500} pointerEvents="none">{label}</text>
           {handle(t,rect)}</g>; })}
@@ -254,17 +261,54 @@ export function FloorEditor({data,floor,editable,update,api}:{data:Data; floor:F
         <button className="btn ghost sm" onClick={()=>shift(sel,1)} aria-label="ย้ายไปทางขวา"><ArrowRight size={14}/></button></>}
       {sel.kind==='room' && manual && editable && <span className="facEdDoor"><span>ประตูอยู่ด้าน</span>{DOORS.map(d=><button key={d.v} className={'btn ghost sm'+(roomRect(sel.id)?.door===d.v?' on':'')}
         aria-pressed={roomRect(sel.id)?.door===d.v} onClick={()=>setDoor(sel.id,d.v)}>{d.label}</button>)}</span>}
-      {sel.kind==='room' && manual && editable && (()=>{ const r = roomRect(sel.id); if (!r) return null; const across = r.door==='s' || r.door==='n', w = doorWhere(layout.rooms?.[sel.id] ?? r);
+      {sel.kind==='room' && editable && (()=>{ const r = roomRect(sel.id); if (!r) return null; const across = r.door==='s' || r.door==='n', w = doorWhere(r);
         return <span className="facEdDoor"><span>ช่องประตู</span>{([['start',across?'ชิดซ้าย':'ชิดบน'],['mid','กลาง'],['end',across?'ชิดขวา':'ชิดล่าง']] as const).map(([v,t])=>
           <button key={v} className={'btn ghost sm'+(w===v?' on':'')} aria-pressed={w===v} onClick={()=>doorPlace(sel.id,v)}>{t}</button>)}</span>; })()}
       {(sel.kind==='room' || sel.kind==='area') && manual && editable && (sel.kind==='room' ? layout.rooms?.[sel.id] : layout.areas?.[sel.id]) &&
         <button className="btn ghost sm" onClick={()=>unplace(sel)} title="ให้ระบบวางตามผังอัตโนมัติ">วางอัตโนมัติ</button>}
     </div>}
+    {library && api && <ImageLibrary api={api} data={data} current={bg?.imageId} floorId={floor.id} onClose={()=>setLibrary(false)}
+      onUse={editable ? (img)=>{ useImage(img.id,img.width,img.height); setLibrary(false); } : undefined}/>}
     <figcaption>{view==='3d' ? 'ลากเพื่อหมุน เลื่อนล้อเพื่อซูม' : !editable ? 'คลิกห้องหรือพื้นที่รอเพื่อดูขนาด'
       : manual ? 'ลากห้อง/พื้นที่รอเพื่อย้าย · ลากมุมสีฟ้าเพื่อปรับขนาด · เลือกแล้วใช้ลูกศรขยับ (Shift = 1 ช่อง) · เส้นสีฟ้า = ประตู (ลากเพื่อเลื่อน) · เคาน์เตอร์ เก้าอี้ และเตียงตามพื้นที่รอของแผนก'
-      : 'ลากแถบระหว่างห้องหรือระหว่างพื้นที่รอเพื่อปรับความกว้าง · คลิกเพื่อเลือกแล้วย้ายซ้าย/ขวา · อยากวางเองทุกห้อง เลือก "จัดเอง"'}
+      : 'ลากแถบระหว่างห้องหรือระหว่างพื้นที่รอเพื่อปรับความกว้าง · คลิกเพื่อเลือกแล้วย้ายซ้าย/ขวา · ลากเส้นประตูสีฟ้าเพื่อเลื่อนช่องประตู · อยากวางเองทุกห้อง เลือก "จัดเอง"'}
       {bg && editable && view==='2d' && ' · ปรับภาพผัง: คลิกที่ภาพ แล้วลากเพื่อย้าย ลากมุมเพื่อปรับขนาด'}
       {editable && view==='2d' && ` · ลากป้ายลิฟต์สีเขียวไปที่ลิฟต์จริง${floorKiosks.length ? ' · ลากวงกลมสีฟ้าเพื่อย้ายตู้คิว' : ''}`}
       {clash.size>0 && <b className="facErr"> · มีห้องวางทับกัน</b>}</figcaption>
   </figure>;
+}
+
+// ---- คลังภาพผัง: every floor-plan picture uploaded, which floors use it, reuse one, delete what nothing uses --------
+type LibImage = {id:string; name:string; mime:string; width:number; height:number; size:number; uploadedAt:string; uploadedByName?:string; referenced:boolean};
+function ImageLibrary({api,data,current,floorId,onClose,onUse}:{api:Api; data:Data; current?:string; floorId:string; onClose:()=>void; onUse?:(img:LibImage)=>void}) {
+  const [list,setList] = useState<LibImage[]|null>(null), [problem,setProblem] = useState(''), [confirm,setConfirm] = useState('');
+  useEffect(()=>{ void api('facility:images',{}).then(r=>{ if (r.ok) setList((r as unknown as {images:LibImage[]}).images); else setProblem(r.reason ?? 'โหลดคลังภาพไม่สำเร็จ'); }); },[api]);
+  useEffect(()=>{ const k = (e:KeyboardEvent)=>{ if (e.key==='Escape') onClose(); }; window.addEventListener('keydown',k); return ()=>window.removeEventListener('keydown',k); },[onClose]);
+  // Floors of this draft that show a picture.
+  const floorName = (id:string) => { const f = data.floors.find(x=>x.id===id), b = f && data.buildings.find(x=>x.id===f.buildingId); return f ? `${b?.shortName || b?.name || ''} ${f.name}`.trim() : id; };
+  const usedOn = (id:string) => data.floors.filter(f=>f.layout?.background?.imageId===id).map(f=>f.id);
+  const remove = async (id:string) => { setProblem(''); const r = await api('facility:image:delete',{id});
+    if (r.ok) setList((r as unknown as {images:LibImage[]}).images); else setProblem(r.reason ?? 'ลบไม่สำเร็จ'); setConfirm(''); };
+  const kb = (n:number) => n>=1e6 ? `${(n/1e6).toFixed(1)} MB` : `${Math.max(1,Math.round(n/1e3))} KB`;
+  return <ModalPortal><div className="modalBack" onClick={onClose}><div className="moveDialog facDialog wide" role="dialog" aria-modal="true" aria-label="คลังภาพผัง" onClick={e=>e.stopPropagation()}>
+    <header><div><h3>คลังภาพผัง</h3><small className="muted">ภาพที่เคยอัปโหลด · เลือกใช้กับชั้นนี้ได้ · ลบได้เฉพาะภาพที่ไม่มีผังเวอร์ชันใดหรือร่างใดใช้อยู่</small></div>
+      <button className="iconBtn" aria-label="ปิด" onClick={onClose}><X size={18}/></button></header>
+    <div className="facDialogBody">
+      {problem && <p className="facErr">{problem}</p>}
+      {!list ? <p className="muted">กำลังโหลด…</p> : !list.length ? <p className="muted">ยังไม่มีภาพผัง — ใช้ปุ่ม "ใส่ภาพผังพื้นหลัง" เพื่ออัปโหลด</p> :
+      <ul className="facLib">{list.map(img=>{ const here = usedOn(img.id), inUse = img.referenced || here.length>0, mine = img.id===current;
+        return <li key={img.id} className={mine?'on':''}>
+          <div className="facLibPic"><img src={imageUrl(img.id)} alt={img.name || 'ภาพผัง'} loading="lazy"/></div>
+          <b title={img.name}>{img.name || 'ภาพผัง'}</b>
+          <small className="muted">{img.width}×{img.height} px · {kb(img.size)} · {new Date(img.uploadedAt).toLocaleDateString('th-TH',{day:'numeric',month:'short',year:'2-digit'})}{img.uploadedByName ? ` · ${img.uploadedByName}` : ''}</small>
+          <small>{here.length ? `ใช้บน ${here.map(floorName).join(', ')}` : img.referenced ? 'อยู่ในผังที่เผยแพร่/เวอร์ชันเก่า หรือในร่าง' : 'ยังไม่มีชั้นใดใช้'}</small>
+          <span className="facLibActs">
+            {onUse && (mine ? <em className="muted">ใช้กับชั้นนี้อยู่</em> : <button className="btn sm" onClick={()=>onUse(img)}>ใช้กับชั้นนี้</button>)}
+            {confirm===img.id ? <><button className="btn sm warnBtn" onClick={()=>void remove(img.id)}>ยืนยันลบถาวร</button><button className="btn ghost sm" onClick={()=>setConfirm('')}>ไม่ลบ</button></>
+              : <button className="btn ghost sm" disabled={inUse} title={inUse ? 'ยังมีผังใช้ภาพนี้อยู่' : 'ลบภาพนี้'} onClick={()=>setConfirm(img.id)}><Trash2 size={14}/> ลบ</button>}
+          </span></li>; })}</ul>}
+      <small className="muted">ชั้นนี้: {floorName(floorId)}</small>
+    </div>
+    <footer><button className="btn ghost" onClick={onClose}>ปิด</button></footer>
+  </div></div></ModalPortal>;
 }

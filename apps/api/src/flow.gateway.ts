@@ -472,6 +472,24 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
       return { ok: true, image: img };
     });
   }
+  @SubscribeMessage('facility:images')
+  facilityImages(@ConnectedSocket() client: Socket) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (!may(me, 'admin')) return DENIED;
+    return { ok: true, images: this.facility.images() };
+  }
+  @SubscribeMessage('facility:image:delete')
+  facilityImageDelete(@ConnectedSocket() client: Socket, @MessageBody() body: { id?: unknown }) {
+    const me = userOf(client);
+    if (!me) return SIGN_IN;
+    if (!may(me, 'admin')) return DENIED;
+    return attempt(() => {
+      this.facility.deleteImage(body?.id);
+      this.audit.record({ ...actor(me), action: 'facility.image.delete', targetType: 'facility', targetId: String(body?.id) });
+      return { ok: true, images: this.facility.images() };
+    });
+  }
   @SubscribeMessage('facility:rollback')
   facilityRollback(@ConnectedSocket() client: Socket, @MessageBody() body: { version?: unknown }) {
     const me = userOf(client);
