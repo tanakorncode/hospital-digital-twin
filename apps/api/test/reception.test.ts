@@ -203,3 +203,34 @@ test('the dashboard: kiosks on / off by when they were last heard from, calls fo
   assert.ok(!/hn|HN|profile|line/i.test(raw.replace(/online|helpPending|handoffs/g, '')), 'nothing about any patient');
   assert.equal((api.gateway.dashboardSummary(fakeSocket()) as { code?: string }).code, 'AUTH_REQUIRED');
 });
+
+test('set up on the kiosk itself: an administrator signs in there, picks the kiosk (or adds it), the credential goes straight in', async () => {
+  const { api, admin, ctl, made } = setup();
+  api.gateway.saveUser(admin, { username: 'staff.k', name: 'เค', role: 'staff', password: 'password-7' });
+  // Only administrators; the wrong password is refused like any sign-in.
+  assert.equal(await codeOf(() => ctl.pairStart('10.1.0.1', { username: 'staff.k', password: 'password-7' })), 'FORBIDDEN');
+  assert.equal(await codeOf(() => ctl.pairStart('10.1.0.1', { username: 'admin', password: 'wrong-password' })), 'AUTH_REQUIRED');
+  const sessions = () => (api.db.db.prepare('SELECT COUNT(*) AS n FROM sessions').get() as { n: number }).n, before = sessions();
+  const start = ctl.pairStart('10.1.0.2', { username: 'admin', password: ADMIN_PASSWORD }) as unknown as { ticket: string; kiosks: { id: string; name: string }[]; places: { code: string }[] };
+  assert.equal(sessions(), before, 'the administrator\'s session ends at once — the kiosk keeps no account');
+  assert.deepEqual(start.kiosks.map((k) => k.name), ['ตู้ล็อบบี้ OPD']);
+  assert.ok(start.places.some((p) => p.code === 'OPD-LOBBY'));
+  // Pick the registered kiosk: a fresh credential for it; the old one stops working.
+  const picked = ctl.pairFinish('10.1.0.2', { ticket: start.ticket, kioskId: made.device!.id }) as unknown as { credential: string; kiosk: { id: string } };
+  assert.equal(picked.kiosk.id, made.device!.id);
+  assert.ok(ctl.signIn('10.1.0.3', { credential: picked.credential }).token);
+  assert.equal(await codeOf(() => ctl.signIn('10.1.0.3', { credential: made.credential })), 'AUTH_REQUIRED', 'the earlier credential is replaced');
+  // A ticket works once.
+  assert.equal(await codeOf(() => ctl.pairFinish('10.1.0.2', { ticket: start.ticket, kioskId: made.device!.id })), 'AUTH_REQUIRED');
+  // Add a new kiosk from the kiosk itself.
+  const t2 = (ctl.pairStart('10.1.0.4', { username: 'admin', password: ADMIN_PASSWORD }) as unknown as { ticket: string }).ticket;
+  const added = ctl.pairFinish('10.1.0.4', { ticket: t2, name: 'ตู้ห้องยา', atCode: 'OPD-PHARMACY' }) as unknown as { credential: string; kiosk: { name: string } };
+  assert.equal(added.kiosk.name, 'ตู้ห้องยา');
+  assert.ok(ctl.signIn('10.1.0.5', { credential: added.credential }).token);
+  // A ticket is good for 10 minutes.
+  const t3 = (ctl.pairStart('10.1.0.6', { username: 'admin', password: ADMIN_PASSWORD }) as unknown as { ticket: string }).ticket;
+  const later = new Date(Date.now() + 11 * 60_000); api.kiosks.now = () => later;
+  assert.equal(await codeOf(() => ctl.pairFinish('10.1.0.6', { ticket: t3, kioskId: made.device!.id })), 'AUTH_REQUIRED');
+  const logged = (api.db.db.prepare(`SELECT action FROM audit_log WHERE action LIKE 'reception.kiosk.pair.%' ORDER BY id`).all() as { action: string }[]).map((r) => r.action);
+  assert.deepEqual(logged, ['reception.kiosk.pair.start', 'reception.kiosk.pair.rotate', 'reception.kiosk.pair.start', 'reception.kiosk.pair.create', 'reception.kiosk.pair.start'], 'each step is in the audit log');
+});

@@ -1,4 +1,6 @@
 import { Body, Controller, Get, Headers, HttpCode, Ip, Param, Post, Query } from '@nestjs/common';
+import { AuditService } from './audit.service';
+import { AuthService } from './auth.service';
 import { AppError } from './errors';
 import { FeaturesService } from './features.service';
 import { KioskDeviceService } from './kiosk-device.service';
@@ -13,13 +15,22 @@ import { ReceptionService } from './reception.service';
 //   POST /api/reception/v1/sessions/:id/help      call a member of staff to this kiosk
 //   POST /api/reception/v1/sessions/:id/end       the visitor is done (screen back to the start)
 //   GET  /api/reception/v1/places?q=              public places (directory / search)
+//   POST /api/reception/v1/kiosk/pair             {username, password} → a pairing ticket + the kiosks and places — set up on the kiosk
+//   POST /api/reception/v1/kiosk/pair/finish      {ticket, kioskId | name + atCode} → this kiosk's credential
 // Kiosk calls carry "Authorization: Bearer <kiosk token>". Everything answers FEATURE_DISABLED while the switch is off.
 const SIGN_IN_LIMIT = { max: 10, windowMs: 60_000 };
 
 @Controller('api/reception/v1')
 export class ReceptionController {
   private tries = new Map<string, number[]>();
-  constructor(private readonly devices: KioskDeviceService, private readonly reception: ReceptionService, private readonly features: FeaturesService) {}
+  constructor(private readonly devices: KioskDeviceService, private readonly reception: ReceptionService, private readonly features: FeaturesService,
+    private readonly auth: AuthService, private readonly audit: AuditService) {}
+  private limit(ip: string) {
+    const now = Date.now(), list = (this.tries.get(ip) ?? []).filter((t) => now - t < SIGN_IN_LIMIT.windowMs);
+    list.push(now); this.tries.set(ip, list);
+    if (this.tries.size > 5000) this.tries.clear();
+    if (list.length > SIGN_IN_LIMIT.max) throw new AppError('RATE_LIMITED', 'ลองบ่อยเกินไป กรุณารอสักครู่');
+  }
 
   private kiosk(auth?: string) {
     this.features.require('reception');
@@ -30,12 +41,37 @@ export class ReceptionController {
   @HttpCode(200)
   signIn(@Ip() ip: string, @Body() body: { credential?: unknown }) {
     this.features.require('reception');
-    const now = Date.now(), list = (this.tries.get(ip) ?? []).filter((t) => now - t < SIGN_IN_LIMIT.windowMs);
-    list.push(now); this.tries.set(ip, list);
-    if (this.tries.size > 5000) this.tries.clear();
-    if (list.length > SIGN_IN_LIMIT.max) throw new AppError('RATE_LIMITED', 'ลองบ่อยเกินไป กรุณารอสักครู่');
+    this.limit(ip);
     const r = this.devices.signIn(body?.credential);
     return { ok: true, token: r.token, expiresInSeconds: r.expiresInSeconds, kiosk: { id: r.kiosk.id, name: r.kiosk.name } };
+  }
+  // Set up on the kiosk: an administrator signs in on it once. The staff session ends at once (the kiosk never keeps an
+  // account); what stays is a ticket to pick this kiosk from the list, or add it.
+  @Post('kiosk/pair')
+  @HttpCode(200)
+  pairStart(@Ip() ip: string, @Body() body: { username?: unknown; password?: unknown }) {
+    this.features.require('reception');
+    this.limit(ip);
+    const r = this.auth.login(String(body?.username ?? ''), String(body?.password ?? ''), `kiosk-pair:${ip}`);
+    if (!r.ok) throw new AppError('AUTH_REQUIRED', r.reason);
+    this.auth.logout(r.token);
+    if (r.user.role !== 'admin') throw new AppError('FORBIDDEN', 'ตั้งค่าตู้ได้เฉพาะผู้ดูแลระบบ');
+    const t = this.devices.pairTicket(`user:${r.user.id}`);
+    this.audit.record({ actorType: 'staff', actorId: `user:${r.user.id}`, action: 'reception.kiosk.pair.start', targetType: 'kiosk' });
+    return { ok: true, ...t, admin: r.user.name,
+      kiosks: this.devices.list().filter((k) => k.status === 'ACTIVE').map((k) => ({ id: k.id, name: k.name, atCode: k.atCode, lastSeenAt: k.lastSeenAt, online: this.devices.online(k) })),
+      places: this.reception.places().map((p) => ({ code: p.code, nameTh: p.nameTh, whereTh: p.whereTh })) };
+  }
+  // This kiosk is one already registered (a new credential: one used elsewhere stops working) or a new one.
+  @Post('kiosk/pair/finish')
+  @HttpCode(200)
+  pairFinish(@Ip() ip: string, @Body() body: { ticket?: unknown; kioskId?: unknown; name?: unknown; atCode?: unknown }) {
+    this.features.require('reception');
+    this.limit(ip);
+    const by = this.devices.usePairTicket(body?.ticket);
+    const r = body?.kioskId !== undefined ? this.devices.rotate(body.kioskId) : this.devices.save({ name: body?.name, atCode: body?.atCode }, by);
+    this.audit.record({ actorType: 'staff', actorId: by, action: body?.kioskId !== undefined ? 'reception.kiosk.pair.rotate' : 'reception.kiosk.pair.create', targetType: 'kiosk', targetId: r.device.id });
+    return { ok: true, credential: r.credential, kiosk: { id: r.device.id, name: r.device.name } };
   }
   @Post('kiosk/session/refresh')
   @HttpCode(200)

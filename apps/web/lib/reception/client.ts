@@ -28,6 +28,20 @@ export const saveCredential = (c:string) => { try { if (c) localStorage.setItem(
 const KNOWN = new Set(['show_place','show_answer','choose','show_directory','show_menu','offer_staff','show_queue','my_queue']);
 export const knownActions = (a:unknown):Action[] => Array.isArray(a) ? a.filter((x):x is Action=>!!x && typeof x==='object' && KNOWN.has((x as {type?:string}).type ?? '')) : [];
 
+// Set up on the kiosk itself: an administrator signs in here once (the session ends at once, the kiosk keeps no
+// account), picks this kiosk from the list — or adds it — and the kiosk's credential comes straight back.
+export type PairKiosk = {id:string; name:string; atCode?:string; lastSeenAt?:string; online:boolean};
+export type PairStart = {ticket:string; expiresInSeconds:number; admin:string; kiosks:PairKiosk[]; places:{code:string; nameTh:string; whereTh:string}[]};
+async function post<T>(path:string, body:unknown):Promise<Res<T>> {
+ try {
+  const r = await fetch(`${apiBase()}/api/reception/v1${path}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+  const j = await r.json().catch(()=>({})) as Record<string,unknown>;
+  return r.ok ? {ok:true,...j} as Res<T> : {ok:false,code:j.code as string|undefined,reason:(j.reason as string) ?? 'ระบบขัดข้อง กรุณาลองใหม่'};
+ } catch { return {ok:false,code:'NETWORK',reason:'เชื่อมต่อระบบไม่ได้ ตรวจสายแลน/Wi-Fi ของตู้'}; }
+}
+export const pairStart = (username:string, password:string) => post<PairStart>('/kiosk/pair',{username,password});
+export const pairFinish = (body:{ticket:string; kioskId?:string; name?:string; atCode?:string}) => post<{credential:string; kiosk:{id:string; name:string}}>('/kiosk/pair/finish',body);
+
 export class KioskClient {
  private token = '';
  private renew?:ReturnType<typeof setInterval>;

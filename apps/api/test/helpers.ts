@@ -76,4 +76,4 @@ export function signIn(api: ReturnType<typeof makeApi>, username: string, passwo
 export const patientController = (api: ReturnType<typeof makeApi>) =>
   new PatientController(api.identity, api.features, api.audit, api.booking, api.appts, api.visits, api.tickets, api.idempotency, api.gateway, api.notify);
 // The Digital Reception REST controller wired to a test API.
-export const receptionController = (api: ReturnType<typeof makeApi>) => new ReceptionController(api.kiosks, api.reception, api.features);
+export const receptionController = (api: ReturnType<typeof makeApi>) => new ReceptionController(api.kiosks, api.reception, api.features, api.auth, api.audit);

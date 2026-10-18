@@ -14,7 +14,7 @@ type Row = { id: string; name: string; at_code: string | null; secret_hash: stri
 const toDevice = (r: Row): KioskDevice => ({ id: r.id, name: r.name, atCode: r.at_code ?? undefined, status: r.status, createdAt: r.created_at,
   rotatedAt: r.rotated_at ?? undefined, lastSeenAt: r.last_seen_at ?? undefined });
 const sha = (s: string) => createHash('sha256').update(s).digest('hex');
-const SESSION_MS = 15 * 60_000, MAX_DEVICES = 200, ONLINE_MS = 12 * 60_000;
+const SESSION_MS = 15 * 60_000, MAX_DEVICES = 200, ONLINE_MS = 12 * 60_000, PAIR_MS = 10 * 60_000;
 const ID_RE = /^k-[a-z0-9]{8}$/;
 const DENIED = () => new AppError('AUTH_REQUIRED', 'ตู้นี้ยังไม่ได้ลงทะเบียน หรือรหัสตู้ถูกยกเลิก — ติดต่อผู้ดูแลระบบ');
 
@@ -23,6 +23,9 @@ export class KioskDeviceService {
   now = () => new Date();
   // token hash → device and expiry. In memory: a restart signs kiosks in again from their credential.
   private sessions = new Map<string, { kioskId: string; secretHash: string; expires: number }>();
+  // Setting a kiosk up on the kiosk itself: an administrator signed in there gets a ticket (10 minutes, used once) to
+  // pick the kiosk from the list — or add it — and the credential goes straight into that browser. No copy and paste.
+  private pairing = new Map<string, { by: string; expires: number }>();
   constructor(private readonly store: DbService) {}
 
   list(): KioskDevice[] {
@@ -94,6 +97,20 @@ export class KioskDeviceService {
     if (!always && r.last_seen_at && now.getTime() - new Date(r.last_seen_at).getTime() < 60_000) return;
     this.store.db.prepare('UPDATE kiosk_devices SET last_seen_at = ? WHERE id = ?').run(now.toISOString(), r.id);
     r.last_seen_at = now.toISOString();
+  }
+  pairTicket(by: string): { ticket: string; expiresInSeconds: number } {
+    const now = this.now().getTime();
+    for (const [k, v] of this.pairing) if (v.expires < now) this.pairing.delete(k);
+    const ticket = randomBytes(24).toString('base64url');
+    this.pairing.set(sha(ticket), { by, expires: now + PAIR_MS });
+    return { ticket, expiresInSeconds: PAIR_MS / 1000 };
+  }
+  // The ticket's administrator (`user:<id>`), and the ticket is spent; unknown / expired / used → refused.
+  usePairTicket(ticket: unknown): string {
+    const k = typeof ticket === 'string' && ticket.length >= 20 && ticket.length <= 100 ? sha(ticket) : '', t = k ? this.pairing.get(k) : undefined;
+    if (k) this.pairing.delete(k);
+    if (!t || t.expires < this.now().getTime()) throw new AppError('AUTH_REQUIRED', 'หมดเวลาตั้งค่า — เข้าสู่ระบบผู้ดูแลอีกครั้ง');
+    return t.by;
   }
   // Heard from recently enough to count as on (sessions renew every 10 minutes).
   online(d: KioskDevice): boolean { return d.status === 'ACTIVE' && !!d.lastSeenAt && this.now().getTime() - new Date(d.lastSeenAt).getTime() <= ONLINE_MS; }

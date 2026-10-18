@@ -2273,6 +2273,18 @@ a.liffChoice{text-decoration:none;padding:10px 16px}
 .rcpSetup input{flex:1;font-size:20px;padding:14px 16px;border:2px solid var(--rc-line);border-radius:14px;user-select:text}
 .rcpSetup button,.rcpAsk button{font-size:20px;font-weight:700;padding:14px 26px;border:0;border-radius:14px;background:var(--rc-blue);color:#fff;cursor:pointer}
 .rcpSetup button:disabled,.rcpAsk button:disabled{opacity:.45}
+.rcpSetupPage{cursor:default}
+.rcpSetup form.rcpPairLogin{flex-direction:column;width:min(480px,90vw)}
+.rcpSetup .rcpLink{background:none;color:var(--rc-blue);font-size:17px;font-weight:600;padding:6px 10px}
+.rcpPairList{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,300px));justify-content:center;gap:12px;width:min(940px,92vw)}
+.rcpPairList button{display:flex;flex-direction:column;align-items:flex-start;gap:4px;padding:18px 20px;border:2px solid var(--rc-line);border-radius:16px;background:#fff;color:var(--rc-ink);text-align:left;font-weight:400}
+.rcpPairList button:hover:not(:disabled){border-color:var(--rc-blue);background:var(--rc-soft)}
+.rcpPairList b{font-size:22px}.rcpPairList small{font-size:16px;color:var(--rc-muted)}
+.rcpPairList em{font-style:normal;font-size:14px;color:var(--rc-muted)}.rcpPairList em.on{color:#b45309;font-weight:700}
+.rcpEmpty{font-size:18px!important}
+.rcpSetup form.rcpPairNew{flex-direction:column;align-items:stretch;width:min(560px,90vw);padding:18px;border:2px dashed var(--rc-line);border-radius:16px;text-align:left}
+.rcpPairNew b{font-size:18px}
+.rcpPairNew select{font-size:18px;padding:12px 14px;border:2px solid var(--rc-line);border-radius:14px;background:#fff;color:var(--rc-ink)}
 .rcpSide{display:flex;flex-direction:column;align-items:center;gap:16px;position:sticky;top:28px;align-self:start}
 .rcpAvatar{margin:0;position:relative}
 /* น้องใจดี (drawn): sized by height so the figure fits any screen */

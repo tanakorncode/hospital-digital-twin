@@ -83,9 +83,9 @@ export function ReceptionAdminPane({api,on,setFeature}:{api:Api; on:boolean; set
     <div><b>คิวของฉัน</b><small>ผู้ป่วยสแกน QR บนบัตรคิวที่เครื่องอ่านของตู้ → เลขคิว สิ่งที่ต้องทำ คิวก่อนหน้า เวลารอ · แสดงบนจอ 30 วินาที ไม่อ่านออกเสียง · พิมพ์เลขคิวเองไม่ได้ (กันดูคิวคนอื่น)</small></div></label>
   </div>
 
-  <h4 className="setSub">ตู้ <small>ตู้ใช้รหัสประจำเครื่อง ไม่ใช้บัญชีเจ้าหน้าที่ · รหัสแสดงครั้งเดียว · ตู้หาย/ย้ายเครื่อง: ออกรหัสใหม่หรือยกเลิก</small></h4>
+  <h4 className="setSub">ตู้ <small>ง่ายที่สุด: เปิด <code>/reception</code> ที่ตัวตู้ → เข้าสู่ระบบผู้ดูแล → เลือกตู้จากรายชื่อ (หรือเพิ่มตู้ใหม่) ไม่ต้องคัดลอกรหัส · ตู้ใช้รหัสประจำเครื่อง ไม่จำบัญชีเจ้าหน้าที่ · ตู้หาย/ย้ายเครื่อง: ออกรหัสใหม่หรือยกเลิก</small></h4>
   {secret && <div className="rcpSecret"><b>รหัสของ {secret.name}</b><code>{secret.credential}</code>
-   <small>นำไปวางที่หน้าตั้งค่าของตู้ (<code>/reception</code>) · จะไม่แสดงอีก — ถ้าหาย ให้กด "ออกรหัสใหม่"</small>
+   <small>นำไปวางที่หน้าตั้งค่าของตู้ (<code>/reception</code> → "มีรหัสตู้อยู่แล้ว") · หรือไม่ต้องใช้รหัสนี้: ที่ตัวตู้เข้าสู่ระบบผู้ดูแลแล้วเลือกตู้นี้ · จะไม่แสดงอีก — ถ้าหาย ให้กด "ออกรหัสใหม่"</small>
    <span className="segBtns"><button onClick={()=>void navigator.clipboard?.writeText(secret.credential)}><Copy size={14}/> คัดลอก</button><button onClick={()=>setSecret(null)}><Check size={14}/> เก็บแล้ว</button></span></div>}
   {kiosks.length>0 && <div className="tableWrap"><table className="dataTable compact"><thead><tr><th>ตู้</th><th>ตั้งอยู่ที่</th><th>ใช้งานล่าสุด</th><th>สถานะ</th><th/></tr></thead>
    <tbody>{kiosks.map(k=><tr key={k.id} className={k.status==='REVOKED'?'muted':''}><td><b>{k.name}</b> <small className="muted">{k.id}</small></td><td>{placeName(k.atCode)}</td><td>{when(k.lastSeenAt)}</td>
