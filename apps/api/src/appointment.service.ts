@@ -17,6 +17,7 @@ export type ApptPolicy = { clinicCode: string; displayName: string; enabled: boo
 export type Session = { id: string; providerCode: string; providerName: string; clinicCode: string; startsAt: string; endsAt: string; status: 'OPEN' | 'CLOSED' | 'CANCELLED'; capacity: number; reserved: number; roomId?: string };
 export type ApptSlot = { id: string; scheduleId: string; providerCode: string; providerName: string; clinicCode: string; startsAt: string; endsAt: string; capacity: number; reserved: number; remaining: number; status: 'OPEN' | 'CLOSED' | 'CANCELLED' };
 export type ApptStatus = 'CONFIRMED' | 'CANCELLED' | 'CHECKED_IN' | 'COMPLETED' | 'NO_SHOW' | 'EXPIRED';
+export type DutySession = { providerCode: string; providerName: string; clinicCode: string; roomId?: string; startsAt: string; endsAt: string; status: 'OPEN' | 'CLOSED' };
 export type ImportResult = { doctors: number; added: number; sessions: number; slots: number; skipped: number; conflicts: { code: string; name: string; day: string }[] };
 export type Provider = { code: string; name: string; clinics: string[]; note?: string; active: boolean; upcoming: number; nextAt?: string };
 export type Appointment = { id: string; code: string; clinicCode: string; clinicName: string; providerCode: string; providerName: string; startsAt: string; endsAt: string;
@@ -245,6 +246,21 @@ export class AppointmentService implements OnModuleInit, OnModuleDestroy {
     };
     try { this.store.tx(() => { work(); if (input.dryRun) throw DRY; }); } catch (e) { if (e !== DRY) throw e; }
     return out;
+  }
+  // Who sees patients today, room by room (the map's duty roster, the queue screens' doctor names): every session of
+  // the day not cancelled — doctor, clinic, room (none = any free room of the clinic), hours. Nothing about patients.
+  // known: doctors are on file (the screens then follow these sessions, not the demo roster). fallback: a day without
+  // sessions (a Sunday) gives the next day that has some, within two weeks — for the simulated day, which needs
+  // doctors; `today` says whether the sessions are today's.
+  dutyToday(day = localDate(this.now()), fallback = false): { known: boolean; day: string; today: boolean; sessions: DutySession[] } {
+    const known = !!this.store.db.prepare('SELECT 1 FROM providers LIMIT 1').get();
+    const on = (d: string) => { const [a, b] = dayRange(d); return this.store.db.prepare(`SELECT provider_code, provider_name, clinic_code, room_id, starts_at, ends_at, status FROM provider_schedules
+      WHERE starts_at >= ? AND starts_at < ? AND status <> 'CANCELLED' ORDER BY starts_at`).all(a, b) as Record<string, string | null>[]; };
+    let use = day, rows = on(day);
+    for (let k = 1; fallback && known && !rows.length && k <= 14; k++) { const d = localInstant(day, '12:00'); d.setDate(d.getDate() + k); use = localDate(d); rows = on(use); }
+    if (!rows.length) use = day;
+    return { known, day: use, today: use === day, sessions: rows.map((r) => ({ providerCode: r.provider_code!, providerName: r.provider_name!, clinicCode: r.clinic_code!, ...(r.room_id ? { roomId: r.room_id } : {}),
+      startsAt: r.starts_at!, endsAt: r.ends_at!, status: r.status as DutySession['status'] })) };
   }
   // One doctor's sessions still to come, every clinic (the doctor's page in Settings → รายชื่อแพทย์).
   providerSessions(code: unknown, limit = 120): Session[] {

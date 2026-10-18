@@ -723,8 +723,12 @@ export class FlowGateway implements OnGatewayInit, OnModuleDestroy {
   // ---- Doctor appointments (stage 2.4) ------------------------------------------------------------------------------
   // Administrators: rules per clinic and doctors' sessions. Staff: make, move, cancel appointments for patients, and
   // decide on requests to move. Supervisors: record a no-show (after the time, with a reason).
-  apptChanged() { this.server.to(STAFF_ROOM).emit('appointment:changed', {}); }
+  // Staff screens reload appointments; every screen (the TV too) reloads today's doctors.
+  apptChanged() { this.server.to(STAFF_ROOM).emit('appointment:changed', {}); this.server.emit('duty:changed', {}); }
   private staffActor(me: User) { return { kind: 'staff' as const, id: me.id, canOverride: may(me, 'supervisor') && this.features.on('staffOverrides') }; }
+  // Today's doctors by room — for every screen, signed in or not (doctor names and rooms only, no patients).
+  @SubscribeMessage('appt:duty')
+  apptDuty(@MessageBody() body: { fallback?: unknown }) { return { ok: true, ...this.appts.dutyToday(undefined, body?.fallback === true) }; }
   @SubscribeMessage('appt:policies')
   apptPolicies(@ConnectedSocket() client: Socket) {
     if (!userOf(client)) return SIGN_IN;

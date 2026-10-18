@@ -7,7 +7,8 @@ import { io, type Socket } from 'socket.io-client';
 import { apiSocket } from './api-url';
 import { NO_SHOW, generatePatients, livePatients, opdClinics, patientAt, patientToken, servicePlace, stationSpot, type LiveVisit, type Patient, type PatientState, type StepKind } from './patients';
 import { doctorName, findRoom, isOff, layoutRevision, roomDutyAt, setServiceHours, waitingSpot, type Layout, type Spot } from './scene-data';
-import { buildingShort, fDepartment, fDepartments, fGroup, fGroups, facilityRevision, onFacility, pointFloor, pointLabel, pointsOf, storeFacility } from './facility';
+import { setDuty } from './doctor-duty';
+import { buildingShort, fDepartment, fDepartments, fGroup, fGroups, onFacility, pointFloor, pointLabel, pointsOf, storeFacility } from './facility';
 import { useFacility } from './use-facility';
 
 const DAY = 24*60;
@@ -252,7 +253,8 @@ export const DEFAULT_RULES:QueueRules = {mode:'suggest',cap:12,stallMin:5,slowFa
 export const DEFAULT_SETTINGS:QueueSettings = {system:DEFAULT_RULES,groups:{},stations:{}};
 // The simulated day is built on the OPD hours and the facility: every screen applies them before generating patients
 // and regenerates when worldKey changes (a new facility arrives with a new revision).
-export const worldKey = (s:QueueSettings) => JSON.stringify([s.hours ?? null,facilityRevision()]);
+// …and when today's doctors change (the simulated day queues exam patients on their hours) — layoutRevision has both.
+export const worldKey = (s:QueueSettings) => JSON.stringify([s.hours ?? null,layoutRevision()]);
 let liveMode = false;
 export function applyWorld(s:QueueSettings) { setServiceHours(s.hours); liveMode = s.dataMode==='live'; }
 export const isLive = (s:QueueSettings) => s.dataMode==='live';
@@ -423,7 +425,7 @@ export type QueueSync = {facilityRev:number; events:QueueEvent[]; online:boolean
   visits:LiveVisit[]; enterVisit:(v:VisitInput, key:string)=>Promise<VisitRes>; addVisitStep:(visitId:string, kind:StepKind, at:number, key:string)=>Promise<VisitRes>;
   cancelVisit:(visitId:string, reason:string)=>Promise<VisitRes>;
   // Phase 2 screens (booking …): any API command, and a counter that moves when bookings change somewhere.
-  api:<T extends Res = Res & Record<string,unknown>>(event:string, body:unknown)=>Promise<T & {code?:string}>; bookingRev:number; apptRev:number;
+  api:<T extends Res = Res & Record<string,unknown>>(event:string, body:unknown)=>Promise<T & {code?:string}>; bookingRev:number; apptRev:number; dutyRev:number;
   // Digital Reception kiosks asking for a member of staff (signed-in staff only).
   kioskHelp:KioskHelp[]};
 export type KioskHelp = {id:string; kioskId:string; kioskName:string; whereTh?:string; reason:'asked'|'emergency'; createdAt:string};
@@ -471,6 +473,7 @@ export function useQueueEvents():QueueSync {
   const [kioskHelp,setKioskHelp] = useState<KioskHelp[]>([]);
   const [bookingRev,setBookingRev] = useState(0);
   const [apptRev,setApptRev] = useState(0);
+  const [dutyRev,setDutyRev] = useState(0); // today's doctors changed: screens re-draw
   const [visits,setVisits] = useState<LiveVisit[]>([]);
   const socket = useRef<Socket|null>(null);
   const facilityRev = useFacility(); // this browser's last facility now; the socket sends the current one
@@ -485,6 +488,10 @@ export function useQueueEvents():QueueSync {
     s.on('reception:help',(list:KioskHelp[])=>setKioskHelp(Array.isArray(list) ? list : []));
     s.on('booking:changed',()=>setBookingRev(r=>r+1));
     s.on('appointment:changed',()=>setApptRev(r=>r+1));
+    // Today's doctors by room (lib/doctor-duty.ts): on connect, when schedules change, and every 15 minutes (a new day).
+    const loadDuty = () => s.timeout(8000).emit('appt:duty',{fallback:true},(err:unknown,res?:unknown)=>{ if (!err && res && setDuty(res)) setDutyRev(r=>r+1); });
+    s.on('connect',loadDuty); s.on('duty:changed',loadDuty);
+    const dutyTimer = setInterval(loadDuty,15*60_000);
     s.on('disconnect',()=>setOnline(false));
     s.on('visits',(list:LiveVisit[])=>setVisits(Array.isArray(list)?list:[]));
     s.on('visit',(v:LiveVisit)=>setVisits(prev=>{ const i = prev.findIndex(x=>x.id===v.id); if (i<0) return [...prev,v]; const next = [...prev]; next[i] = v; return next; }));
@@ -493,7 +500,7 @@ export function useQueueEvents():QueueSync {
     s.on('queue:event',(e:QueueEvent)=>setEvents(prev=>{ if (prev.some(x=>x.id===e.id)) return prev; const next = [...prev,e]; saveLocal(next); return next; }));
     s.on('facility:updated',(f:unknown)=>storeFacility(f));
     s.on('queue:settings',(v:QueueSettings)=>{ const m = mergeSettings(DEFAULT_SETTINGS,v); setSettings(m); try { localStorage.setItem(settingsKey,JSON.stringify(m)); } catch { /* ignore */ } });
-    return ()=>{ s.close(); };
+    return ()=>{ clearInterval(dutyTimer); s.close(); };
   },[]);
   const addLocal = (cmd:QueueCommand) => {
     const e = {...cmd,id:`local-${Date.now()}-${Math.random().toString(36).slice(2,7)}`};
@@ -537,7 +544,7 @@ export function useQueueEvents():QueueSync {
   const addVisitStep = useCallback((visitId:string, kind:StepKind, at:number, key:string)=>request<VisitRes>('visit:step',{visitId,kind,at,key}),[request]);
   const cancelVisit = useCallback((visitId:string, reason:string)=>request<VisitRes>('visit:cancel',{visitId,reason}),[request]);
   const api = useCallback(<T extends Res>(event:string, body:unknown)=>request<T & {code?:string}>(event,body),[request]) as QueueSync['api'];
-  return {facilityRev,events,online,send,settings,saveSettings,user,authReady,login,logout,listUsers,saveUser,resolveTicket,familyTicket,features,lineLink,visits,enterVisit,addVisitStep,cancelVisit,api,bookingRev,apptRev,kioskHelp};
+  return {facilityRev,events,online,send,settings,saveSettings,user,authReady,login,logout,listUsers,saveUser,resolveTicket,familyTicket,features,lineLink,visits,enterVisit,addVisitStep,cancelVisit,api,bookingRev,apptRev,dutyRev,kioskHelp};
 }
 
 // Thai announcement, read character by character so queue numbers are unambiguous.

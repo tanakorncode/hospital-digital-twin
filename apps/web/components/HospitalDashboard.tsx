@@ -2,6 +2,8 @@
 import dynamic from 'next/dynamic';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { Bell, MapPin, Tags, Route as RouteIcon, RotateCcw, FastForward, Building2, ChartColumn, ClipboardList, Clock, Droplet, House, Layers, ListOrdered, LocateFixed, Minus, Pill, Plus, Radiation, Search, Settings, Stethoscope, Thermometer, Users, UsersRound, Wallet, Hospital, LayoutGrid, Play, Pause, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, X, Ticket, UserRound, Accessibility, type LucideIcon, BrainCircuit } from 'lucide-react';
+import { duty } from '../lib/doctor-duty';
+const dayOfDuty = (d:string) => new Date(`${d}T12:00:00`).toLocaleDateString('th-TH',{weekday:'long',day:'numeric',month:'short'});
 import { findDepts, findDoctors, isOff, type DeptPlace, kiosks, kioskStatusLabel, type Kiosk, DENSITY_HIGH, DENSITY_LOW, doctorName, dutyLabel, findRoom, floorDutyAt, roomDutyAt, HOURS, HOUR_END, HOUR_START, REF_HOUR, buildingDensityAt, buildingStatsAt, buildings, buildingStats, clampHour, crowdFactor, demoFlows, densityColor, densityLevel, floorDepartments, fmtHour, isRealMode, setRealCounts, hourlySeries, parkingLots, peakWindow, personTypes, roads, scopeAt, servicePointAt, servicePoints, type PersonType, type Scope, type ServicePoint } from '../lib/scene-data';
 import { useLiveFeed, type LiveStatus } from '../lib/live-feed';
 import { realCounts } from '../lib/live-counts';
@@ -26,6 +28,8 @@ const serviceIcons:Record<string,LucideIcon> = {registration:ClipboardList,scree
 const statusColor = (s:ServicePoint['status']) => s==='critical'?'#ef4444':s==='busy'?'#f5a524':'#22c58b';
 type InfoStat = {label:string;value:string|number;unit?:string;tone?:ServicePoint['status']};
 const hh = (h:number) => String(h).padStart(2,'0');
+// A shift's hour as a clock time: 13 → "13:00", 13.5 → "13:30" (doctors' schedules start on the half hour too).
+const hourClock = (h:number) => { const m = Math.round(h*60); return `${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`; };
 
 // offsetMin: demo mode (?demoStart=9.5) runs the clock from another time of day, still ticking in real time.
 function useClock(offsetMin=0) {
@@ -435,8 +439,8 @@ export default function HospitalDashboard() {
   : [{label:'ผู้รอ',value:totalWaiting,unit:'คน',tone:'critical'},{label:'รอเฉลี่ย',value:Math.round(28*(0.4+0.6*opdK)),unit:'นาที'},{label:'ห้องตรวจ',value:`${roomsUsed}/56`}];
  const info:{Icon:LucideIcon;title:string;sub?:string;lines?:string[];stats:InfoStat[];onClose?:()=>void} =
   roomDuty ? {Icon:Stethoscope,title:`${roomDuty.room.name} · ${roomDuty.room.dept}`,onClose:()=>setSelectedRoom(null),
-   lines:[roomDuty.current && roomDuty.status!=='vacant' ? `แพทย์เวร: ${doctorName(roomDuty.current.doctor,true)} · ${hh(roomDuty.current.from)}:00–${hh(roomDuty.current.to)}:00` : 'ตอนนี้ไม่มีแพทย์ออกตรวจ',
-    roomDuty.next ? `เวรถัดไป ${hh(roomDuty.next.from)}:00 · ${doctorName(roomDuty.next.doctor,true)}` : 'ไม่มีเวรถัดไปวันนี้'],
+   lines:[roomDuty.current && roomDuty.status!=='vacant' ? `แพทย์เวร: ${doctorName(roomDuty.current.doctor,true)} · ${hourClock(roomDuty.current.from)}–${hourClock(roomDuty.current.to)}` : 'ตอนนี้ไม่มีแพทย์ออกตรวจ',
+    roomDuty.next ? `เวรถัดไป ${hourClock(roomDuty.next.from)} · ${doctorName(roomDuty.next.doctor,true)}` : 'ไม่มีเวรถัดไปวันนี้'],
    stats:[{label:'คิวหน้าห้อง',value:roomDuty.queue,unit:'คน'},{label:'สถานะ',value:dutyLabel[roomDuty.status],tone:roomDuty.status==='active'?'normal':roomDuty.status==='break'?'busy':undefined},{label:'รอโดยประมาณ',value:roomDuty.queue*7,unit:'นาที'}]}
   : view==='building' ? {Icon:Building2,title:panelBuilding.name,sub:'สีของแต่ละชั้นแสดงความหนาแน่น · คลิกชั้นเพื่อดูผัง',stats:buildingInfo}
   : view==='floor' ? {Icon:Layers,title:`${shortName} · ชั้น ${activeFloor}`,sub:floorInfo?.desc,stats:[
@@ -554,7 +558,7 @@ export default function HospitalDashboard() {
        </>}
       {doctorResults.length>0 && <><h5>แพทย์ · {fmtHour(hour)}</h5>{doctorResults.map(d=><button key={d.room.id+d.from} role="option" className="deptHit docHit" onClick={()=>{ selectRoom(d.room.id); setQuery(''); }}>
        <Stethoscope size={15}/><span><b>{d.name}</b><small>{d.room.name} · {d.room.dept} · {d.place}</small></span>
-       <em className={d.status}>{d.status==='active' ? `ตรวจอยู่ ถึง ${hh(d.to)}:00` : d.status==='break' ? 'พักอยู่' : `เข้าตรวจ ${hh(d.from)}:00`}</em></button>)}</>}
+       <em className={d.status}>{d.status==='active' ? `ตรวจอยู่ ถึง ${hourClock(d.to)}` : d.status==='break' ? 'พักอยู่' : `เข้าตรวจ ${hourClock(d.from)}`}</em></button>)}</>}
       {(deptResults.length>0 || doctorResults.length>0) && results.length>0 && <h5>ผู้ป่วย</h5>}
       {results.length ? results.map(p=>{ const st = patientAt(p,minute); return <button key={p.id} role="option" onClick={()=>selectPatient(p.id)}>
        <b>{p.queue}</b><span>{maskHN(p.hn)} · {p.dept}</span>
@@ -583,11 +587,12 @@ export default function HospitalDashboard() {
       <button className={'deptRow'+(activeDept===d.name?' on':'')} onClick={()=>{ setSelectedRoom(null); setSelectedDept({buildingId:panelBuilding.id,level:activeFloor,name:d.name}); changeView('department'); }}><i style={{background:d.color}}/><span>{d.name}</span><em className={d.status}>{d.queue} คน</em></button>
       {rows.map(x=><button key={x.room.id} className={'rosterRow'+(activeRoom===x.room.id?' on':'')} onClick={()=>selectRoom(x.room.id)}>
        <b>{x.room.number}</b><span>{x.current && x.status!=='vacant' ? doctorName(x.current.doctor,true) : '—'}</span>
-       <small>{x.current ? `${hh(x.current.from)}–${hh(x.current.to)}` : ''}</small><em className={'duty '+x.status}>{dutyLabel[x.status]}</em>
+       <small>{x.current ? `${hourClock(x.current.from)}–${hourClock(x.current.to)}` : ''}</small><em className={'duty '+x.status}>{dutyLabel[x.status]}</em>
       </button>)}
       {rows.length===0 && <p className="rosterNone">ไม่มีห้องตรวจแพทย์ในแผนกนี้</p>}
      </div>; })}
-     <p className="note">ตารางเวรจำลอง · ชื่อแพทย์สมมติ · คลิกห้องเพื่อดูบนแผนที่</p>
+     {/* Where the roster comes from: the doctors' schedules (Settings → รายชื่อแพทย์), or the demo roster */}
+     <p className="note">{duty().known ? `ตารางแพทย์จากระบบนัด${duty().today ? '' : ` · วันนี้ไม่มีตารางออกตรวจ — แสดงตารางของ${dayOfDuty(duty().day)}`}` : 'ตารางเวรจำลอง · ชื่อแพทย์สมมติ'} · คลิกห้องเพื่อดูบนแผนที่</p>
     </section>}
     <section className="panel">
      <div className="panelHead"><h3>ความหนาแน่นของพื้นที่</h3>

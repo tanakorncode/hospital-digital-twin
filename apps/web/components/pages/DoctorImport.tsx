@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { CheckCircle2, Download, FileUp, Loader2, Wand2, X } from 'lucide-react';
 import type { Clinic } from '../../lib/patients';
-import { doctorName, roomShifts } from '../../lib/scene-data';
+import { demoShifts, doctorName } from '../../lib/scene-data';
 import type { QueueSync } from '../../lib/queue';
 import { ModalPortal } from '../ModalPortal';
 import { DatePicker } from '../DatePicker';
@@ -77,7 +77,7 @@ function parse(text:string, clinics:Clinic[]):Row[] {
 function rosterText(clinics:Clinic[]):string {
   const hh = (h:number) => h>=24 ? '23:59' : `${String(h).padStart(2,'0')}:00`;
   const lines = [HEAD.join('\t')];
-  for (const c of clinics) for (const room of c.rooms) roomShifts(room).forEach((s,k)=>{
+  for (const c of clinics) for (const room of c.rooms) demoShifts(room).forEach((s,k)=>{
     lines.push([`DEMO-${room.id.replace(/^room:/,'')}-${k+1}`.slice(0,20),doctorName(s.doctor,true),c.dept,'จ-ศ',hh(s.from),hh(s.to),String(room.number)].join('\t')); });
   return lines.join('\n');
 }

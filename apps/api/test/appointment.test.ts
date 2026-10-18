@@ -322,3 +322,28 @@ test('a schedule from dates picked on a calendar: each set of hours on its own d
   const bad = api.gateway.createApptSessions(admin, { clinicCode: EYE, providerCode: 'D302', providerName: 'X', minutes: 60, capacity: 1, blocks: [{ dates: [], start: '08:00', end: '09:00' }] }) as R;
   assert.equal(bad.code, 'VALIDATION_ERROR');
 });
+
+test("today's doctors by room, for every screen: doctor, clinic, room, hours — no patients", () => {
+  const { api, admin, make, setNow } = setup();
+  // No doctors on file yet in a fresh setup? setup() made schedules, so they are.
+  setNow(localInstant('2026-11-03', '08:00'));
+  make('65-111111');
+  const room = api.facility.index().point.get('room:opd-201') ? 'opd-201' : undefined;
+  if (room) { const s = (api.gateway.apptSessions(admin, { clinicCode: MED, date: '2026-11-03' }) as { sessions: { id: string; providerCode: string }[] }).sessions.find((x) => x.providerCode === 'D001')!;
+    api.gateway.setApptSession(admin, { sessionId: s.id, roomId: room }); }
+  const d = api.gateway.apptDuty({}) as { ok: boolean; known: boolean; day: string; sessions: Record<string, unknown>[] };
+  assert.equal(d.known, true); assert.equal(d.day, '2026-11-03');
+  assert.deepEqual(d.sessions.map((x) => [x.providerName, x.clinicCode, x.roomId ?? null]), [['นพ.สมชาย ใจดี', MED, room ?? null], ['พญ.สมศรี รักษา', MED, null]]);
+  assert.ok(d.sessions.every((x) => !('hn' in x) && !('patient' in x)), 'nothing about patients');
+  // A cancelled session is not on duty.
+  const other = (api.gateway.apptSessions(admin, { clinicCode: MED, date: '2026-11-03' }) as { sessions: { id: string; providerCode: string }[] }).sessions.find((x) => x.providerCode === 'D002')!;
+  api.gateway.setApptSession(admin, { sessionId: other.id, status: 'CANCELLED', reason: 'ลา' });
+  assert.deepEqual((api.gateway.apptDuty({}) as { sessions: { providerCode: string }[] }).sessions.map((x) => x.providerCode), ['D001']);
+  assert.ok(api.emitted.some((e) => e.event === 'duty:changed'), 'screens told');
+  // A day without sessions (Sunday 1 Nov): today's is empty; with fallback, the next day that has sessions (Tue 3 Nov).
+  setNow(localInstant('2026-11-01', '08:00'));
+  const sun = api.gateway.apptDuty({}) as { day: string; today: boolean; sessions: unknown[] };
+  assert.deepEqual([sun.day, sun.today, sun.sessions.length], ['2026-11-01', true, 0]);
+  const next = api.gateway.apptDuty({ fallback: true }) as { day: string; today: boolean; sessions: unknown[] };
+  assert.deepEqual([next.day, next.today], ['2026-11-03', false]); assert.ok(next.sessions.length > 0);
+});

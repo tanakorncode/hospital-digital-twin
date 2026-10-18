@@ -1,6 +1,7 @@
 import { CORRIDOR, SEAT_DX, SEAT_DZ, counterAt, floorFrame, planFloor, roomFrame, roomPoint, type Door, type FloorPlan } from './floor-layout';
 import { facility, facilityRevision, fBuildings, fFloors, fGroup, fPoint, fPoints, floorAt, isActive, onFacility, pointLabel,
   type FBuilding, type FPoint } from './facility';
+import { duty, dutyRevision } from './doctor-duty';
 
 // The hospital as drawn and simulated comes from the facility model (lib/facility.ts) — buildings, floors, the
 // departments on each floor, rooms, kiosks and the ground around the buildings. The lists below are rebuilt in place
@@ -136,7 +137,8 @@ export const isOff = (id:string) => {
   return !isActive(p) || !isActive(g) || (!!floor && (!isActive(floor) || !isActive(facility().buildings.find(b=>b.id===floor.buildingId))));
 };
 // Bumps on every new facility: memoised lists of rooms / stations / clinics key on it.
-export const layoutRevision = () => facilityRevision();
+// Memoised layout and what is planned from it (rooms, the simulated day) key on the facility and today's doctors.
+export const layoutRevision = () => facilityRevision()*100000+dutyRevision();
 
 // The old Settings "layout" (departments added / renamed / rooms shared out / switched off) — still in the queue
 // settings of installations that used it; the API made the facility from it. Nothing reads it here any more.
@@ -233,7 +235,7 @@ export const fmtHour = (h:number) => `${String(Math.floor(h)).padStart(2,'0')}:$
 export type RoomKind = 'exam'|'scan'|'treatment'|'ward'|'office';
 // x0…x1 × z0…z1: where the room is on its floor (building-local) · door: the wall its door is in ('s' = towards the front).
 export type Room = {id:string; buildingId:string; level:number; index:number; count:number; number:number; name:string; kind:RoomKind; dept:string; deptIndex:number; pointId:string;
-  x0:number; x1:number; z0:number; z1:number; door:Door; doorAt?:number};
+  x0:number; x1:number; z0:number; z1:number; door:Door; doorAt?:number; deptId:string};
 const roomsByFloor = new Map<string,Room[]>(), roomById = new Map<string,Room>();
 const roomIdOf = (p:FPoint) => p.id.startsWith('room:') ? p.id.slice(5) : p.id;
 function rebuildRooms() {
@@ -244,7 +246,7 @@ function rebuildRooms() {
     const rooms = plan.rooms.map((r):Room=>{ const p = r.point, deptIndex = bandOfDept.get(r.deptId) ?? 0;
       const number = /^\d+$/.test(p.roomCode ?? '') ? Number(p.roomCode) : p.number;
       return {id:roomIdOf(p),buildingId:b.id,level:fl.level,index:r.index,count:r.count,number,name:pointLabel(p),kind:r.kind,dept:plan.bands[deptIndex]?.name ?? '',deptIndex,pointId:p.id,
-        x0:r.x0,x1:r.x1,z0:r.z0,z1:r.z1,door:r.door,...(r.doorAt!==undefined ? {doorAt:r.doorAt} : {})};
+        x0:r.x0,x1:r.x1,z0:r.z0,z1:r.z1,door:r.door,deptId:r.deptId,...(r.doorAt!==undefined ? {doorAt:r.doorAt} : {})};
     });
     roomsByFloor.set(`${b.id}:${fl.level}`,rooms);
     for (const r of rooms) { roomById.set(r.id,r); roomById.set(r.pointId,r); }
@@ -258,8 +260,9 @@ export const roomArea = (room:Room, inset = 0.15) => { const b = buildings.find(
 export const isDoctorRoom = (r:Room) => r.kind==='exam' || r.kind==='treatment';
 
 // ---- Doctor duty roster (demo) ---------------------------------------------------------------------------------
-export type Doctor = {title:'นพ.'|'พญ.'; first:string; last:string};
-export type Shift = {from:number; to:number; doctor:Doctor};
+export type Doctor = {title:string; first:string; last:string};
+// real: from the appointment schedules (no simulated breaks); closed: that session takes no more bookings.
+export type Shift = {from:number; to:number; doctor:Doctor; real?:boolean; closed?:boolean};
 export type DutyStatus = 'active'|'break'|'vacant';
 export type LiveDuty = {status:DutyStatus; doctor?:Doctor; from?:number; to?:number};
 export type RoomDuty = {room:Room; status:DutyStatus; current?:Shift; next?:Shift; queue:number};
@@ -269,7 +272,8 @@ const lastInitials = ['ก.','ส.','ว.','ท.','ป.','ร.','ม.','จ.','�
 const hashOf = (str:string) => { let h = 2166136261; for (let i=0;i<str.length;i++) { h ^= str.charCodeAt(i); h = Math.imul(h,16777619); } return h>>>0; };
 const seededFrom = (str:string) => { let x = hashOf(str)%2147483646+1; return ()=>{ x = x*16807%2147483647; return (x-1)/2147483646; }; };
 export const doctorName = (d:Doctor, full=false) => `${d.title}${d.first}${full?` ${d.last}`:''}`;
-export function roomShifts(room:Room):Shift[] {
+// The demo roster: made-up doctors per room, the same every day (the Settings import offers it as a starting list).
+export function demoShifts(room:Room):Shift[] {
   if (!isDoctorRoom(room)) return [];
   const r = seededFrom(room.id);
   const doc = ():Doctor => { const [first,female] = firstNames[Math.floor(r()*firstNames.length)]; return {title:female?'พญ.':'นพ.',first,last:lastInitials[Math.floor(r()*lastInitials.length)]}; };
@@ -283,6 +287,37 @@ export function roomShifts(room:Room):Shift[] {
   if (r()<0.3 && c<24) shifts.push({from:c,to:Math.min(24,c+4),doctor:doc()}); // after-hours clinic
   return shifts;
 }
+// A room's doctors today: from the appointment schedules once doctors are on file (lib/doctor-duty.ts) — clinic exam
+// rooms only (the ER's treatment rooms keep the demo roster); a session without a room takes a free exam room of its
+// clinic. Hours may be fractional (13.5 = 13:30).
+export function roomShifts(room:Room):Shift[] {
+  if (!isDoctorRoom(room)) return [];
+  const d = duty();
+  if (!d.known || room.kind!=='exam') return demoShifts(room);
+  if (!d.today && isRealMode()) return []; // live data: no sessions today means no doctors today
+  return realShifts().get(room.id) ?? [];
+}
+let realCache:{rev:string; map:Map<string,Shift[]>}|null = null;
+const hourOf = (iso:string) => { const t = new Date(iso); return t.getHours()+t.getMinutes()/60; };
+// "นพ.สมชาย ใจดี" → title, first name, the rest.
+function parseDoctor(name:string):Doctor { const n = name.trim(), m = n.match(/^(นพ\.|พญ\.|ทพ\.|ทพญ\.|ภก\.|ภญ\.|ดร\.|ศ\.|รศ\.|ผศ\.)\s*/);
+  const title = m ? m[1] : '', rest = n.slice(m ? m[0].length : 0).trim().split(/\s+/); return {title,first:rest[0] ?? '',last:rest.slice(1).join(' ')}; }
+function realShifts():Map<string,Shift[]> {
+  const key = `${facilityRevision()}:${dutyRevision()}`;
+  if (realCache?.rev===key) return realCache.map;
+  const map = new Map<string,Shift[]>(), byClinic = new Map<string,Room[]>();
+  for (const b of buildings) for (const f of buildingStats[b.id]?.floors ?? []) for (const r of floorRooms(b.id,f.level)) if (r.kind==='exam') byClinic.set(r.deptId,[...(byClinic.get(r.deptId) ?? []),r]);
+  const free = (r:Room, from:number, to:number) => !(map.get(r.id) ?? []).some(s=>from<s.to && s.from<to);
+  const put = (r:Room, s:Shift) => map.set(r.id,[...(map.get(r.id) ?? []),s].sort((a,b)=>a.from-b.from));
+  const sessions = [...duty().sessions].sort((a,b)=>Number(!!b.roomId)-Number(!!a.roomId) || a.startsAt.localeCompare(b.startsAt)); // set rooms first
+  for (const s of sessions) {
+    const shift:Shift = {from:hourOf(s.startsAt),to:hourOf(s.endsAt),doctor:parseDoctor(s.providerName),real:true,closed:s.status==='CLOSED'};
+    const set = s.roomId ? findRoom(s.roomId) : undefined;
+    const room = set ?? (byClinic.get(s.clinicCode) ?? []).find(r=>free(r,shift.from,shift.to));
+    if (room) put(room,shift);
+  }
+  realCache = {rev:key,map}; return map;
+}
 export function floorDutyAt(buildingId:string, level:number, hour:number):RoomDuty[] {
   const depts = floorDepartments(buildingId,level,hour), liveDuty = liveAt(hour)?.duty;
   const duties = floorRooms(buildingId,level).filter(isDoctorRoom).map<RoomDuty>(room=>{
@@ -290,7 +325,7 @@ export function floorDutyAt(buildingId:string, level:number, hour:number):RoomDu
     if (isOff(`room:${room.id}`) || isOff(`dept:${room.dept}`)) return {room,status:'vacant',queue:0};
     const shifts = roomShifts(room), current = shifts.find(s=>hour>=s.from && hour<s.to), next = shifts.find(s=>s.from>hour);
     // ~1 in 7 on-duty hours the doctor is on a short break.
-    let status:DutyStatus = !current ? 'vacant' : hashOf(`${room.id}@${Math.floor(hour)}`)%7===0 ? 'break' : 'active';
+    let status:DutyStatus = !current ? 'vacant' : !current.real && hashOf(`${room.id}@${Math.floor(hour)}`)%7===0 ? 'break' : 'active';
     const measured = liveDuty?.[room.id];
     if (measured) return {room,status:measured.status,next,queue:0,current:measured.doctor?{from:measured.from??Math.floor(hour),to:measured.to??Math.floor(hour)+1,doctor:measured.doctor}:undefined};
     return {room,status,current,next,queue:0};
@@ -307,7 +342,7 @@ export function floorDutyAt(buildingId:string, level:number, hour:number):RoomDu
 export function roomOpenIntervals(room:Room):[number,number][] {
   const out:[number,number][] = [];
   for (const s of roomShifts(room)) for (let h=s.from; h<s.to; h++) {
-    if (hashOf(`${room.id}@${h}`)%7===0) continue;
+    if (!s.real && hashOf(`${room.id}@${h}`)%7===0) continue; // the demo roster's short breaks
     const last = out[out.length-1];
     if (last && last[1]===h*60) last[1] = (h+1)*60; else out.push([h*60,(h+1)*60]);
   }
