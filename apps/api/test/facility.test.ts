@@ -120,6 +120,10 @@ test('publishing refuses a facility that does not hold together', () => {
   assert.match(bad((d) => { d.points.find((x) => x.id === 'room:opd-201')!.number = 202; }).reason!, /เลขห้อง\/ช่องซ้ำ/);
   assert.equal(bad((d) => { d.floors = d.floors.filter((x) => x.id !== 'opd-3'); }).code, 'VALIDATION_ERROR', 'a floor that still has groups on it');
   assert.equal(api.facility.version(), 1);
+  // Buildings on top of each other on the map: a warning.
+  const over = data();
+  over.buildings.find((x) => x.id === 'support')!.map = { ...over.buildings.find((x) => x.id === 'diagnostics')!.map };
+  assert.ok((api.gateway.facilityImpact(admin, { data: over }) as R).impact!.issues.some((i) => i.level === 'warning' && /ทับกับ/.test(i.message)));
   // Warnings do not block: a group with fewer open points than it needs.
   const d = data();
   for (const p of d.points) if (p.groupId === 'exam:opd-4-2') p.active = false;

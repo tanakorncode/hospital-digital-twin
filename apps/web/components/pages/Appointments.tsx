@@ -2,13 +2,19 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CalendarPlus, Check, CheckCircle2, LogIn, MoveRight, RefreshCw, Search, X } from 'lucide-react';
 import { opdClinics, type Clinic } from '../../lib/patients';
-import { findRoom } from '../../lib/scene-data';
+import { findRoom, isOff, type Room } from '../../lib/scene-data';
+import { buildingShort } from '../../lib/facility';
 import { actionKey, canDo, covers, type AuthUser, type QueueSync } from '../../lib/queue';
 import { CheckInCard, type CheckInResult } from '../CheckInCard';
 import { NumPick, addDays, dayOf, timeOf, today, weekdayNames } from './Booking';
 import { Select } from '../Select';
 import { DatePicker } from '../DatePicker';
 import { ModalPortal } from '../ModalPortal';
+
+// A doctor's room as the facility has it: its name, floor, and switched-off rooms shown but not choosable (the API only
+// takes the clinic's open exam rooms).
+const roomOption = (r:Room) => { const off = isOff(`room:${r.id}`) || isOff(r.pointId);
+  return {value:r.id,label:r.name,sub:`${buildingShort(r.buildingId)} ชั้น ${r.level}${off ? ' · ปิดอยู่' : ''}`,disabled:off}; };
 
 // Doctor appointments (Phase 2): administrators set each clinic's rules and the doctors' sessions; staff make, move
 // and cancel appointments for patients and decide on requests to move; supervisors record a no-show (after the time,
@@ -95,7 +101,7 @@ function SessionPlanner({api,clinics,say}:{api:Api; clinics:Clinic[]; say:Say}) 
    <label className="wide">เวลา<span className="timeRange"><input type="time" value={start} onChange={e=>setStart(e.target.value)}/>–<input type="time" value={end} onChange={e=>setEnd(e.target.value)}/></span></label>
    <label>ช่วงละ<Select value={minutes} onChange={setMinutes} options={[10,15,20,30,60].map(m=>({value:m,label:`${m} นาที`}))}/></label>
    <label>นัดต่อช่วง<input type="number" min={1} max={100} value={capacity} onChange={e=>setCapacity(Math.max(1,Math.min(100,Number(e.target.value)||1)))}/></label>
-   <label className="wide">ห้องตรวจ<Select value={room} onChange={setRoom} options={[{value:'',label:'ไม่ระบุ (ห้องที่ว่างของคลินิก)'},...rooms.map(r=>({value:r.id,label:r.name}))]}/></label>
+   <label className="wide">ห้องตรวจ<Select value={room} onChange={setRoom} options={[{value:'',label:'ไม่ระบุ (ห้องที่ว่างของคลินิก)'},...rooms.map(roomOption)]}/></label>
   </div>
   <div className="segBtns">{weekdayNames.map((d,i)=><button key={i} className={days.includes(i)?'on':''} aria-pressed={days.includes(i)} onClick={()=>setDays(x=>x.includes(i)?x.filter(y=>y!==i):[...x,i].sort())}>{d}</button>)}
    <button className="btn" disabled={busy || !days.length || !code.trim() || !name.trim()} onClick={()=>void make()}><CalendarPlus size={15}/> {busy?'กำลังสร้าง…':'สร้างตาราง'}</button></div>
@@ -123,7 +129,7 @@ function SessionList({api,rev,clinics,say,roomOnly=false}:{api:Api; rev:number; 
     <td>{timeOf(s.startsAt)}–{timeOf(s.endsAt)}</td>
     <td>{s.status==='CANCELLED' ? roomLabel(s.roomId) || '—' : <Select size="sm" className="roomPick" aria-label={`ห้องตรวจของ ${s.providerName}`} value={s.roomId ?? ''}
      onChange={v=>void set(s,{roomId:v},v?`${s.providerName} ตรวจที่${roomLabel(v)}`:`${s.providerName} ไม่ระบุห้อง`)}
-     options={[{value:'',label:'ไม่ระบุ'},...rooms.map(r=>({value:r.id,label:r.name}))]}/>}</td>
+     options={[{value:'',label:'ไม่ระบุ'},...rooms.map(roomOption)]}/>}</td>
     <td className="num">{s.reserved}</td>{!roomOnly && <td className="num">{s.capacity}</td>}<td>{s.status==='OPEN'?'เปิด':s.status==='CLOSED'?'ปิดรับ':'ยกเลิก'}</td>
     {!roomOnly && <td className="slotActs">{s.status==='OPEN' && <button className="btn ghost sm" onClick={()=>void set(s,{status:'CLOSED'},`ปิดรับนัด ${s.providerName} แล้ว`)}>ปิดรับ</button>}
      {s.status==='CLOSED' && <button className="btn ghost sm" onClick={()=>void set(s,{status:'OPEN'},`เปิดรับนัด ${s.providerName} แล้ว`)}>เปิดรับ</button>}

@@ -8,6 +8,7 @@ import type { QueueSync } from '../../lib/queue';
 import { Select } from '../Select';
 import { ConfirmDialog, type Confirm } from './ConfirmDialog';
 import { FloorPreview, Help } from './FacilityHelp';
+import { SitePlan } from './FacilitySite';
 import { planFloor, seatCapacity } from '../../lib/floor-layout';
 import { ModalPortal } from '../ModalPortal';
 
@@ -218,6 +219,9 @@ export function FacilityPane({api,online,canEdit,head}:{api?:Api; online:boolean
         {selDept ? <DeptDetail key={selDept.id} d={selDept} focus={sel?.focus} ctx={ctx}/>
           : selBuilding ? <BuildingDetail key={selBuilding.id} b={selBuilding} ctx={ctx}/>
           : selFloor ? <FloorDetail key={selFloor.id} f={selFloor} ctx={ctx}/>
+          : view==='place' ? <div className="facCard"><header className="facHead"><div><span className="facKind">ผังพื้นที่โรงพยาบาล</span><h3>อาคารและตู้คิวบนพื้นที่</h3>
+              <small className="muted">เลือกอาคารบนผังหรือทางซ้ายเพื่อแก้รายละเอียด</small></div></header>
+              <SitePlan data={data} editable={editable} onSelect={id=>setSel({kind:'building',id})} update={update}/></div>
           : <div className="facEmpty"><MapPin size={28}/><b>เลือกแผนก อาคาร หรือชั้นทางซ้าย</b><span>ค้นหาได้ทั้งชื่อแผนก กลุ่มบริการ ห้อง ช่อง และเลขห้อง</span>
             <span className="muted">{data.buildings.filter(b=>!b.retiredAt).length} อาคาร · {data.floors.filter(f=>!f.retiredAt).length} ชั้น · {data.departments.filter(d=>!d.retiredAt).length} แผนก · {data.groups.filter(g=>!g.retiredAt).length} กลุ่มบริการ · {data.points.filter(p=>!p.retiredAt).length} ห้อง/ช่อง/เตียง</span></div>}
       </div>
@@ -399,11 +403,12 @@ function BuildingDetail({b,ctx}:{b:FBuilding; ctx:Ctx}) {
       </span>
     </header>
     <Issues list={issuesAt.get(b.id)}/>
+    <SitePlan data={data} selected={b.id} editable={editable} onSelect={id=>setSel({kind:'building',id})} update={update}/>
     <div className="facFields">
       <label className="wide"><span>ชื่ออาคาร</span><input value={b.name} disabled={!editable} onChange={e=>set(x=>{ x.name = e.target.value; })} maxLength={60}/></label>
       <label><span>ชื่อย่อ (ป้าย/จอ)</span><input value={b.shortName} disabled={!editable} onChange={e=>set(x=>{ x.shortName = e.target.value; })} maxLength={60}/></label>
       <label><span>ชนิด (หน้าตาบนแผนที่)</span><Select value={b.kind} disabled={!editable} onChange={v=>set(x=>{ x.kind = v; })} options={BUILDING_KINDS.map(([value,label])=>({value,label}))} aria-label="ชนิดอาคาร"/></label>
-      <fieldset className="wide facMap"><legend>ตำแหน่งและขนาดบนแผนที่ (หน่วยแผนที่ · ระยะถัดไปลากบนผังได้)</legend>
+      <fieldset className="wide facMap"><legend>ตำแหน่งและขนาดบนแผนที่ (หน่วยแผนที่ · ลากบนผังด้านบนได้)</legend>
         {([['x','ตำแหน่ง X',-200,200],['z','ตำแหน่ง Z',-200,200],['width','กว้าง',3,60],['depth','ลึก',3,60]] as const).map(([k,t,lo,hi])=>
           <label key={k}><span>{t}</span><input type="number" step={0.5} value={b.map[k]} disabled={!editable} onChange={e=>set(x=>{ x.map[k] = num(e.target.value,lo,hi); })}/></label>)}
         <label><span>สี</span><input type="color" value={b.map.color} disabled={!editable} onChange={e=>set(x=>{ x.map.color = e.target.value; })}/></label></fieldset>

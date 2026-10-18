@@ -222,6 +222,12 @@ export function validateFacility(input: unknown): { data?: FacilityData; issues:
   // Things in use must stand somewhere in use; an open department needs its groups' minimum of open points.
   const ix = indexFacility(data);
   for (const g of data.groups) if (usable(g) && departmentInUse(ix, g.departmentId) && !floorInUse(ix, g.floorId)) warn(`"${g.name}" อยู่บนชั้นหรืออาคารที่ปิดอยู่`, g.id);
+  // Buildings drawn on top of each other on the map.
+  const blds = data.buildings.filter((b) => !b.retiredAt);
+  for (let i = 0; i < blds.length; i++) for (let j = i + 1; j < blds.length; j++) {
+    const a = blds[i].map, c = blds[j].map;
+    if (Math.abs(a.x - c.x) < (a.width + c.width) / 2 && Math.abs(a.z - c.z) < (a.depth + c.depth) / 2) warn(`${blds[i].name} ทับกับ${blds[j].name}บนแผนที่ — ขยับออกจากกัน`, blds[i].id);
+  }
   for (const x of data.departments) {
     if (!usable(x)) continue;
     for (const g of ix.groupsOf.get(x.id) ?? []) {

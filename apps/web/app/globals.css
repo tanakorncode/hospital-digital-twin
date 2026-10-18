@@ -2605,3 +2605,9 @@ a.liffChoice{text-decoration:none;padding:10px 16px}
 .fac3dLabels{position:absolute;inset:0;pointer-events:none;z-index:1;overflow:hidden}
 .facLegend.seat{background:#d5dde7;width:8px;height:7px}
 .wayProblem{display:flex;align-items:center;gap:4px;margin-top:3px;color:#b45309;font-size:12px;font-weight:600}
+/* Hospital grounds plan (drag buildings / kiosks) */
+.facSite{margin:0;padding:8px;border:1px solid #e3e9f1;border-radius:14px;background:#fff}
+.facSite svg{display:block;border-radius:10px;max-height:460px}
+.facSite figcaption{margin-top:6px;font-size:11.5px;color:#64748b}
+.facSiteB rect:focus{outline:none}
+.facSiteB rect:focus-visible{stroke:#1677ff;stroke-width:.5}
