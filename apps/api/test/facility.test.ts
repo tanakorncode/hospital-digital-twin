@@ -117,7 +117,7 @@ test('publishing refuses a facility that does not hold together', () => {
   assert.match(bad((d) => { d.groups.find((x) => x.id === 'exam:opd-2-0')!.floorId = 'nowhere'; }).reason!, /ชั้นที่ไม่มีในผัง/);
   assert.match(bad((d) => { d.points.push({ ...d.points[0] }); }).reason!, /รหัสจุดบริการซ้ำ/);
   assert.match(bad((d) => { d.departments.find((x) => x.id === 'opd-2-1')!.name = 'ศัลยกรรม'; }).reason!, /ชื่อแผนกซ้ำ/);
-  assert.match(bad((d) => { d.points.find((x) => x.id === 'room:opd-201')!.number = 202; }).reason!, /เลขจุดซ้ำ/);
+  assert.match(bad((d) => { d.points.find((x) => x.id === 'room:opd-201')!.number = 202; }).reason!, /เลขห้อง\/ช่องซ้ำ/);
   assert.equal(bad((d) => { d.floors = d.floors.filter((x) => x.id !== 'opd-3'); }).code, 'VALIDATION_ERROR', 'a floor that still has groups on it');
   assert.equal(api.facility.version(), 1);
   // Warnings do not block: a group with fewer open points than it needs.

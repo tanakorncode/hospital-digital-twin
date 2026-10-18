@@ -1454,7 +1454,7 @@ kbd{margin-left:6px;padding:1px 6px;border-radius:5px;background:#ffffff33;borde
 .settingsPage.v2 .pageHead .setBy{margin-left:auto;display:flex;align-items:center;gap:6px;font-size:13px;color:#3d5168}
 .settingsPage.v2 .pageHead .setBy input{padding:6px 10px;border:1px solid #d9e2ea;border-radius:10px;font:inherit;width:160px}
 .setLayout{display:grid;grid-template-columns:270px minmax(0,1fr);gap:16px;align-items:start}
-.setNav{position:sticky;top:0;display:flex;flex-direction:column;gap:6px;padding:10px;border-radius:20px;background:#fff;border:1px solid #e8edf4;box-shadow:0 8px 24px #0b1d330d}
+.setNav{position:sticky;top:0;max-height:calc(100vh - 120px);overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;display:flex;flex-direction:column;gap:6px;padding:10px;border-radius:20px;background:#fff;border:1px solid #e8edf4;box-shadow:0 8px 24px #0b1d330d}
 .setNav button{display:flex;align-items:center;gap:12px;padding:10px;border:0;border-radius:14px;background:transparent;text-align:left;cursor:pointer;font:inherit;color:#0f2340}
 .setNav button:hover{background:#f5f7fb}
 .setNav button.on{background:#eef4ff;box-shadow:inset 0 0 0 1.5px #c7dafe}
@@ -2417,11 +2417,11 @@ a.liffChoice{text-decoration:none;padding:10px 16px}
 /* ---- One field style: text / number / date / time inputs, textareas, Select and DatePicker share height, border, type ---- */
 .sel{font-weight:400;min-height:40px}
 .sel-lg{font-weight:800}
-:is(.setCard,.moveDialog,.bookTab,.lineForm) :is(input:not([type]),input[type=text],input[type=number],input[type=password],input[type=search],input[type=email],input[type=tel],input[type=time],textarea):not(:is(.tblSearch,.bookFind,.selSearch,.miniSearch) *){
+:is(.setCard,.moveDialog,.bookTab,.lineForm) :is(input:not([type]),input[type=text],input[type=number],input[type=password],input[type=search],input[type=email],input[type=tel],input[type=time],textarea):not(:is(.tblSearch,.bookFind,.selSearch,.miniSearch,.facSearch) *){
  box-sizing:border-box;min-height:40px;padding:8px 12px;border:1.5px solid #cfdbea;border-radius:10px;background:#fff;color:#0f2340;font:inherit;font-size:14px;font-weight:400;transition:border-color .15s,box-shadow .15s}
 :is(.setCard,.moveDialog,.bookTab,.lineForm) textarea{min-height:96px;line-height:1.5}
-:is(.setCard,.moveDialog,.bookTab,.lineForm) :is(input:not([type]),input[type=text],input[type=number],input[type=password],input[type=search],input[type=email],input[type=tel],input[type=time],textarea):not(:is(.tblSearch,.bookFind,.selSearch,.miniSearch) *):hover{border-color:#9db8dd}
-:is(.setCard,.moveDialog,.bookTab,.lineForm) :is(input:not([type]),input[type=text],input[type=number],input[type=password],input[type=search],input[type=email],input[type=tel],input[type=time],textarea):not(:is(.tblSearch,.bookFind,.selSearch,.miniSearch) *):focus{outline:none;border-color:#1677ff;box-shadow:0 0 0 3px #1677ff24}
+:is(.setCard,.moveDialog,.bookTab,.lineForm) :is(input:not([type]),input[type=text],input[type=number],input[type=password],input[type=search],input[type=email],input[type=tel],input[type=time],textarea):not(:is(.tblSearch,.bookFind,.selSearch,.miniSearch,.facSearch) *):hover{border-color:#9db8dd}
+:is(.setCard,.moveDialog,.bookTab,.lineForm) :is(input:not([type]),input[type=text],input[type=number],input[type=password],input[type=search],input[type=email],input[type=tel],input[type=time],textarea):not(:is(.tblSearch,.bookFind,.selSearch,.miniSearch,.facSearch) *):focus{outline:none;border-color:#1677ff;box-shadow:0 0 0 3px #1677ff24}
 :is(.setCard,.moveDialog,.bookTab,.lineForm) ::placeholder{color:#94a3b8}
 .tblSearch,.bookFind{min-height:40px}
 .dpFilter{width:auto;min-width:220px}
@@ -2560,3 +2560,28 @@ a.liffChoice{text-decoration:none;padding:10px 16px}
   .facTemplates{grid-template-columns:1fr}
 }
 .facPane .btn:disabled,.facDialog .btn:disabled{opacity:.45;cursor:not-allowed}
+
+/* The facility search box: the input is bare inside its frame (not a second boxed field). */
+.facSearch input{border:0;box-shadow:none;padding:0;min-height:0;background:transparent}
+/* Field help: (i) after a label, a popover with a picture of where the value shows up. */
+.facHelp{position:relative;display:inline-flex;vertical-align:middle;margin-left:2px}
+.facHelpBtn{display:grid;place-items:center;width:20px;height:20px;padding:0;border:0;border-radius:50%;background:transparent;color:#7a8ca0;cursor:help}
+.facHelpBtn:hover,.facHelpBtn:focus-visible{color:#1677ff;background:#eef5ff;outline:none}
+.facHelpPop{position:absolute;z-index:40;left:-12px;top:calc(100% + 6px);display:none;flex-direction:column;gap:6px;width:272px;padding:12px 14px;border-radius:14px;background:#fff;border:1px solid #dbe3ec;
+ box-shadow:0 16px 40px #0b1d3329;color:#334155;font-size:12.5px;font-weight:400;line-height:1.55;white-space:normal;text-align:left}
+.facHelpPop>b{font-size:13px;color:#0f2340}
+.facHelp:hover .facHelpPop,.facHelp:focus-within .facHelpPop{display:flex}
+.facHelpPic{display:block;margin-top:2px}
+.facHelpPic svg{display:block;max-width:100%;height:auto}
+.facExample{font-size:11.5px;color:#64748b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.facUnit{display:flex;align-items:center;gap:8px}
+.facUnit input{width:84px;flex:0 0 auto}
+.facUnit em{font-style:normal;font-size:12.5px;line-height:1.3;color:#475569}
+/* Live floor plan (from the draft) */
+.facPreview{margin:0;padding:10px;border:1px solid #e3e9f1;border-radius:14px;background:#fff}
+.facPreview svg{display:block}
+.facPreview figcaption{margin-top:6px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:11.5px;color:#64748b}
+.facLegend{display:inline-block;width:12px;height:9px;border-radius:2px;margin-left:6px}
+.facLegend.room{background:#dbeafe;border:1.5px solid #1677ff}.facLegend.desk{background:#64748b}.facLegend.bed{background:#fff;border:1.5px solid #94a3b8;height:12px;width:8px}
+.facLegend.off{background:repeating-linear-gradient(45deg,#f1f5f9 0 3px,#cbd5e1 3px 5px)}
+.facPreviewNone{margin:0;font-size:12.5px}

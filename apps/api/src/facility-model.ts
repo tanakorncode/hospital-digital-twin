@@ -176,11 +176,11 @@ export function validateFacility(input: unknown): { data?: FacilityData; issues:
     else if (groupName.has(`${g.departmentId}:${g.name.trim()}`)) err(`ชื่อกลุ่มบริการซ้ำในแผนกเดียวกัน: ${g.name}`, g.id);
     else groupName.add(`${g.departmentId}:${g.name.trim()}`);
     if (g.floorId !== null && !fIds.has(g.floorId)) err('กลุ่มบริการอยู่บนชั้นที่ไม่มีในผัง', g.id);
-    if (!POINT_KINDS.includes(g.pointKind)) err('ชนิดจุดบริการไม่ถูกต้อง', g.id);
-    if (!isStr(g.pointNoun, LIMITS.noun)) err('ระบุคำเรียกจุด เช่น ห้องตรวจ ช่องบริการ เตียง', g.id);
+    if (!POINT_KINDS.includes(g.pointKind)) err('"แสดงบนผังเป็น" ไม่ถูกต้อง', g.id);
+    if (!isStr(g.pointNoun, LIMITS.noun)) err('ระบุชื่อที่ผู้ป่วยเห็น เช่น ห้องตรวจ ช่องบริการ เตียง', g.id);
     if (!Array.isArray(g.steps) || g.steps.length > 6 || g.steps.some((s) => !STEP_KINDS.includes(s))) err('ขั้นตอนที่กลุ่มให้บริการไม่ถูกต้อง', g.id);
     if (g.serves !== 'department' && g.serves !== 'all') err('กลุ่มนี้ให้บริการใครไม่ถูกต้อง', g.id);
-    if (!Number.isInteger(g.minOpen) || g.minOpen < 0 || g.minOpen > 50) err('จำนวนจุดที่ต้องเปิดอย่างน้อยไม่ถูกต้อง', g.id);
+    if (!Number.isInteger(g.minOpen) || g.minOpen < 0 || g.minOpen > 50) err('จำนวนที่ต้องเปิดอย่างน้อยไม่ถูกต้อง', g.id);
     const o = g.options as GroupOptions | undefined;
     if (o !== undefined && (!o || typeof o !== 'object' || Array.isArray(o) || Object.keys(o).some((k) => k !== 'arrange' && k !== 'triage')
       || (o.arrange !== undefined && o.arrange !== 'counter' && o.arrange !== 'booths')
@@ -194,7 +194,7 @@ export function validateFacility(input: unknown): { data?: FacilityData; issues:
   for (const p of d.points) {
     if (!gIds.has(p.groupId)) err('จุดบริการไม่อยู่ในกลุ่มใด', p.id);
     if (!Number.isInteger(p.number) || p.number < 0 || p.number > 9999) err('เลขจุดบริการไม่ถูกต้อง', p.id);
-    else if (numbers.has(`${p.groupId}:${p.number}`)) err(`เลขจุดซ้ำในกลุ่มเดียวกัน: ${p.number}`, p.id);
+    else if (numbers.has(`${p.groupId}:${p.number}`)) err(`เลขห้อง/ช่องซ้ำในกลุ่มเดียวกัน: ${p.number}`, p.id);
     else numbers.add(`${p.groupId}:${p.number}`);
     if (p.name !== undefined && !isStr(p.name, LIMITS.name)) err('ชื่อจุดบริการไม่ถูกต้อง', p.id);
     if (p.roomCode !== undefined && !(typeof p.roomCode === 'string' && /^[A-Za-z0-9ก-๙/._-]{1,12}$/.test(p.roomCode))) err('เลขห้องไม่ถูกต้อง', p.id);
@@ -205,7 +205,7 @@ export function validateFacility(input: unknown): { data?: FacilityData; issues:
     if (!isBool(p.active) || !isRetired(p.retiredAt)) err('สถานะจุดบริการไม่ถูกต้อง', p.id);
   }
   // The first step may be another department's group (the ER starts at triage).
-  for (const x of d.departments) if (x.firstGroupId !== undefined && !gIds.has(x.firstGroupId)) err('จุดแรกของแผนกต้องเป็นกลุ่มบริการที่มีในผัง', x.id);
+  for (const x of d.departments) if (x.firstGroupId !== undefined && !gIds.has(x.firstGroupId)) err('ขั้นแรกของแผนกต้องเป็นกลุ่มบริการที่มีในผัง', x.id);
   const site = (d.site ?? { roads: [], parking: [], fillers: [] }) as Partial<Site>;
   if (!Array.isArray(site.roads) || site.roads.length > LIMITS.roads || !site.roads.every(isRect) || !Array.isArray(site.parking) || site.parking.length > LIMITS.roads || !site.parking.every(isRect)
     || !Array.isArray(site.fillers) || site.fillers.length > LIMITS.fillers
@@ -225,7 +225,7 @@ export function validateFacility(input: unknown): { data?: FacilityData; issues:
     for (const g of ix.groupsOf.get(x.id) ?? []) {
       if (!usable(g) || !g.minOpen) continue;
       const open = (ix.pointsOf.get(g.id) ?? []).filter((p) => pointInUse(ix, p.id)).length;
-      if (open < g.minOpen) warn(`"${g.name}" เปิดอยู่ ${open} จุด — ต้องเปิดอย่างน้อย ${g.minOpen} จุดให้แผนก${x.name}รับผู้ป่วยได้`, g.id);
+      if (open < g.minOpen) warn(`"${g.name}" เปิดอยู่ ${open} ${g.pointNoun} — ต้องเปิดอย่างน้อย ${g.minOpen} ${g.pointNoun} แผนก${x.name}จึงจะรับผู้ป่วยได้`, g.id);
     }
     if ((x.features.booking || x.features.appointments) && !doctorRooms(ix, x.id).some((p) => pointInUse(ix, p.id))) warn(`แผนก${x.name}เปิดรับจอง/นัด แต่ไม่มีห้องตรวจที่เปิดอยู่`, x.id);
   }

@@ -7,6 +7,7 @@ import { stepText, type StepKind } from '../../lib/patients';
 import type { QueueSync } from '../../lib/queue';
 import { Select } from '../Select';
 import { ConfirmDialog, type Confirm } from './ConfirmDialog';
+import { FloorPreview, Help } from './FacilityHelp';
 
 // Settings → ผังโรงพยาบาล (docs/FACILITY-MODEL-DESIGN.md §7): the whole facility on one page — buildings, floors,
 // departments, service groups and their rooms / counters / beds. Two views of the same data: by department (units,
@@ -26,8 +27,8 @@ type Api = QueueSync['api'];
 
 const DEPT_TYPES:[DepartmentType,string][] = [['clinic','คลินิกผู้ป่วยนอก'],['service','จุดบริการร่วม'],['emergency','ฉุกเฉิน'],['ward','หอผู้ป่วย'],['diagnostic','ตรวจวินิจฉัย'],['support','หน่วยสนับสนุน']];
 const BUILDING_KINDS:[BuildingKind,string][] = [['opd','ผู้ป่วยนอก'],['er','ฉุกเฉิน'],['inpatient','ผู้ป่วยใน'],['diagnostics','ศูนย์การแพทย์ / ตรวจวินิจฉัย'],['support','สนับสนุน'],['other','อื่น ๆ']];
-const POINT_KINDS:[PointKind,string][] = [['counter','ช่อง / โต๊ะ (หน้าพื้นที่รอ)'],['room','ห้อง (ตามผนัง)'],['bed','เตียง'],['kiosk','ตู้คิว']];
-const NOUNS = ['ห้องตรวจ','ห้อง','ช่องบริการ','ช่อง','เตียง','จุด','โต๊ะ'];
+const POINT_KINDS:[PointKind,string][] = [['counter','เคาน์เตอร์ / โต๊ะ หน้าพื้นที่รอ'],['room','ห้องตามผนังด้านหลัง'],['bed','เตียง'],['kiosk','ตู้ออกบัตรคิว']];
+const NOUNS = ['ห้องตรวจ','ห้อง','ช่องบริการ','ช่อง','เตียง','จุดบริการ','โต๊ะ'];
 const STEPS:StepKind[] = ['registration','screening','exam','followup','lab','xray','pharmacy','finance','triage','treatment','ward','kiosk'];
 const SOURCE_TEXT:Record<Version['source'],string> = {seed:'ผังเริ่มต้น',layout:'ตามหน้าแผนกเดิม',publish:'เผยแพร่',rollback:'ย้อนเวอร์ชัน'};
 const CHANGE_TEXT:Record<Change['change'],string> = {added:'เพิ่ม',changed:'แก้ไข',removed:'ลบ',off:'ปิด',on:'เปิด',retired:'เลิกใช้'};
@@ -183,7 +184,7 @@ export function FacilityPane({api,online,canEdit,head}:{api?:Api; online:boolean
                 <button className="facCaret" aria-label={isOpen(d.id)?'ย่อ':'ขยาย'} onClick={()=>toggleOpen(d.id)}>{isOpen(d.id) ? <ChevronDown size={14}/> : <ChevronRight size={14}/>}</button>
                 <button className="facLabel" onClick={()=>setSel({kind:'dept',id:d.id})}>
                   <i className={'facDot'+(d.retiredAt?' gone':on(d)?' on':'')}/>{d.queuePrefix && <span className="facLetter">{d.queuePrefix}</span>}<b><Mark text={d.name} q={needle}/></b>
-                  {problemIn(d.id) && <AlertTriangle size={13} className="facWarn"/>}<small>{floors.size>1 ? `${floors.size} ชั้น · ` : floors.size ? `${floorText(data,[...floors][0])} · ` : ''}{pts.length} จุด</small></button>
+                  {problemIn(d.id) && <AlertTriangle size={13} className="facWarn"/>}<small>{floors.size>1 ? `${floors.size} ชั้น · ` : floors.size ? `${floorText(data,[...floors][0])} · ` : ''}{pts.length} จุดบริการ</small></button>
               </div>
               {isOpen(d.id) && <ul>{groups.map(g=><li key={g.id}><button className={'facNode group'+(sel?.focus===g.id?' sel':'')+(on(g)?'':' off')} onClick={()=>{ setSel({kind:'dept',id:d.id,focus:g.id}); }}>
                 <i className={'facDot'+(g.retiredAt?' gone':on(g)?' on':'')}/><span><Mark text={g.name} q={needle}/></span>{(issuesAt.has(g.id) || pointsOf(g.id).some(p=>issuesAt.has(p.id))) && <AlertTriangle size={12} className="facWarn"/>}
@@ -256,7 +257,9 @@ function DeptDetail({d,focus,ctx}:{d:FDepartment; focus?:string; ctx:Ctx}) {
   const [usage,setUsage] = useState<Usage>({});
   useEffect(()=>{ if (!api) return; void api('facility:usage',{ids:[d.id,...groups.flatMap(g=>ctx.pointsOf(g.id).map(p=>p.id))]}).then(r=>setUsage(((r as unknown as {usage?:Usage}).usage) ?? {})); },[d.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const ref = useRef<HTMLDivElement>(null);
-  useEffect(()=>{ if (focus) ref.current?.querySelector(`[data-group="${focus}"]`)?.scrollIntoView({block:'nearest',behavior:'smooth'}); },[focus]);
+  // The group being edited shows its floor plan (the one picked in the tree, else the last one touched, else the first).
+  const [activeGroup,setActiveGroup] = useState<string|undefined>(focus);
+  useEffect(()=>{ if (focus) { setActiveGroup(focus); ref.current?.querySelector(`[data-group="${focus}"]`)?.scrollIntoView({block:'nearest',behavior:'smooth'}); } },[focus]);
   const move = (dir:-1|1) => update(x=>{ const i = x.departments.findIndex(y=>y.id===d.id), j = i+dir; if (j<0 || j>=x.departments.length) return; [x.departments[i],x.departments[j]] = [x.departments[j],x.departments[i]]; });
   const prefixTaken = d.queuePrefix && data.departments.some(x=>x.id!==d.id && x.queuePrefix===d.queuePrefix);
   const firstFloor = groups.find(g=>g.floorId)?.floorId ?? floorOptions(data)[0]?.value ?? null;
@@ -279,22 +282,22 @@ function DeptDetail({d,focus,ctx}:{d:FDepartment; focus?:string; ctx:Ctx}) {
     <div className="facFields">
       <label className="wide"><span>ชื่อแผนก</span><input value={d.name} disabled={!editable} onChange={e=>set(x=>{ x.name = e.target.value; })} maxLength={60}/></label>
       <label><span>ชื่อย่อ (ไม่บังคับ)</span><input value={d.shortName ?? ''} disabled={!editable} onChange={e=>set(x=>{ if (e.target.value) x.shortName = e.target.value; else delete x.shortName; })} maxLength={60}/></label>
-      <label><span>อักษรคิว</span><input value={d.queuePrefix ?? ''} disabled={!editable} maxLength={3} aria-invalid={!!prefixTaken}
+      <label><span>อักษรคิว <Help topic="prefix"/></span><input value={d.queuePrefix ?? ''} disabled={!editable} maxLength={3} aria-invalid={!!prefixTaken}
         onChange={e=>set(x=>{ const v = e.target.value.toUpperCase().replace(/[^A-Z]/g,''); if (v) x.queuePrefix = v; else delete x.queuePrefix; })} placeholder="ไม่ใช้"/>{prefixTaken && <em className="facErr">ซ้ำกับแผนกอื่น</em>}</label>
       <label><span>ประเภท</span><Select value={d.type} disabled={!editable} onChange={v=>set(x=>{ x.type = v; })} options={DEPT_TYPES.map(([value,label])=>({value,label}))} aria-label="ประเภทแผนก"/></label>
-      <label className="wide"><span>ผู้ป่วยไปรอที่ไหนก่อน (ขั้นแรก)</span><Select value={d.firstGroupId ?? ''} disabled={!editable} onChange={v=>set(x=>{ if (v) x.firstGroupId = v; else delete x.firstGroupId; })}
+      <label className="wide"><span>ผู้ป่วยไปรอที่ไหนก่อน (ขั้นแรก) <Help topic="firstGroup"/></span><Select value={d.firstGroupId ?? ''} disabled={!editable} onChange={v=>set(x=>{ if (v) x.firstGroupId = v; else delete x.firstGroupId; })}
         options={[{value:'',label:'ไม่กำหนด'},...data.groups.filter(g=>!g.retiredAt).map(g=>({value:g.id,label:g.name,sub:`${data.departments.find(x=>x.id===g.departmentId)?.name ?? ''} · ${floorText(data,g.floorId)}`}))]} aria-label="ขั้นแรก"/></label>
-      <fieldset className="wide facChecks"><legend>รับผู้ป่วย</legend>
+      <fieldset className="wide facChecks"><legend>รับผู้ป่วย <Help topic="features"/></legend>
         {([['walkIn','หน้างาน (walk-in)'],['booking','จองล่วงหน้า'],['appointments','นัดแพทย์']] as const).map(([k,t])=>
           <label key={k}><input type="checkbox" checked={d.features[k]} disabled={!editable} onChange={e=>set(x=>{ x.features[k] = e.target.checked; })}/> {t}</label>)}</fieldset>
     </div>
-    <h4 className="setSub">กลุ่มบริการ <small>ห้อง/ช่องที่ให้บริการขั้นเดียวกันและใช้คิวเดียวกัน · แต่ละกลุ่มอยู่คนละชั้นได้</small></h4>
-    {groups.map((g,i)=><GroupCard key={g.id} g={g} first={i===0} last={i===groups.length-1} focused={focus===g.id} usage={usage} ctx={ctx}/>)}
+    <h4 className="setSub">กลุ่มบริการ <small>ห้อง/ช่องที่ให้บริการขั้นเดียวกันและใช้คิวเดียวกัน · แต่ละกลุ่มอยู่คนละชั้นได้ · กลุ่มที่กำลังแก้แสดงผังชั้นตัวอย่างด้านล่าง</small></h4>
+    {groups.map((g,i)=><GroupCard key={g.id} g={g} first={i===0} last={i===groups.length-1} focused={focus===g.id} active={(activeGroup ?? groups[0]?.id)===g.id} onActive={()=>setActiveGroup(g.id)} usage={usage} ctx={ctx}/>)}
     {editable && !d.retiredAt && <button className="facAdd" onClick={()=>update(x=>{ ctx.addGroup(x,d.id,firstFloor,{name:`กลุ่มบริการใหม่ ${groups.length+1}`},1); })}><Plus size={15}/> เพิ่มกลุ่มบริการ</button>}
   </div>;
 }
 
-function GroupCard({g,first,last,focused,usage,ctx}:{g:FGroup; first:boolean; last:boolean; focused:boolean; usage:Usage; ctx:Ctx}) {
+function GroupCard({g,first,last,focused,active,onActive,usage,ctx}:{g:FGroup; first:boolean; last:boolean; focused:boolean; active:boolean; onActive:()=>void; usage:Usage; ctx:Ctx}) {
   const {data,update,editable,issuesAt,pointsOf,askRemove} = ctx;
   const pts = pointsOf(g.id);
   const set = (fn:(x:FGroup)=>void) => update(x=>{ const t = x.groups.find(y=>y.id===g.id); if (t) fn(t); });
@@ -306,7 +309,7 @@ function GroupCard({g,first,last,focused,usage,ctx}:{g:FGroup; first:boolean; la
   const rooms = data.points.filter(p=>data.groups.find(y=>y.id===p.groupId)?.pointKind==='room' && !p.retiredAt);
   const open = pts.filter(p=>on(p)).length;
   const issues = [...(issuesAt.get(g.id) ?? []),...pts.flatMap(p=>issuesAt.get(p.id) ?? [])];
-  return <div className={'facGroup'+(focused?' focus':'')+(on(g)?'':' off')} data-group={g.id}>
+  return <div className={'facGroup'+(focused || active?' focus':'')+(on(g)?'':' off')} data-group={g.id} onFocusCapture={onActive} onPointerDown={onActive}>
     <div className="facGroupHead">
       <input className="facGroupName" value={g.name} disabled={!editable} onChange={e=>set(x=>{ x.name = e.target.value; })} aria-label="ชื่อกลุ่มบริการ" maxLength={60}/>
       {g.retiredAt && <em className="tagNew">เลิกใช้แล้ว</em>}
@@ -321,16 +324,17 @@ function GroupCard({g,first,last,focused,usage,ctx}:{g:FGroup; first:boolean; la
       </span>
     </div>
     <div className="facFields compact">
-      <label><span>อยู่ที่</span><Select value={g.floorId ?? ''} disabled={!editable} onChange={v=>set(x=>{ x.floorId = v || null; })} options={floorOptions(data,g.pointKind==='kiosk')} aria-label="ชั้นของกลุ่ม"/></label>
-      <label><span>ชนิดจุด</span><Select value={g.pointKind} disabled={!editable} onChange={v=>set(x=>{ x.pointKind = v; })} options={POINT_KINDS.map(([value,label])=>({value,label}))} aria-label="ชนิดจุด"/></label>
-      <label><span>คำเรียกจุด</span><input value={g.pointNoun} disabled={!editable} list="facNouns" onChange={e=>set(x=>{ x.pointNoun = e.target.value; })} maxLength={20}/></label>
-      <label><span>เปิดอย่างน้อย</span><input type="number" min={0} max={50} value={g.minOpen} disabled={!editable} onChange={e=>set(x=>{ x.minOpen = Math.max(0,Math.min(50,Number(e.target.value)||0)); })}/></label>
-      <label className="wide"><span>ให้บริการขั้นตอน</span><Select multiple value={g.steps as StepKind[]} disabled={!editable} onChange={v=>set(x=>{ x.steps = v; })}
+      <label><span>อยู่ที่ <Help topic="floor"/></span><Select value={g.floorId ?? ''} disabled={!editable} onChange={v=>set(x=>{ x.floorId = v || null; })} options={floorOptions(data,g.pointKind==='kiosk')} aria-label="ชั้นของกลุ่ม"/></label>
+      <label><span>แสดงบนผังเป็น <Help topic="pointKind"/></span><Select value={g.pointKind} disabled={!editable} onChange={v=>set(x=>{ x.pointKind = v; })} options={POINT_KINDS.map(([value,label])=>({value,label}))} aria-label="แสดงบนผังเป็น"/></label>
+      <label><span>ชื่อที่ผู้ป่วยเห็น <Help topic="noun"/></span><input value={g.pointNoun} disabled={!editable} list="facNouns" onChange={e=>set(x=>{ x.pointNoun = e.target.value; })} maxLength={20}/>
+        <small className="facExample">บนป้าย/จอเรียก: {pts.filter(p=>!p.retiredAt).slice(0,3).map(p=>pointText(g,p)).join(', ') || `${g.pointNoun} 1`}{pts.length>3 ? ' …' : ''}</small></label>
+      <label><span>ต้องเปิดอย่างน้อย <Help topic="minOpen"/></span><span className="facUnit"><input type="number" min={0} max={50} value={g.minOpen} disabled={!editable} onChange={e=>set(x=>{ x.minOpen = Math.max(0,Math.min(50,Number(e.target.value)||0)); })} aria-label="ต้องเปิดอย่างน้อย"/><em>{g.pointNoun}</em></span></label>
+      <label className="wide"><span>ผู้ป่วยมาทำอะไรที่นี่ <Help topic="steps"/></span><Select multiple value={g.steps as StepKind[]} disabled={!editable} onChange={v=>set(x=>{ x.steps = v; })}
         options={STEPS.map(s=>({value:s,label:stepText[s].serve}))} placeholder="ไม่ใช่จุดคิว (เช่น ห้องทำงาน)" aria-label="ขั้นตอนที่ให้บริการ"/></label>
-      <label><span>ให้บริการ</span><Select value={g.serves} disabled={!editable} onChange={v=>set(x=>{ x.serves = v; })} options={[{value:'department' as const,label:'ผู้ป่วยของแผนกนี้'},{value:'all' as const,label:'ทุกแผนก (จุดบริการร่วม)'}]} aria-label="ให้บริการใคร"/></label>
-      {g.pointKind==='counter' && <label><span>การจัดวาง</span><Select value={g.options?.arrange ?? 'counter'} disabled={!editable} onChange={v=>set(x=>{ x.options = {...x.options,arrange:v}; if (v==='counter') { delete x.options.arrange; if (!Object.keys(x.options).length) delete x.options; } })}
+      <label><span>ใครมาใช้ <Help topic="serves"/></span><Select value={g.serves} disabled={!editable} onChange={v=>set(x=>{ x.serves = v; })} options={[{value:'department' as const,label:'ผู้ป่วยของแผนกนี้'},{value:'all' as const,label:'ทุกแผนก (จุดบริการร่วม)'}]} aria-label="ใครมาใช้"/></label>
+      {g.pointKind==='counter' && <label><span>การจัดวาง <Help topic="arrange"/></span><Select value={g.options?.arrange ?? 'counter'} disabled={!editable} onChange={v=>set(x=>{ x.options = {...x.options,arrange:v}; if (v==='counter') { delete x.options.arrange; if (!Object.keys(x.options).length) delete x.options; } })}
         options={[{value:'counter' as const,label:'เคาน์เตอร์ยาว (นั่งเรียงกัน)'},{value:'booths' as const,label:'โต๊ะแยกกระจายในพื้นที่'}]} aria-label="การจัดวาง"/></label>}
-      {g.pointKind==='bed' && g.steps.includes('treatment') && <label><span>รับผู้ป่วยระดับ</span><Select value={(g.options?.triage ?? [1,5]).join('-')} disabled={!editable}
+      {g.pointKind==='bed' && g.steps.includes('treatment') && <label><span>รับผู้ป่วยระดับ <Help topic="triage"/></span><Select value={(g.options?.triage ?? [1,5]).join('-')} disabled={!editable}
         onChange={v=>set(x=>{ const [a,b] = v.split('-').map(Number); if (a===1 && b===5) { if (x.options) { delete x.options.triage; if (!Object.keys(x.options).length) delete x.options; } } else x.options = {...x.options,triage:[a,b]}; })}
         options={[['1-5','ทุกระดับ'],['1-2','วิกฤต (1–2) เช่น เตียงกู้ชีพ'],['3-5','ไม่วิกฤต (3–5)'],['1-3','1–3']].map(([value,label])=>({value,label}))} aria-label="ระดับคัดแยก"/></label>}
     </div>
@@ -345,8 +349,8 @@ function GroupCard({g,first,last,focused,usage,ctx}:{g:FGroup; first:boolean; la
       return <div className="facPointEdit">
         <label><span>เลข</span><input type="number" min={0} value={p.number} onChange={e=>setPoint(p.id,x=>{ x.number = Math.max(0,Number(e.target.value)||0); })}/></label>
         <label><span>ชื่อ (ว่าง = {g.pointNoun} {p.number})</span><input value={p.name ?? ''} onChange={e=>setPoint(p.id,x=>{ if (e.target.value) x.name = e.target.value; else delete x.name; })} maxLength={60}/></label>
-        <label><span>เลขห้อง/ป้าย</span><input value={p.roomCode ?? ''} onChange={e=>setPoint(p.id,x=>{ const v = e.target.value.trim(); if (v) x.roomCode = v; else delete x.roomCode; })} maxLength={12}/></label>
-        <label><span>ชั้น (ถ้าไม่ใช่ชั้นของกลุ่ม)</span><Select value={p.floorId ?? ''} onChange={v=>setPoint(p.id,x=>{ if (v) x.floorId = v; else delete x.floorId; })} options={[{value:'',label:'ชั้นเดียวกับกลุ่ม'},...floorOptions(data)]} aria-label="ชั้นของจุด"/></label>
+        <label><span>เลขห้อง/ป้าย <Help topic="roomCode"/></span><input value={p.roomCode ?? ''} onChange={e=>setPoint(p.id,x=>{ const v = e.target.value.trim(); if (v) x.roomCode = v; else delete x.roomCode; })} maxLength={12}/></label>
+        <label><span>ชั้น (ถ้าไม่ใช่ชั้นของกลุ่ม) <Help topic="pointFloor"/></span><Select value={p.floorId ?? ''} onChange={v=>setPoint(p.id,x=>{ if (v) x.floorId = v; else delete x.floorId; })} options={[{value:'',label:'ชั้นเดียวกับกลุ่ม'},...floorOptions(data)]} aria-label="ชั้นของจุด"/></label>
         {g.pointKind==='bed' && <label><span>อยู่ในห้อง</span><Select value={p.inRoomId ?? ''} onChange={v=>setPoint(p.id,x=>{ if (v) x.inRoomId = v; else delete x.inRoomId; })}
           options={[{value:'',label:'ไม่อยู่ในห้อง (เตียงรวม)'},...rooms.map(r=>({value:r.id,label:pointText(data.groups.find(y=>y.id===r.groupId),r),sub:floorText(data,r.floorId ?? data.groups.find(y=>y.id===r.groupId)?.floorId)}))]} aria-label="ห้องของเตียง"/></label>}
         <span className="rowActs">
@@ -360,6 +364,8 @@ function GroupCard({g,first,last,focused,usage,ctx}:{g:FGroup; first:boolean; la
       <button className="btn ghost sm" onClick={()=>{ update(x=>{ const t = x.groups.find(y=>y.id===g.id)!; ctx.addPoints(x,t,count,code ? Number(code) : undefined); }); setCode(''); }}><Plus size={14}/> เพิ่ม</button>
       <small className="muted">เลขต่อจากตัวสุดท้ายให้เอง</small>
     </div>}
+    {active && g.floorId && <FloorPreview data={data} floorId={g.floorId} focus={g.id}/>}
+    {active && !g.floorId && <p className="muted facPreviewNone">กลุ่มนี้อยู่นอกอาคาร (เช่น ตู้คิวหน้าโรงพยาบาล) · ตำแหน่งดูได้บนแผนที่ภาพรวม</p>}
     <datalist id="facNouns">{NOUNS.map(n=><option key={n} value={n}/>)}</datalist>
   </div>;
 }
@@ -425,6 +431,7 @@ function FloorDetail({f,ctx}:{f:FFloor; ctx:Ctx}) {
       <label><span>เลขชั้น</span><input type="number" min={-9} max={99} value={f.level} disabled={!editable} aria-invalid={levelTaken} onChange={e=>set(x=>{ x.level = Math.max(-9,Math.min(99,Math.round(Number(e.target.value)||0))); })}/>{levelTaken && <em className="facErr">มีชั้นนี้แล้ว</em>}</label>
       <label className="wide"><span>คำอธิบาย</span><input value={f.description} disabled={!editable} onChange={e=>set(x=>{ x.description = e.target.value; })} maxLength={120} placeholder="เช่น ห้องตรวจอายุรกรรม"/></label>
     </div>
+    <FloorPreview data={data} floorId={f.id}/>
     <h4 className="setSub">บนชั้นนี้ <small>พื้นที่รอของแต่ละแผนกเรียงตามลำดับแผนก</small></h4>
     <ul className="facFloors">{here.map(g=>{ const d = data.departments.find(x=>x.id===g.departmentId);
       return <li key={g.id} className={on(g)&&on(d)?'':'off'}><button className="linkBtn dark" onClick={()=>setSel({kind:'dept',id:g.departmentId,focus:g.id})}><b>{g.name}</b></button>
