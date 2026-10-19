@@ -100,7 +100,9 @@ export class PatientController {
   bookingServices(@Ip() ip: string, @Headers('authorization') auth?: string) {
     this.linked(ip, auth);
     if (!this.features.on('generalBooking')) return { ok: true, services: [] };
-    return { ok: true, services: this.booking.policies().filter((p) => p.enabled).map((p) => ({ serviceCode: p.serviceCode, displayName: p.displayName, advanceDays: p.advanceDays, cancelCutoffMinutes: p.cancelCutoffMinutes })) };
+    // nextDay: the nearest day with a place left (null = full for the whole booking window), so the list can say so
+    return { ok: true, services: this.booking.policies().filter((p) => p.enabled).map((p) => ({ serviceCode: p.serviceCode, displayName: p.displayName, advanceDays: p.advanceDays,
+      cancelCutoffMinutes: p.cancelCutoffMinutes, nextDay: this.booking.openDays(p.serviceCode)[0] ?? null })) };
   }
   @Get('booking/slots')
   bookingSlots(@Ip() ip: string, @Query('service') service: string, @Query('date') date: string, @Headers('authorization') auth?: string) {

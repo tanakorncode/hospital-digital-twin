@@ -43,6 +43,7 @@ test('only a linked patient reaches the patient pages', async () => {
 test('patients see only open services and book for themselves; a retried tap books once', async () => {
   const { api, ctl, p1, p2 } = await setup();
   assert.deepEqual(ctl.bookingServices('1.1.1.1', p1).services.map((s) => s.serviceCode), [MED], 'closed services are not offered');
+  assert.equal(ctl.bookingServices('1.1.1.1', p1).services[0].nextDay, '2026-11-03', 'the list says the nearest day with a place');
   const slots = ctl.bookingSlots('1.1.1.1', MED, '2026-11-03', p1).slots;
   assert.equal(slots.length, 2);
   assert.ok(ctl.bookingDays('1.1.1.1', MED, p1).days.includes('2026-11-03'), 'the day picker offers days with places');

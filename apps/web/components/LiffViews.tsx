@@ -54,7 +54,13 @@ export function MyQueue() {
 }
 
 // ---- จองคิว ---------------------------------------------------------------------------------------------------------
-type Service = {serviceCode:string; displayName:string; advanceDays:number; cancelCutoffMinutes:number};
+type Service = {serviceCode:string; displayName:string; advanceDays:number; cancelCutoffMinutes:number; nextDay?:string|null};
+const DAYS_FIRST = 6; // days shown before "more days"
+// "วันนี้" / "พรุ่งนี้" / a date, for the nearest day with a place
+const whenOpen = (d:string) => { const t = new Date(), tm = new Date(t); tm.setDate(t.getDate()+1);
+ return d===t.toLocaleDateString('sv-SE') ? 'วันนี้' : d===tm.toLocaleDateString('sv-SE') ? 'พรุ่งนี้' : dayShort(d); };
+const openLabel = (s:Service) => { if (!s.nextDay) return `เต็มทุกวันใน ${s.advanceDays} วันข้างหน้า`;
+ const w = whenOpen(s.nextDay); return w==='วันนี้' || w==='พรุ่งนี้' ? `ว่าง${w}` : `ว่างใกล้สุด ${w}`; };
 const bookingReasons = ['ไม่สะดวกมาตามเวลา','อาการดีขึ้นแล้ว','จองผิด'];
 export function BookQueue() {
  const [mine,setMine] = useState<Booking[]|null>(null);
@@ -70,6 +76,7 @@ export function BookQueue() {
  const [busy,setBusy] = useState(false);
  const [made,setMade] = useState<Booking|null>(null);
  const [cancelFor,setCancelFor] = useState<string|null>(null);
+ const [allDays,setAllDays] = useState(false);
  const load = useCallback(async ()=>{ const r = await patientApi<{bookings:Booking[]}>('GET','/bookings'); if (r.ok) setMine(r.bookings); else setError(r.reason); },[]);
  useEffect(()=>{ void load(); },[load]);
  useEffect(()=>{ if (step!=='slot' || !svc) return; setDays(null);
@@ -79,7 +86,9 @@ export function BookQueue() {
   void patientApi<{slots:Slot[]}>('GET',`/booking/slots?service=${encodeURIComponent(svc.serviceCode)}&date=${date}`).then(r=>setSlots(r.ok ? r.slots : []));
  },[step,svc,date]);
  const startNew = async () => { setError(''); const r = await patientApi<{services:Service[]}>('GET','/booking/services');
-  if (!r.ok) { setError(r.reason); return; } setServices(r.services); setStep('service'); };
+  if (!r.ok) { setError(r.reason); return; }
+  // ones with a place first (in the order the hospital set), the full ones after
+  setServices([...r.services].sort((a,b)=>Number(!a.nextDay)-Number(!b.nextDay))); setStep('service'); };
  const confirm = async () => {
   if (!slot || busy) return;
   setBusy(true); setError('');
@@ -93,15 +102,20 @@ export function BookQueue() {
   if (r.ok) void load(); else setError(r.reason);
  };
  if (step==='service') return <section className="liffCard"><h2>เลือกบริการ</h2>
-  {services.length ? <div className="liffChoices">{services.map(s=><button key={s.serviceCode} className="liffChoice" onClick={()=>{ setSvc(s); setDate(''); setSlot(null); setStep('slot'); }}>
-   <b>{s.displayName}</b><ChevronRight size={22}/></button>)}</div> : <p>ตอนนี้ยังไม่มีบริการที่เปิดให้จองทาง LINE</p>}
+  {services.length ? <div className="liffChoices">{services.map(s=><button key={s.serviceCode} className={'liffChoice svc'+(s.nextDay===null?' full':'')} onClick={()=>{ setSvc(s); setDate(''); setSlot(null); setAllDays(false); setStep('slot'); }}>
+   <span><b>{s.displayName}</b>{s.nextDay!==undefined && <small>{openLabel(s)}</small>}</span>
+   <ChevronRight size={22}/></button>)}</div> : <p>ตอนนี้ยังไม่มีบริการที่เปิดให้จองทาง LINE</p>}
   <button className="liffBtn ghost" onClick={()=>setStep('list')}>ย้อนกลับ</button></section>;
  if (step==='slot' && svc) {
   return <section className="liffCard"><h2>{svc.displayName}</h2><p className="liffNote">เลือกวัน แล้วเลือกช่วงเวลาที่ยังว่าง</p>
    {days===null ? <Busy/> : !days.length ? <p>ตอนนี้ยังไม่มีวันที่เปิดให้จอง หรือเต็มแล้ว · สอบถามเคาน์เตอร์ได้</p> : <>
-   <div className="liffDays">{days.map(d=><button key={d} className={d===date?'on':''} aria-pressed={d===date} onClick={()=>{ setDate(d); setSlot(null); }}>{dayShort(d)}</button>)}</div>
+   <div className="liffDays">{(allDays ? days : days.slice(0,DAYS_FIRST)).map(d=>{ const w = whenOpen(d), dt = new Date(`${d}T12:00:00`);
+    return <button key={d} className={d===date?'on':''} aria-pressed={d===date} onClick={()=>{ setDate(d); setSlot(null); }}>
+     <small>{w==='วันนี้'||w==='พรุ่งนี้' ? w : dt.toLocaleDateString('th-TH',{weekday:'long'})}</small><b>{dt.toLocaleDateString('th-TH',{day:'numeric',month:'short'})}</b></button>; })}</div>
+   {!allDays && days.length>DAYS_FIRST && <button className="liffBtn ghost small" onClick={()=>setAllDays(true)}>ดูวันอื่นอีก {days.length-DAYS_FIRST} วัน</button>}
    {slots===null ? <Busy/> : slots.length ? <div className="liffSlots">{slots.map(s=><button key={s.id} className={slot?.id===s.id?'on':''} aria-pressed={slot?.id===s.id} onClick={()=>setSlot(s)}>
     <b>{time(s.startsAt)}–{time(s.endsAt)}</b><small>ว่าง {s.remaining}</small></button>)}</div> : <p>วันนี้ไม่มีช่วงที่ว่าง ลองเลือกวันอื่น</p>}</>}
+   {!!days?.length && !slot && <p className="liffHint">แตะเลือกช่วงเวลาก่อน แล้วกด "ถัดไป"</p>}
    <div className="liffRow"><button className="liffBtn ghost" onClick={()=>setStep('service')}>ย้อนกลับ</button>
     <button className="liffBtn" disabled={!slot} onClick={()=>{ setKey(newKey()); setStep('confirm'); }}>ถัดไป</button></div></section>;
  }
@@ -123,7 +137,7 @@ export function BookQueue() {
    <CodeQr code={b.code}/>
    {cancelFor===b.id ? <><p>ยกเลิกเพราะ</p><div className="liffChoices">{bookingReasons.map(r=><button key={r} className="liffChoice small" onClick={()=>void cancel(b,r)}>{r}</button>)}</div>
      <button className="liffBtn ghost" onClick={()=>setCancelFor(null)}>ไม่ยกเลิก</button></>
-    : <button className="liffLink" onClick={()=>setCancelFor(b.id)}>ยกเลิกการจองนี้</button>}</section>)}
+    : <button className="liffBtn ghost danger" onClick={()=>setCancelFor(b.id)}>ยกเลิกการจองนี้</button>}</section>)}
   {!active.length && <section className="liffCard"><p>ยังไม่มีการจองที่รออยู่</p></section>}
   {past.length>0 && <details className="liffPast"><summary>การจองที่ผ่านมา ({past.length})</summary>
    {past.map(b=><p key={b.id}>{dayShort(localDay(b.startsAt))} · {b.serviceName} · {statusThai[b.status] ?? b.status}</p>)}</details>}

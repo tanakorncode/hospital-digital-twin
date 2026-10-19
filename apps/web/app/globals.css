@@ -2093,26 +2093,28 @@ kbd{margin-left:6px;padding:1px 6px;border-radius:5px;background:#ffffff33;borde
 .liff{min-height:100vh;display:flex;flex-direction:column;gap:14px;padding:16px;background:#eef3f9;color:#0f2340;font-size:17px;max-width:560px;margin:0 auto}
 .liffHead{display:flex;align-items:center;gap:12px}
 .liffHead b{display:block;font-size:19px}
-.liffHead small{color:#3d5168;font-size:14px}
+.liffHead small{color:#334a63;font-size:15px}
 .liffLogo{display:grid;place-items:center;width:44px;height:44px;border-radius:14px;background:#06c755;color:#fff;font-size:30px;font-weight:800}
 .liffWait{margin:40px auto;font-size:19px;color:#3d5168}
 .liffCard{display:flex;flex-direction:column;gap:12px;padding:20px;border-radius:20px;background:#fff;border:1px solid #dbe4ee}
 .liffCard h1{margin:0;font-size:24px;line-height:1.3}
 .liffCard p{margin:0;line-height:1.55}
 .liffCard.center{align-items:center;text-align:center}
+.liffCard.center>.liffBtn{align-self:stretch}
 .liffCard.dev{border:2px dashed #f59e0b;background:#fffbeb}
 .liffCard.ok{flex-direction:row;align-items:center;background:#ecfdf5;border-color:#6ee7b7;color:#065f46}
 .liffCard.ok h1{font-size:20px}
 .liffCard.muted{background:transparent;border:0;padding:4px 8px;align-items:center}
 .liffBtn{min-height:56px;padding:0 20px;border:0;border-radius:16px;background:#06c755;color:#fff;font:inherit;font-size:19px;font-weight:800;cursor:pointer}
-.liffBtn:disabled{opacity:.6}
+.liffBtn:disabled{background:#d5dde7;color:#5b6b7f;cursor:not-allowed}
 .liffBtn.ghost{background:#fff;color:#0f2340;border:2px solid #c9d6e4}
 .liffBtn.danger{background:#be123c}
 .liffRow{display:flex;gap:10px}.liffRow .liffBtn{flex:1}
 .liffList{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:10px}
 .liffList li{display:flex;gap:10px;align-items:flex-start;line-height:1.45}
 .liffList svg{flex:0 0 auto;color:#06a548;margin-top:2px}
-.liffNote{color:#3d5168;font-size:14.5px;line-height:1.5}
+.liffNote{color:#2c3e55;font-size:16px;line-height:1.55}
+.liffHint{margin:0;padding:10px 12px;border-radius:12px;background:#f1f5f9;color:#2c3e55;font-size:16px;font-weight:600;text-align:center}
 .liffError{padding:10px 12px;border-radius:12px;background:#fff1f2;color:#9f1239;font-weight:700}
 .liffQr{width:260px;height:260px;border-radius:12px;border:1px solid #dbe4ee}
 .liffCode{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:34px;font-weight:800;letter-spacing:4px}
@@ -2120,10 +2122,10 @@ kbd{margin-left:6px;padding:1px 6px;border-radius:5px;background:#ffffff33;borde
 .liffTiles{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .liffTile{position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-height:120px;padding:14px;border:2px solid #dbe4ee;border-radius:18px;background:#f8fbff;color:#0f2340;font:inherit;text-align:left}
 .liffTile b{font-size:18px}
-.liffTile small{color:#3d5168;font-size:14px}
+.liffTile small{color:#334a63;font-size:15.5px}
 .liffTile em{position:absolute;top:10px;right:10px;padding:1px 8px;border-radius:8px;background:#e2e8f0;color:#475569;font-size:12px;font-style:normal}
 .liffTile:disabled{opacity:.75}
-.liffLink{display:inline-flex;align-items:center;gap:6px;border:0;background:none;color:#9f1239;font:inherit;font-size:15px;text-decoration:underline;cursor:pointer}
+.liffLink{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:48px;padding:0 12px;border:0;background:none;color:#9f1239;font:inherit;font-size:17px;text-decoration:underline;cursor:pointer}
 
 /* ---- Counter: link a patient's LINE account ---- */
 .lineTab{gap:14px}
@@ -2146,7 +2148,7 @@ kbd{margin-left:6px;padding:1px 6px;border-radius:5px;background:#ffffff33;borde
 .liffCard h2{margin:0;font-size:21px;line-height:1.3;display:flex;align-items:center;gap:6px}
 .liffCard p{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .liffCard.center p{justify-content:center}
-.liffTicket small{color:#3d5168;font-size:15px}
+.liffTicket small{color:#334a63;font-size:16px}
 .liffQueue{display:inline-block;padding:4px 26px;border-radius:16px;background:#0f2340;color:#fff;font-size:64px;line-height:1.1;letter-spacing:1px}
 .liffTicket .liffBtn{display:inline-flex;align-items:center;justify-content:center;gap:4px;text-decoration:none;width:100%}
 .liffCodeQr{display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 0}
@@ -2155,14 +2157,21 @@ kbd{margin-left:6px;padding:1px 6px;border-radius:5px;background:#ffffff33;borde
 .liffChoices{display:flex;flex-direction:column;gap:8px}
 .liffChoice{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:60px;padding:0 16px;border:2px solid #c9d6e4;border-radius:16px;background:#fff;color:#0f2340;font:inherit;font-size:18px;text-align:left;cursor:pointer}
 .liffChoice.small{min-height:50px;font-size:16.5px}
+.liffChoice.svc span{display:flex;flex-direction:column;gap:2px;padding:10px 0}
+.liffChoice.svc small{font-size:15.5px;color:#047857;font-weight:600}
+.liffChoice.svc.full small{color:#9a3412}
+.liffBtn.small{min-height:48px;font-size:17px}
 .liffChoice.on{border-color:#06c755;background:#ecfdf3}
-.liffDays{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px}
-.liffDays button{flex:0 0 auto;min-height:52px;padding:0 14px;border:2px solid #c9d6e4;border-radius:14px;background:#fff;color:#0f2340;font:inherit;font-size:16px;cursor:pointer}
+/* days: a grid that wraps (no sideways scrolling to discover) — weekday small above, the date big */
+.liffDays{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.liffDays button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;min-height:64px;padding:6px 4px;border:2px solid #c9d6e4;border-radius:14px;background:#fff;color:#0f2340;font:inherit;cursor:pointer}
+.liffDays button small{font-size:15px;color:#334a63}
+.liffDays button b{font-size:18px}
 .liffDays button.on{border-color:#06c755;background:#ecfdf3;font-weight:800}
 .liffSlots{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .liffSlots button{display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-height:64px;padding:8px 14px;border:2px solid #c9d6e4;border-radius:14px;background:#fff;color:#0f2340;font:inherit;cursor:pointer}
 .liffSlots button b{font-size:18px}
-.liffSlots button small{color:#047857;font-size:14px}
+.liffSlots button small{color:#047857;font-size:15.5px;font-weight:600}
 .liffSlots button.on{border-color:#06c755;background:#ecfdf3}
 .liffSum{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:0;font-size:18px}
 .liffSum dt{color:#3d5168}
@@ -2170,7 +2179,7 @@ kbd{margin-left:6px;padding:1px 6px;border-radius:5px;background:#ffffff33;borde
 .liffOk{color:#06a548}
 .liffPending{padding:8px 10px;border-radius:12px;background:#fffbeb;color:#92400e;font-size:15.5px}
 .liffBtn.ghost.danger{color:#9f1239;border-color:#fecdd3;background:#fff}
-.liffPast{padding:6px 10px;color:#3d5168;font-size:15.5px}
+.liffPast{padding:6px 10px;color:#2c3e55;font-size:16px}
 .liffPast summary{cursor:pointer;font-weight:700;min-height:40px;display:flex;align-items:center}
 .liffPast p{margin:6px 0}
 .liffHeadRow{display:flex;align-items:center;justify-content:space-between}
@@ -2180,7 +2189,7 @@ kbd{margin-left:6px;padding:1px 6px;border-radius:5px;background:#ffffff33;borde
 .liffDir{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px}
 .liffDir li{display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-top:1px solid #eef2f6;font-size:17px}
 .liffDir li:first-child{border-top:0}
-.liffDir small{color:#3d5168;white-space:nowrap}
+.liffDir small{color:#334a63;white-space:nowrap}
 .liffNote.center{display:flex;align-items:center;justify-content:center;gap:6px;text-align:center}
 
 /* ---- Settings → การแจ้งเตือน ---- */
